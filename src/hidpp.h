@@ -14,7 +14,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct hid_device hid_device;
 typedef struct hidpp_device hidpp_device;
 
 enum hidpp_device_type {
@@ -28,18 +27,30 @@ enum hidpp_device_type {
     HIDPP_TYPE_RECEIVER,
 };
 
-hidpp_device* hidpp_open(hid_device* handle, uint8_t id, uint8_t swid);
-int hidpp_ping(hidpp_device* dev, uint8_t data);
-void hidpp_close(hidpp_device* dev);
+enum hidpp_error {
+    HIDPP_OK = 0,
+    HIDPP_ENOENT = -2,
+    HIDPP_EINTR = -4,
+    HIDPP_EIO = -5,
+    HIDPP_ENOMEM = -12,
+    HIDPP_EEXIST = -17,
+    HIDPP_EINVAL = -22,
+    HIDPP_ENOSYS = -38,
+    HIDPP_ENODATA = -61,
+};
 
-uint16_t hidpp_version(hidpp_device* dev);
-uint8_t hidpp_swid(hidpp_device* dev);
-uint8_t hidpp_device_id(hidpp_device* dev);
-size_t hidpp_device_name(hidpp_device* dev, char* buf, size_t max);
-int hidpp_device_type(hidpp_device* dev);
+hidpp_device *hidpp_open(hid_device *handle, uint8_t id, uint8_t swid);
+int hidpp_ping(hidpp_device *dev, uint8_t data);
+void hidpp_close(hidpp_device *dev);
 
-uint8_t hidpp_feat_index(hidpp_device* dev, uint16_t featid);
-uint16_t hidpp_feat_id(hidpp_device* dev, uint8_t featindex);
-uint16_t hidpp_feat_count(hidpp_device* dev);
+uint16_t hidpp_version(hidpp_device *dev);
+uint8_t hidpp_swid(hidpp_device *dev);
+uint8_t hidpp_device_id(hidpp_device *dev);
+size_t hidpp_device_name(hidpp_device *dev, char *buf, size_t max);
+int hidpp_device_type(hidpp_device *dev);
+
+uint8_t hidpp_feat_index(hidpp_device *dev, uint16_t featid);
+uint16_t hidpp_feat_id(hidpp_device *dev, uint8_t featindex);
+uint16_t hidpp_feat_count(hidpp_device *dev);
 
 #endif
