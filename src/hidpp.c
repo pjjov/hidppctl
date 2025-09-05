@@ -99,7 +99,16 @@ void hidpp_close(hidpp_device *dev) {
     }
 }
 
-int hidpp_ping(hidpp_device *dev, uint8_t data) { return HIDPP_ENOSYS; }
+int hidpp_ping(hidpp_device *dev, uint8_t data) {
+    if (!dev)
+        return HIDPP_EINVAL;
+
+    hidpp_report res, req = HIDPP_MAKE(SHORT, dev, 0, 1, 0, 0, data);
+    if (hidpp_send_report(dev, req, res) || res[6] != req[6])
+        return HIDPP_EIO;
+
+    return HIDPP_OK;
+}
 
 uint16_t hidpp_version(hidpp_device *dev) { return dev->version; }
 uint8_t hidpp_swid(hidpp_device *dev) { return dev->swid; }
