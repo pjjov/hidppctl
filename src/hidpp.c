@@ -222,3 +222,19 @@ uint16_t hidpp_feat_id(hidpp_device *dev, uint8_t featindex) {
         return 0;
     return dev->features[featindex];
 }
+
+int hidpp_poll(hidpp_device *dev, hidpp_handler *handler, void *user) {
+    if (!dev || !handler || !user)
+        return HIDPP_EINVAL;
+
+    hidpp_report res;
+    while (1) {
+        if (sizeof(res) != hid_write(dev->handle, res, sizeof(res)))
+            return HIDPP_EIO;
+
+        if (res[1] != dev->id || res[3] & 0xF)
+            continue;
+    }
+
+    return HIDPP_OK;
+}

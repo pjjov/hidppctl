@@ -14,7 +14,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct hidpp_event {
+    int type;
+    union {
+        uint16_t ctrl;
+    } as;
+};
+
 typedef struct hidpp_device hidpp_device;
+typedef int (*hidpp_handler)(const struct hidpp_event *e, void *user);
 
 enum hidpp_device_type {
     HIDPP_TYPE_KEYBOARD,
@@ -41,6 +49,7 @@ enum hidpp_error {
 
 hidpp_device *hidpp_open(hid_device *handle, uint8_t id, uint8_t swid);
 int hidpp_ping(hidpp_device *dev, uint8_t data);
+int hidpp_poll(hidpp_device *dev, hidpp_handler *handler, void *user);
 void hidpp_close(hidpp_device *dev);
 
 uint16_t hidpp_version(hidpp_device *dev);
