@@ -1,0 +1,23 @@
+# hidppctl -- Configure HID++ compatible peripherals.
+#
+# Copyright (C) 2025 Предраг Јовановић
+# SPDX-FileCopyrightText: 2025 Предраг Јовановић
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Look at the COPYING file for more information.
+
+BasedOnStyle: WebKit
+AlignAfterOpenBracket: BlockIndent
+AlignEscapedNewlines: LeftWithLastLine
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Attach
+ColumnLimit: 80
+IndentPPDirectives: BeforeHash
+Language: Cpp
+LineEnding: LF
+PenaltyBreakAssignment: 999
+PenaltyReturnTypeOnItsOwnLine: 999
+PointerAlignment: Right
+ReflowComments: false
+# SkipMacroDefinitionBody: true
