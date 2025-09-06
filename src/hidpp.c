@@ -32,7 +32,9 @@ struct hidpp_device {
 
     uint8_t featcount;
     uint8_t namelen;
+    uint8_t ctrlcount;
     uint16_t features[256];
+    uint16_t controls[256];
     char name[256];
 };
 
@@ -119,6 +121,33 @@ static void find_features(hidpp_device *dev) {
     }
 }
 
+static uint8_t control_count(hidpp_device *dev) {
+    uint8_t index = hidpp_feat_index(dev, 0x1B04);
+    hidpp_report res, req = HIDPP_MAKE(SHORT, dev, index, 0);
+
+    if (index == 0 || hidpp_send_report(dev, req, res))
+        return 0;
+
+    return res[4];
+}
+
+static void find_controls(hidpp_device *dev) {
+    uint8_t count = control_count(dev);
+    uint8_t index = hidpp_feat_index(dev, 0x1B04);
+    hidpp_report res, req = HIDPP_MAKE(SHORT, dev, index, 1);
+
+    for (int i = 0; i < count; i++) {
+        req[4] = (uint8_t)i;
+
+        if (hidpp_send_report(dev, req, res))
+            dev->controls[i] = 0;
+        else
+            dev->controls[i] = HIDPP_WORD(res[4], res[5]);
+    }
+
+    dev->ctrlcount = count;
+}
+
 static uint8_t device_name_length(hidpp_device *dev) {
     hidpp_report req = HIDPP_MAKE(SHORT, dev, hidpp_feat_index(dev, 0x0005), 0);
     hidpp_report res;
@@ -167,6 +196,7 @@ hidpp_device *hidpp_open(hid_device *handle, uint8_t id, uint8_t swid) {
     }
 
     find_features(dev);
+    find_controls(dev);
     device_name(dev);
     return dev;
 }
@@ -192,6 +222,7 @@ uint16_t hidpp_version(hidpp_device *dev) { return dev->version; }
 uint8_t hidpp_swid(hidpp_device *dev) { return dev->swid; }
 uint8_t hidpp_device_id(hidpp_device *dev) { return dev->id; }
 uint16_t hidpp_feat_count(hidpp_device *dev) { return dev->featcount; }
+uint16_t hidpp_button_count(hidpp_device *dev) { return dev->ctrlcount; }
 
 size_t hidpp_device_name(hidpp_device *dev, char *buf, size_t max) {
     if (!dev)
@@ -231,18 +262,68 @@ uint16_t hidpp_feat_id(hidpp_device *dev, uint8_t featindex) {
     return dev->features[featindex];
 }
 
+uint8_t hidpp_button_index(hidpp_device *dev, uint16_t ctrlid) {
+    if (!dev)
+        return 0;
+
+    for (int i = 0; i < dev->ctrlcount; i++)
+        if (dev->controls[i] == ctrlid)
+            return i;
+
+    return 0;
+}
+
+uint16_t hidpp_button_id(hidpp_device *dev, uint8_t index) {
+    if (!dev || index >= dev->ctrlcount)
+        return 0;
+    return dev->controls[index];
+}
+
+static int parse_event(
+    hidpp_device *dev, struct hidpp_event *e, hidpp_report res
+) {
+    uint16_t featid = hidpp_feat_id(dev, res[2]);
+    uint8_t fctn = res[3] >> 8;
+
+    switch (featid) {
+    case 0x1b00:
+    case 0x1b02:
+    case 0x1b04:
+        if (fctn == 0) {
+            e->type = HIDPP_EVENT_DIVERTED_BUTTONS;
+            e->as.buttons[0] = HIDPP_WORD(res[4], res[5]);
+            e->as.buttons[1] = HIDPP_WORD(res[6], res[7]);
+            e->as.buttons[2] = HIDPP_WORD(res[8], res[9]);
+            e->as.buttons[3] = HIDPP_WORD(res[10], res[11]);
+            return HIDPP_OK;
+        }
+
+        break;
+
+    default:
+        break;
+    }
+
+    return HIDPP_EIO;
+}
+
 int hidpp_poll(hidpp_device *dev, hidpp_handler *handler, void *user) {
-    if (!dev || !handler || !user)
+    if (!dev || !handler)
         return HIDPP_EINVAL;
 
     hidpp_report res;
-    while (1) {
-        if (sizeof(res) != hid_write(dev->handle, res, sizeof(res)))
+    struct hidpp_event e;
+
+    do {
+        if (sizeof(res) != hid_read(dev->handle, res, sizeof(res)))
             return HIDPP_EIO;
 
         if (res[1] != dev->id || res[3] & 0xF)
             continue;
-    }
+
+        if (parse_event(dev, &e, res))
+            return HIDPP_EIO;
+    } while (0 == handler(&e, user));
 
     return HIDPP_OK;
 }

@@ -14,15 +14,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+enum hidpp_event_type {
+    HIDPP_EVENT_DIVERTED_BUTTONS,
+};
+
 struct hidpp_event {
     int type;
     union {
-        uint16_t ctrl;
+        uint16_t buttons[4];
     } as;
 };
 
 typedef struct hidpp_device hidpp_device;
-typedef int (*hidpp_handler)(const struct hidpp_event *e, void *user);
+typedef int(hidpp_handler)(const struct hidpp_event *e, void *user);
 
 enum hidpp_device_type {
     HIDPP_TYPE_KEYBOARD,
@@ -61,5 +65,11 @@ int hidpp_device_type(hidpp_device *dev);
 uint8_t hidpp_feat_index(hidpp_device *dev, uint16_t featid);
 uint16_t hidpp_feat_id(hidpp_device *dev, uint8_t featindex);
 uint16_t hidpp_feat_count(hidpp_device *dev);
+const char *hidpp_feat_name(uint16_t featid);
+
+uint8_t hidpp_button_index(hidpp_device *dev, uint16_t ctrlid);
+uint16_t hidpp_button_id(hidpp_device *dev, uint8_t index);
+uint16_t hidpp_button_count(hidpp_device *dev);
+const char *hidpp_button_name(uint16_t ctrlid);
 
 #endif
