@@ -78,8 +78,8 @@ static uint16_t hidpp__version(hidpp_device *dev) {
     return HIDPP_WORD(res[4], res[5]);
 }
 
-static uint8_t feature_count(hidpp_device *dev) {
-    hidpp_report req = HIDPP_MAKE(SHORT, dev, hidpp_feat_index(dev, 0x0001), 0);
+static uint8_t feature_index(hidpp_device *dev, uint16_t id) {
+    hidpp_report req = HIDPP_MAKE(SHORT, dev, 0, 0, id >> 8, id & 0xF);
     hidpp_report res;
 
     if (hidpp_send_report(dev, req, res))
@@ -88,8 +88,8 @@ static uint8_t feature_count(hidpp_device *dev) {
     return res[4];
 }
 
-static uint8_t feature_index(hidpp_device *dev, uint16_t id) {
-    hidpp_report req = HIDPP_MAKE(SHORT, dev, 0, 0, id >> 8, id & 0xF);
+static uint8_t feature_count(hidpp_device *dev) {
+    hidpp_report req = HIDPP_MAKE(SHORT, dev, feature_index(dev, 0x0001), 0);
     hidpp_report res;
 
     if (hidpp_send_report(dev, req, res))
