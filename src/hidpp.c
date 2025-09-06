@@ -8,6 +8,7 @@
 */
 
 #include "hidpp.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -34,6 +35,12 @@ struct hidpp_device {
     uint16_t features[256];
     char name[256];
 };
+
+static inline void print_report(hidpp_report report) {
+    for (int i = 0; i < sizeof(hidpp_report); i++)
+        printf("%.2x ", report[i]);
+    putc('\n', stdout);
+}
 
 int hidpp_recv_report(hidpp_device *dev, hidpp_report res) {
     while (1) {
@@ -136,6 +143,7 @@ static uint8_t device_name(hidpp_device *dev) {
         read += size;
     }
 
+    dev->namelen = length;
     dev->name[read + 1] = '\0';
     return read;
 }
@@ -158,8 +166,8 @@ hidpp_device *hidpp_open(hid_device *handle, uint8_t id, uint8_t swid) {
         return NULL;
     }
 
-    device_name(dev);
     find_features(dev);
+    device_name(dev);
     return dev;
 }
 
