@@ -74,5 +74,6 @@ uint16_t hidpp_button_count(hidpp_device *dev);
 const char *hidpp_button_name(uint16_t ctrlid);
 int hidpp_button_divert(hidpp_device *dev, uint16_t ctrlid);
 int hidpp_button_undivert(hidpp_device *dev, uint16_t ctrlid);
+int hidpp_button_remap(hidpp_device *dev, uint16_t ctrlid, uint16_t remapid);
 
 #endif

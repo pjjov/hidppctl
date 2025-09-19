@@ -317,6 +317,25 @@ int hidpp_button_undivert(hidpp_device *dev, uint16_t ctrlid) {
     return hidpp_send_report(dev, req, res);
 }
 
+int hidpp_button_remap(hidpp_device *dev, uint16_t ctrlid, uint16_t remapid) {
+    if (!dev)
+        return HIDPP_EINVAL;
+
+    hidpp_report req = HIDPP_MAKE(
+        SHORT,
+        dev,
+        hidpp_feat_index(dev, 0x1B04),
+        3,
+        HIDPP_MSB(ctrlid),
+        HIDPP_LSB(ctrlid),
+        0,
+        HIDPP_MSB(remapid),
+        HIDPP_LSB(remapid)
+    );
+    hidpp_report res;
+    return hidpp_send_report(dev, req, res);
+}
+
 static int parse_event(
     hidpp_device *dev, struct hidpp_event *e, hidpp_report res
 ) {
