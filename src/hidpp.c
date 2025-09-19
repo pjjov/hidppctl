@@ -21,6 +21,8 @@ enum hidpp_report_types {
     { HIDPP_##size, (dev)->id, (featid), (fn << 4) | (dev)->swid, __VA_ARGS__ }
 
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
+#define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xF))
+#define HIDPP_LSB(word) ((uint8_t)((word) & 0xF))
 
 typedef uint8_t hidpp_report[20];
 
@@ -88,9 +90,11 @@ static uint16_t hidpp__version(hidpp_device *dev) {
 }
 
 static uint8_t feature_index(hidpp_device *dev, uint16_t id) {
-    hidpp_report req = HIDPP_MAKE(SHORT, dev, 0, 0, id >> 8, id & 0xF);
-    hidpp_report res;
+    hidpp_report req = HIDPP_MAKE(
+        SHORT, dev, 0, 0, HIDPP_MSB(id), HIDPP_LSB(id)
+    );
 
+    hidpp_report res;
     if (hidpp_send_report(dev, req, res))
         return 0;
 
@@ -288,8 +292,8 @@ int hidpp_button_divert(hidpp_device *dev, uint16_t ctrlid) {
         dev,
         hidpp_feat_index(dev, 0x1B04),
         3,
-        ctrlid >> 8,
-        ctrlid & 0xF,
+        HIDPP_MSB(ctrlid),
+        HIDPP_LSB(ctrlid),
         3
     );
     hidpp_report res;
@@ -305,8 +309,8 @@ int hidpp_button_undivert(hidpp_device *dev, uint16_t ctrlid) {
         dev,
         hidpp_feat_index(dev, 0x1B04),
         3,
-        ctrlid >> 8,
-        ctrlid & 0xF,
+        HIDPP_MSB(ctrlid),
+        HIDPP_LSB(ctrlid),
         0
     );
     hidpp_report res;
