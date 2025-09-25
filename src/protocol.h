@@ -10,6 +10,16 @@
 #ifndef HIDPPCTL_PROTOCOL_H
 #define HIDPPCTL_PROTOCOL_H
 
-struct message { };
+enum {
+    MSG_IGNORE = 0,
+    MSG_SHUTDOWN,
+};
+
+struct message {
+    int kind;
+    union {
+
+    } as;
+};
 
 #endif

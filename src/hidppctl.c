@@ -8,6 +8,7 @@
 */
 
 #include "hidpp.h"
+#include "protocol.h"
 #include <hidapi.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -229,7 +230,16 @@ void cmd_info() {
 
 /* daemon.c */
 extern void cmd_start(void);
-extern void cmd_stop(void);
+extern int send_message(struct message *msg);
+
+void cmd_stop(void) {
+    struct message msg;
+    msg.kind = MSG_SHUTDOWN;
+    if (send_message(&msg))
+        errorf("Unable to stop the daemon!");
+    else
+        printf("Stopped the daemon!");
+}
 
 int cmd_run(const char *name) {
     static struct {
