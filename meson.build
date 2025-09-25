@@ -14,5 +14,10 @@ xdo_dep = declare_dependency(link_args : ['-lxdo'])
 executable(
     'hidppctl',
     dependencies: [hidapi_dep, xdo_dep],
-    sources: ['src/hidppctl.c', 'src/hidpp.c', 'src/names.c']
+    sources: [
+        'src/daemon.c',
+        'src/hidppctl.c',
+        'src/hidpp.c',
+        'src/names.c',
+    ]
 )

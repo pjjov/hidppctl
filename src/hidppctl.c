@@ -46,13 +46,18 @@ static void print_help() {
     printf(
         "usage: hidppctl [--help] <subcommand> [...]\n"
         "       hidppctl info <vendor id> <product id> [...]\n"
-        "       hidppctl info <raw device path> [...]\n\n"
+        "       hidppctl info <raw device path> [...]\n"
+        "       hidppctl start\n"
+        "       hidppctl stop\n"
+        "\n"
         "subcommands:\n"
-        "  info        search for and show information of HID++ devices\n\n"
+        "  info        search for and show information of HID++ devices\n"
+        "\n"
         "options:\n"
         "  -c, --config <path>    use the following configuration file\n"
         "  -h, --help             show this help message and exit\n"
-        "  --version              show program's version and exit\n\n"
+        "  --version              show program's version and exit\n"
+        "\n"
         "hidppctl  Copyright (C) 2025  Предраг Јовановић\n"
     );
 }
@@ -222,32 +227,55 @@ void cmd_info() {
     }
 }
 
+/* daemon.c */
+extern void cmd_start(void);
+extern void cmd_stop(void);
+
+int cmd_run(const char *name) {
+    static struct {
+        const char *name;
+        void (*handler)(void);
+    } commands[] = {
+        { "info", cmd_info },
+        { "start", cmd_start },
+        { "stop", cmd_stop },
+        { 0 },
+    };
+
+    for (int i = 0; commands[i].name; i++) {
+        if (0 == strcmp(name, commands[i].name)) {
+            commands[i].handler();
+            return HIDPP_OK;
+        }
+    }
+
+    return HIDPP_EINVAL;
+}
+
 int main(int argc, const char *argv[]) {
     parse_args(argc, argv);
     if (g_args.failed)
-        return -1;
+        return HIDPP_EINVAL;
 
     if (g_args.help) {
         print_help();
-        return 0;
+        return HIDPP_OK;
     }
 
     if (g_args.version) {
         puts("hidppctl 1.0");
-        return 0;
+        return HIDPP_OK;
     }
 
     if (hid_init())
         errorf("Unable to initialize 'hidapi'!");
 
-    if (g_args.paramc < 1 || g_args.paramc > 3) {
+    if (g_args.paramc < 1) {
         print_help();
-        return -1;
+        return HIDPP_EINVAL;
     }
 
-    if (0 == strcmp(g_args.argv[0], "info"))
-        cmd_info();
-    else
+    if (cmd_run(g_args.argv[0]))
         errorf("Unknown subcommand '%s'!", g_args.argv[0]);
 
     hid_exit();
