@@ -125,7 +125,8 @@ mqd_t open_queue(void) {
     attr.mq_msgsize = sizeof(struct message);
     attr.mq_curmsgs = 0;
 
-    return mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, &attr);
+    int flags = O_CREAT | O_RDWR | O_NONBLOCK;
+    return mq_open(QUEUE_NAME, flags, 0644, &attr);
 }
 
 void daemon_exit(int code) {
@@ -136,4 +137,38 @@ void daemon_exit(int code) {
     unlink(LOCK_NAME);
     hid_exit();
     exit(code);
+}
+
+void daemon_poll(void) {
+    struct message msg;
+
+    if (0 == mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0)) {
+        /* handle message */
+    }
+}
+
+void cmd_start(void) {
+    const char *dir = getenv("XDG_RUNTIME_DIR");
+    daemonize(dir ? dir : "/tmp", LOCK_NAME);
+
+    if (!(g_daemon.log = fopen(LOG_NAME, "w")))
+        daemon_exit(HIDPP_EIO);
+
+    if (-1 == (g_daemon.mq = open_queue())) {
+        log_printf("ERROR: Unable to open the message queue!");
+        daemon_exit(HIDPP_EIO);
+    }
+
+    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTERM, signal_handler);
+    signal(SIGHUP, signal_handler);
+
+    while (!g_daemon.term) {
+        daemon_poll();
+        sleep(1);
+    }
+
+    daemon_exit(HIDPP_OK);
 }
