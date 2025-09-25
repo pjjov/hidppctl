@@ -172,3 +172,40 @@ void cmd_start(void) {
 
     daemon_exit(HIDPP_OK);
 }
+
+void make_path(char *out, const char *file) {
+    const char *dir;
+    char path[PATH_MAX];
+
+    if (!(dir = getenv("XDG_RUNTIME_DIR")))
+        dir = "/tmp";
+
+    size_t len = strlen(dir);
+    memcpy(path, dir, len);
+    path[len] = '/';
+    memcpy(&path[len + 1], file, strlen(file));
+}
+
+int send_message(struct message *msg) {
+    const char *dir = getenv("XDG_RUNTIME_DIR");
+    if (!dir)
+        dir = "/tmp";
+
+    char path[PATH_MAX];
+    make_path(path, QUEUE_NAME);
+
+    mqd_t mq = mq_open(path, O_RDWR, 0, NULL);
+    if (mq == -1) {
+        errorf("hidppctl: Unable to open the daemon message queue.\n");
+        return HIDPP_EIO;
+    }
+
+    if (mq_send(mq, (char *)msg, sizeof(struct message), 0)) {
+        errorf("hidppctl: Unable to send a message to the daemon.\n");
+        mq_close(mq);
+        return HIDPP_EIO;
+    }
+
+    mq_close(mq);
+    return HIDPP_OK;
+}
