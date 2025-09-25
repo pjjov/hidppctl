@@ -18,7 +18,7 @@ enum {
 struct message {
     int kind;
     union {
-
+        char reserved[248];
     } as;
 };
 

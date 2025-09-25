@@ -33,7 +33,7 @@ static struct {
     mqd_t mq;
 } g_daemon;
 
-#define QUEUE_NAME "hidppctl.mq"
+#define QUEUE_NAME "/hidppctl.mq"
 #define LOCK_NAME "hidppctl.lock"
 #define LOG_NAME "hidppctl.log"
 
@@ -187,21 +187,14 @@ void make_path(char *out, const char *file) {
 }
 
 int send_message(struct message *msg) {
-    const char *dir = getenv("XDG_RUNTIME_DIR");
-    if (!dir)
-        dir = "/tmp";
-
-    char path[PATH_MAX];
-    make_path(path, QUEUE_NAME);
-
-    mqd_t mq = mq_open(path, O_RDWR, 0, NULL);
+    mqd_t mq = mq_open(QUEUE_NAME, O_RDWR, 0, NULL);
     if (mq == -1) {
-        errorf("hidppctl: Unable to open the daemon message queue.\n");
+        errorf("Unable to open the daemon message queue.\n");
         return HIDPP_EIO;
     }
 
     if (mq_send(mq, (char *)msg, sizeof(struct message), 0)) {
-        errorf("hidppctl: Unable to send a message to the daemon.\n");
+        errorf("Unable to send a message to the daemon.\n");
         mq_close(mq);
         return HIDPP_EIO;
     }
