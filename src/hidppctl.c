@@ -173,15 +173,15 @@ int print_handle(hid_device *handle) {
     return found;
 }
 
-static void print_from_id(int vid, int pid) {
-    hid_device *handle = hid_open(vid, pid, NULL);
+static void print_from_id(int vid, int pid, const wchar_t *serial) {
+    hid_device *handle = hid_open(vid, pid, serial);
     if (!handle) {
-        printf("Unable to open HID device %d:%d.\n", vid, pid);
+        printf("Unable to open HID device %.4x:%.4x.\n", vid, pid);
         return;
     }
 
     if (print_handle(handle))
-        printf("Found a HID++ device for HID %d:%d!\n", vid, pid);
+        printf("Found a HID++ device for HID %.4x:%.4x!\n", vid, pid);
     hid_close(handle);
 }
 
@@ -203,7 +203,7 @@ static void print_each() {
         errorf("No HID devices found!");
 
     for (; info; info = info->next)
-        print_from_path(info->path);
+        print_from_id(info->vendor_id, info->product_id, info->serial_number);
 
     hid_free_enumeration(info);
 }
@@ -219,12 +219,12 @@ void cmd_info() {
         char *err;
         int vid = strtol(vendor, &err, 16);
         if (err == vendor)
-            errorf("HID device vendor id '%s:%s' is not valid.", vendor);
+            errorf("HID device vendor id '%s' is not valid.", vendor);
 
         int pid = strtol(product, &err, 16);
         if (err == product)
-            errorf("HID device product id '%s:%s' is not valid.", product);
-        print_from_id(vid, pid);
+            errorf("HID device product id '%s' is not valid.", product);
+        print_from_id(vid, pid, NULL);
     }
 }
 
