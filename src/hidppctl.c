@@ -46,13 +46,18 @@ static void errorf(const char *fmt, ...) {
 static void print_help() {
     printf(
         "usage: hidppctl [--help] <subcommand> [...]\n"
-        "       hidppctl info <vendor id> <product id> [...]\n"
-        "       hidppctl info <raw device path> [...]\n"
-        "       hidppctl start\n"
-        "       hidppctl stop\n"
+        "                info <vendor id> <product id> [...]\n"
+        "                info <raw device path> [...]\n"
+        "                start\n"
+        "                stop\n"
+        "                pair <raw device path>\n"
+        "                pair <vendor id> <product id>\n"
         "\n"
         "subcommands:\n"
         "  info        search for and show information of HID++ devices\n"
+        "  start       start the daemon server for controlling devices\n"
+        "  stop        stops the daemon server\n"
+        "  pair        pairs the HID receiver and daemon server\n"
         "\n"
         "options:\n"
         "  -c, --config <path>    use the following configuration file\n"
@@ -208,22 +213,25 @@ static void print_each() {
     hid_free_enumeration(info);
 }
 
+void parse_ids(const char *vendor, const char *product, int *vid, int *pid) {
+    char *err;
+    *vid = strtol(vendor, &err, 16);
+    if (err == vendor)
+        errorf("HID device vendor id '%s' is not valid.", vendor);
+
+    *pid = strtol(product, &err, 16);
+    if (err == product)
+        errorf("HID device product id '%s' is not valid.", product);
+}
+
 void cmd_info() {
     if (g_args.paramc == 1)
         print_each();
     else if (g_args.paramc == 2)
         print_from_path(g_args.argv[1]);
     else {
-        const char *vendor = g_args.argv[1];
-        const char *product = g_args.argv[2];
-        char *err;
-        int vid = strtol(vendor, &err, 16);
-        if (err == vendor)
-            errorf("HID device vendor id '%s' is not valid.", vendor);
-
-        int pid = strtol(product, &err, 16);
-        if (err == product)
-            errorf("HID device product id '%s' is not valid.", product);
+        int vid, pid;
+        parse_ids(g_args.argv[1], g_args.argv[2], &vid, &pid);
         print_from_id(vid, pid, NULL);
     }
 }
@@ -241,6 +249,32 @@ void cmd_stop(void) {
         printf("hidppctl: Stopped the daemon!\n");
 }
 
+void cmd_pair(void) {
+    struct message msg;
+
+    if (g_args.paramc == 2) {
+        size_t len = strlen(g_args.argv[2]);
+        if (len + 1 > sizeof(msg.as.path))
+            errorf("Path too long!");
+        msg.kind = MSG_PAIR_PATH;
+        memcpy(msg.as.path, g_args.argv[2], len + 1);
+    } else if (g_args.paramc == 3) {
+        int vid, pid;
+        parse_ids(g_args.argv[1], g_args.argv[2], &vid, &pid);
+        msg.kind = MSG_PAIR_ID;
+        msg.as.id.vendor = vid;
+        msg.as.id.product = pid;
+    } else {
+        print_help();
+        return;
+    }
+
+    if (send_message(&msg))
+        errorf("Unable to pair device!");
+    else
+        printf("hidppctl: Sent the pairing request to the server!\n");
+}
+
 int cmd_run(const char *name) {
     static struct {
         const char *name;
@@ -249,6 +283,7 @@ int cmd_run(const char *name) {
         { "info", cmd_info },
         { "start", cmd_start },
         { "stop", cmd_stop },
+        { "pair", cmd_pair },
         { 0 },
     };
 

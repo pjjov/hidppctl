@@ -13,12 +13,18 @@
 enum {
     MSG_IGNORE = 0,
     MSG_SHUTDOWN,
+    MSG_PAIR_PATH,
+    MSG_PAIR_ID,
 };
 
 struct message {
     int kind;
     union {
-        char reserved[248];
+        struct {
+            int vendor;
+            int product;
+        } id;
+        char path[248];
     } as;
 };
 
