@@ -27,6 +27,7 @@
 
 #define HANDLE_MAX 4
 #define DEVICE_MAX 16
+#define DIVERT_MAX 16
 
 static struct {
     const char *dir;
@@ -37,8 +38,10 @@ static struct {
 
     hid_device *handles[HANDLE_MAX];
     hidpp_device *devices[DEVICE_MAX];
+    struct diversion diversions[DIVERT_MAX];
     int handleCount;
     int deviceCount;
+    int divertCount;
 } g_daemon;
 
 #define QUEUE_NAME "/hidppctl.mq"
@@ -201,6 +204,16 @@ int daemon_pair(struct message *msg) {
     return HIDPP_OK;
 }
 
+int daemon_divert(struct message *msg) {
+    if (g_daemon.divertCount >= DIVERT_MAX) {
+        log_printf("ERROR: Too many diverted buttons!");
+        return HIDPP_ENOMEM;
+    }
+
+    g_daemon.diversions[g_daemon.divertCount++] = msg->as.divert;
+    return HIDPP_OK;
+}
+
 int daemon_handle_message() {
     struct message msg;
     ssize_t read = mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0);
@@ -254,6 +267,7 @@ void cmd_start(void) {
 
     g_daemon.handleCount = 0;
     g_daemon.deviceCount = 0;
+    g_daemon.divertCount = 0;
 
     while (!g_daemon.term) {
         daemon_poll();

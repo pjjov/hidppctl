@@ -52,12 +52,14 @@ static void print_help() {
         "                stop\n"
         "                pair <raw device path>\n"
         "                pair <vendor id> <product id>\n"
+        "                divert <button name or id> <key sequence>\n"
         "\n"
         "subcommands:\n"
         "  info        search for and show information of HID++ devices\n"
         "  start       start the daemon server for controlling devices\n"
         "  stop        stops the daemon server\n"
         "  pair        pairs the HID receiver and daemon server\n"
+        "  divert      maps a button to the specified X11 keysequence\n"
         "\n"
         "options:\n"
         "  -c, --config <path>    use the following configuration file\n"
@@ -275,16 +277,39 @@ void cmd_pair(void) {
         printf("hidppctl: Sent the pairing request to the server!\n");
 }
 
+void cmd_divert(void) {
+    if (g_args.paramc != 3) {
+        print_help();
+        return;
+    }
+
+    struct message msg;
+    msg.kind = MSG_DIVERT;
+    uint16_t ctrlid = hidpp_button_from_name(g_args.argv[1]);
+    size_t len = strlen(g_args.argv[2]);
+
+    if (!ctrlid && !(ctrlid = strtol(g_args.argv[1], NULL, 0)))
+        errorf("Unknown HID++ button '%s'.", g_args.argv[1]);
+
+    if (len + 1 > sizeof(msg.as.divert.keysym))
+        errorf("Keysym '%s' is too long!", g_args.argv[2]);
+
+    msg.as.divert.ctrlid = ctrlid;
+    memcpy(msg.as.divert.keysym, g_args.argv[2], len + 1);
+
+    if (send_message(&msg))
+        errorf("Unable to divert button; daemon is not running!");
+    else
+        printf("hidppctl: Sent the diversion request to the server!\n");
+}
+
 int cmd_run(const char *name) {
     static struct {
         const char *name;
         void (*handler)(void);
     } commands[] = {
-        { "info", cmd_info },
-        { "start", cmd_start },
-        { "stop", cmd_stop },
-        { "pair", cmd_pair },
-        { 0 },
+        { "info", cmd_info }, { "start", cmd_start },   { "stop", cmd_stop },
+        { "pair", cmd_pair }, { "divert", cmd_divert }, { 0 },
     };
 
     for (int i = 0; commands[i].name; i++) {
