@@ -238,7 +238,7 @@ void cmd_stop(void) {
     if (send_message(&msg))
         errorf("Unable to stop the daemon!");
     else
-        printf("Stopped the daemon!");
+        printf("hidppctl: Stopped the daemon!\n");
 }
 
 int cmd_run(const char *name) {

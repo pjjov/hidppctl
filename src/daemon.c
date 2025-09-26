@@ -125,7 +125,7 @@ mqd_t open_queue(void) {
     attr.mq_msgsize = sizeof(struct message);
     attr.mq_curmsgs = 0;
 
-    int flags = O_CREAT | O_RDWR | O_NONBLOCK;
+    int flags = O_CREAT | O_RDONLY | O_NONBLOCK;
     return mq_open(QUEUE_NAME, flags, 0644, &attr);
 }
 
@@ -139,13 +139,27 @@ void daemon_exit(int code) {
     exit(code);
 }
 
-void daemon_poll(void) {
+void daemon_handle_message() {
     struct message msg;
+    ssize_t read = mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0);
 
-    if (0 == mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0)) {
-        /* handle message */
+    if (read != sizeof(msg) && read > -1) {
+        log_printf(
+            "ERROR: incomplete message received (%lu/%lu bytes)",
+            read,
+            sizeof(msg)
+        );
+        return;
+    }
+
+    switch (msg.kind) {
+    case MSG_SHUTDOWN:
+        g_daemon.term = 1;
+        break;
     }
 }
+
+void daemon_poll(void) { daemon_handle_message(); }
 
 void cmd_start(void) {
     const char *dir = getenv("XDG_RUNTIME_DIR");
@@ -187,7 +201,7 @@ void make_path(char *out, const char *file) {
 }
 
 int send_message(struct message *msg) {
-    mqd_t mq = mq_open(QUEUE_NAME, O_RDWR, 0, NULL);
+    mqd_t mq = mq_open(QUEUE_NAME, O_WRONLY | O_NONBLOCK, 0, NULL);
     if (mq == -1) {
         errorf("Unable to open the daemon message queue.\n");
         return HIDPP_EIO;
