@@ -25,17 +25,26 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define HANDLE_MAX 4
+#define DEVICE_MAX 16
+
 static struct {
     const char *dir;
     sig_atomic_t term;
     FILE *log;
     int lock;
     mqd_t mq;
+
+    hid_device *handles[HANDLE_MAX];
+    hidpp_device *devices[DEVICE_MAX];
+    int handleCount;
+    int deviceCount;
 } g_daemon;
 
 #define QUEUE_NAME "/hidppctl.mq"
 #define LOCK_NAME "hidppctl.lock"
 #define LOG_NAME "hidppctl.log"
+#define SWID 5
 
 static void errorf(const char *fmt, ...) {
     fprintf(stderr, "hidppctl: ");
@@ -131,6 +140,13 @@ mqd_t open_queue(void) {
 
 void daemon_exit(int code) {
     log_printf("Shutting down!");
+
+    for (int i = 0; i < g_daemon.deviceCount; i++)
+        hidpp_close(g_daemon.devices[i]);
+
+    for (int i = 0; i < g_daemon.handleCount; i++)
+        hid_close(g_daemon.handles[i]);
+
     mq_close(g_daemon.mq);
     mq_unlink(QUEUE_NAME);
     close(g_daemon.lock);
@@ -139,24 +155,81 @@ void daemon_exit(int code) {
     exit(code);
 }
 
-void daemon_handle_message() {
+int daemon_pair(struct message *msg) {
+    hid_device *handle;
+
+    if (msg->kind == MSG_PAIR_PATH)
+        handle = hid_open_path(msg->as.path);
+    else
+        handle = hid_open(msg->as.id.vendor, msg->as.id.product, NULL);
+
+    if (!handle) {
+        if (msg->kind == MSG_PAIR_PATH)
+            log_printf("ERROR: Unable to pair to receiver '%s'", msg->as.path);
+        else {
+            log_printf(
+                "ERROR: Unable to pair to receiver %.4x:%.4x",
+                msg->as.id.vendor,
+                msg->as.id.product
+            );
+        }
+
+        return HIDPP_EINVAL;
+    }
+
+    if (g_daemon.handleCount >= HANDLE_MAX) {
+        log_printf("ERROR: Too many paired receivers!");
+        return HIDPP_ENOMEM;
+    }
+
+    g_daemon.handles[g_daemon.handleCount++] = handle;
+    for (int i = 1; i < 6; i++) {
+        if (g_daemon.deviceCount >= DEVICE_MAX) {
+            log_printf("ERROR: Too many paired devices!");
+            return HIDPP_ENOMEM;
+        }
+
+        hidpp_device *dev = hidpp_open(handle, i, SWID);
+        if (dev) {
+            char buffer[257];
+            hidpp_device_name(dev, buffer, 257);
+            log_printf("Paired device '%s'", buffer);
+            g_daemon.devices[g_daemon.deviceCount++] = dev;
+        }
+    }
+
+    return HIDPP_OK;
+}
+
+int daemon_handle_message() {
     struct message msg;
     ssize_t read = mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0);
+    if (read == -1)
+        return HIDPP_EAGAIN;
 
-    if (read != sizeof(msg) && read > -1) {
+    if (read != sizeof(msg)) {
         log_printf(
             "ERROR: incomplete message received (%lu/%lu bytes)",
             read,
             sizeof(msg)
         );
-        return;
+
+        return HIDPP_EIO;
     }
+
+    log_printf("Received message kind %d", msg.kind);
 
     switch (msg.kind) {
     case MSG_SHUTDOWN:
         g_daemon.term = 1;
         break;
+    case MSG_PAIR_ID:
+    case MSG_PAIR_PATH:
+        daemon_pair(&msg);
+        break;
     }
+
+    return HIDPP_OK;
 }
 
 void daemon_poll(void) { daemon_handle_message(); }
@@ -178,6 +251,9 @@ void cmd_start(void) {
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTERM, signal_handler);
     signal(SIGHUP, signal_handler);
+
+    g_daemon.handleCount = 0;
+    g_daemon.deviceCount = 0;
 
     while (!g_daemon.term) {
         daemon_poll();
