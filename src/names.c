@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct hidpp_name {
     uint16_t id;
@@ -443,4 +444,15 @@ const char *hidpp_button_name(uint16_t index) {
     );
 
     return control ? control->name : "Unknown HID++ button";
+}
+
+uint16_t hidpp_button_from_name(const char *name) {
+    if (!name)
+        return 0;
+
+    for (size_t i = 0; controls[i].id; i++)
+        if (0 == strcmp(controls[i].name, name))
+            return controls[i].id;
+
+    return 0;
 }
