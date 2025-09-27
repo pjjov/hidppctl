@@ -12,6 +12,7 @@
 #include "protocol.h"
 
 #include <iter/vector.h>
+#include <xdo.h>
 
 #include <limits.h>
 #include <stdarg.h>
@@ -27,15 +28,21 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+struct device {
+    hidpp_device *handle;
+    uint16_t prevButtons[4];
+};
+
 static struct {
     const char *dir;
     sig_atomic_t term;
     FILE *log;
     int lock;
     mqd_t mq;
+    xdo_t *xdo;
 
     vector(hid_device *) receivers;
-    vector(hidpp_device *) devices;
+    vector(struct device) devices;
     vector(struct diversion) diversions;
 } g_daemon;
 
@@ -43,6 +50,13 @@ static struct {
 #define LOCK_NAME "hidppctl.lock"
 #define LOG_NAME "hidppctl.log"
 #define SWID 5
+
+static int contains_u16(const uint16_t *array, size_t len, uint16_t val) {
+    for (size_t i = 0; i < len; i++)
+        if (array[i] == val)
+            return 1;
+    return 0;
+}
 
 static void errorf(const char *fmt, ...) {
     fprintf(stderr, "hidppctl: ");
@@ -140,7 +154,7 @@ void daemon_exit(int code) {
     log_printf("Shutting down!");
 
     for (size_t i = 0; i < vector_length(g_daemon.devices); i++)
-        hidpp_close(*vector_get(g_daemon.devices, i));
+        hidpp_close(vector_get(g_daemon.devices, i)->handle);
     vector_destroy(g_daemon.devices);
 
     for (size_t i = 0; i < vector_length(g_daemon.receivers); i++)
@@ -157,7 +171,7 @@ void daemon_exit(int code) {
 
 int daemon_pair(struct message *msg) {
     hid_device *handle;
-    hidpp_device *dev;
+    struct device dev = { 0 };
 
     if (msg->kind == MSG_PAIR_PATH)
         handle = hid_open_path(msg->as.path);
@@ -188,16 +202,16 @@ int daemon_pair(struct message *msg) {
     log_printf("Paired receiver '%s'.");
 
     for (int i = 1; i < 6; i++) {
-        if (!(dev = hidpp_open(handle, i, SWID)))
+        if (!(dev.handle = hidpp_open(handle, i, SWID)))
             continue;
 
         if (vector_push(g_daemon.devices, &dev, 1)) {
-            hidpp_close(dev);
+            hidpp_close(dev.handle);
             return HIDPP_ENOMEM;
         }
 
         char buffer[257] = "";
-        hidpp_device_name(dev, buffer, 257);
+        hidpp_device_name(dev.handle, buffer, 257);
         log_printf("Paired device '%s'.", buffer);
     }
 
@@ -205,6 +219,7 @@ int daemon_pair(struct message *msg) {
 }
 
 int daemon_divert(struct message *msg) {
+    msg->as.divert.keyseq[127] = '\0';
     return vector_push(g_daemon.diversions, &msg->as.divert, 1);
 }
 
@@ -242,8 +257,42 @@ int daemon_handle_message() {
     return HIDPP_OK;
 }
 
-int daemon_handle_event(const struct hidpp_event *e, void *user) {
+static const char *get_keyseq(uint16_t ctrlid) {
+    if (ctrlid == 0)
+        return NULL;
 
+    struct diversion *div = vector_items(g_daemon.diversions);
+    for (; div < vector_end(g_daemon.diversions); div++)
+        if (ctrlid == div->ctrlid)
+            return div->keyseq;
+
+    return NULL;
+}
+
+int daemon_handle_event(const struct hidpp_event *e, void *user) {
+    if (e->type != HIDPP_EVENT_DIVERTED_BUTTONS)
+        return HIDPP_EINVAL;
+
+    xdo_t *xdo = g_daemon.xdo;
+    struct device *dev = user;
+
+    for (int i = 0; i < 4; i++) {
+        uint16_t id = dev->prevButtons[i];
+        const char *ks = get_keyseq(id);
+
+        if (ks && !contains_u16(e->as.buttons, 4, id))
+            xdo_send_keysequence_window_up(xdo, CURRENTWINDOW, ks, 0);
+    }
+
+    for (int i = 0; i < 4; i++) {
+        uint16_t id = e->as.buttons[i];
+        const char *ks = get_keyseq(id);
+
+        if (ks && !contains_u16(dev->prevButtons, 4, id))
+            xdo_send_keysequence_window_down(xdo, CURRENTWINDOW, ks, 0);
+    }
+
+    memcpy(dev->prevButtons, e->as.buttons, sizeof(dev->prevButtons));
     return HIDPP_OK;
 }
 
@@ -251,8 +300,8 @@ void daemon_poll(void) {
     daemon_handle_message();
 
     for (int i = 0; i < vector_length(g_daemon.devices); i++) {
-        hidpp_device *dev = *vector_get(g_daemon.devices, i);
-        hidpp_poll(dev, daemon_handle_event, NULL);
+        struct device *dev = vector_get(g_daemon.devices, i);
+        hidpp_poll(dev->handle, daemon_handle_event, dev);
     }
 }
 
@@ -268,6 +317,9 @@ void daemon_start(void) {
         daemon_exit(HIDPP_EIO);
     }
 
+    if (!(g_daemon.xdo = xdo_new(":0.0")))
+        log_printf("ERROR: Unable to initialize 'xdo' library!");
+
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
@@ -275,7 +327,7 @@ void daemon_start(void) {
     signal(SIGHUP, signal_handler);
 
     g_daemon.receivers = vector_create(hid_device *, NULL);
-    g_daemon.devices = vector_create(hidpp_device *, NULL);
+    g_daemon.devices = vector_create(struct device, NULL);
     g_daemon.diversions = vector_create(struct diversion, NULL);
 
     while (!g_daemon.term) {
