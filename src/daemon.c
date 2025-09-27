@@ -52,6 +52,7 @@ static struct {
 #define LOCK_NAME "hidppctl.lock"
 #define LOG_NAME "hidppctl.log"
 #define REFRESH 5 * 60
+#define SLEEP 10 * 1000
 #define SWID 5
 
 static int contains_u16(const uint16_t *array, size_t len, uint16_t val) {
@@ -176,10 +177,18 @@ int daemon_pair(struct message *msg) {
     hid_device *handle;
     struct device dev = { 0 };
 
-    if (msg->kind == MSG_PAIR_PATH)
+    if (msg->kind == MSG_PAIR_PATH) {
+        msg->as.path[247] = '\0';
+        log_printf("Pairing to receiver '%s'", msg->as.path);
         handle = hid_open_path(msg->as.path);
-    else
+    } else {
+        log_printf(
+            "Pairing to receiver %.4x:%.4x",
+            msg->as.id.vendor,
+            msg->as.id.product
+        );
         handle = hid_open(msg->as.id.vendor, msg->as.id.product, NULL);
+    }
 
     if (!handle) {
         if (msg->kind == MSG_PAIR_PATH)
@@ -223,6 +232,12 @@ int daemon_pair(struct message *msg) {
 
 int daemon_divert(struct message *msg) {
     msg->as.divert.keyseq[127] = '\0';
+    log_printf(
+        "Diverting button 0x%.4x to keysequence '%s'",
+        msg->as.divert.ctrlid,
+        msg->as.divert.keyseq
+    );
+
     return vector_push(g_daemon.diversions, &msg->as.divert, 1);
 }
 
@@ -268,7 +283,8 @@ int daemon_handle_event(const struct hidpp_event *e, void *user) {
 void daemon_refresh_device(struct device *dev) {
     for (size_t i = 0; i < vector_length(g_daemon.diversions); i++) {
         struct diversion *div = vector_get(g_daemon.diversions, i);
-        hidpp_button_divert(dev->handle, div->ctrlid);
+        if (hidpp_button_divert(dev->handle, div->ctrlid))
+            log_printf("ERROR: Unable to divert button 0x%.4x!", div->ctrlid);
     }
 }
 
@@ -308,6 +324,7 @@ int daemon_handle_message() {
         daemon_divert(&msg);
         break;
     case MSG_REFRESH:
+        log_printf("Refreshing devices!");
         daemon_refresh();
         break;
     }
@@ -355,7 +372,7 @@ void daemon_start(void) {
 
     while (!g_daemon.term) {
         daemon_poll();
-        sleep(1);
+        usleep(SLEEP);
     }
 
     daemon_exit(HIDPP_OK);

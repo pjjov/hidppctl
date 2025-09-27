@@ -308,7 +308,6 @@ void cmd_divert(void) {
 }
 
 void cmd_refresh(void) {
-    printf("hidppctl: Refreshing device configuration!");
     struct message msg = { MSG_REFRESH };
 
     if (send_message(&msg))
