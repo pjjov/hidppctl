@@ -57,6 +57,7 @@ static void print_help() {
         "                pair <raw device path>\n"
         "                pair <vendor id> <product id>\n"
         "                divert <button name or id> <key sequence>\n"
+        "                refresh"
         "\n"
         "subcommands:\n"
         "  info        search for and show information of HID++ devices\n"
@@ -64,6 +65,7 @@ static void print_help() {
         "  stop        stops the daemon server\n"
         "  pair        pairs the HID receiver and daemon server\n"
         "  divert      maps a button to the specified X11 keysequence\n"
+        "  refresh     refreshes device configuration\n"
         "\n"
         "options:\n"
         "  -c, --config <path>    use the following configuration file\n"
@@ -305,13 +307,28 @@ void cmd_divert(void) {
         printf("hidppctl: Sent the diversion request to the server!\n");
 }
 
+void cmd_refresh(void) {
+    printf("hidppctl: Refreshing device configuration!");
+    struct message msg = { MSG_REFRESH };
+
+    if (send_message(&msg))
+        errorf("Unable to refresh configuration; daemon is not running!");
+    else
+        printf("hidppctl: Sent the refresh request to the server!\n");
+}
+
 int cmd_run(const char *name) {
     static struct {
         const char *name;
         void (*handler)(void);
     } commands[] = {
-        { "info", cmd_info }, { "start", cmd_start },   { "stop", cmd_stop },
-        { "pair", cmd_pair }, { "divert", cmd_divert }, { 0 },
+        { "info", cmd_info },
+        { "start", cmd_start },
+        { "stop", cmd_stop },
+        { "pair", cmd_pair },
+        { "divert", cmd_divert },
+        { "refresh", cmd_refresh },
+        { 0 },
     };
 
     for (int i = 0; commands[i].name; i++) {

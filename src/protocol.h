@@ -18,6 +18,7 @@ enum {
     MSG_PAIR_PATH,
     MSG_PAIR_ID,
     MSG_DIVERT,
+    MSG_REFRESH,
 };
 
 struct message {

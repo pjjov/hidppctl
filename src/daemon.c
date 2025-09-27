@@ -226,40 +226,6 @@ int daemon_divert(struct message *msg) {
     return vector_push(g_daemon.diversions, &msg->as.divert, 1);
 }
 
-int daemon_handle_message() {
-    struct message msg;
-    ssize_t read = mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0);
-    if (read == -1)
-        return HIDPP_EAGAIN;
-
-    if (read != sizeof(msg)) {
-        log_printf(
-            "ERROR: incomplete message received (%lu/%lu bytes)",
-            read,
-            sizeof(msg)
-        );
-
-        return HIDPP_EIO;
-    }
-
-    log_printf("Received message kind %d", msg.kind);
-
-    switch (msg.kind) {
-    case MSG_SHUTDOWN:
-        g_daemon.term = 1;
-        break;
-    case MSG_PAIR_ID:
-    case MSG_PAIR_PATH:
-        daemon_pair(&msg);
-        break;
-    case MSG_DIVERT:
-        daemon_divert(&msg);
-        break;
-    }
-
-    return HIDPP_OK;
-}
-
 static const char *get_keyseq(uint16_t ctrlid) {
     if (ctrlid == 0)
         return NULL;
@@ -306,10 +272,47 @@ void daemon_refresh_device(struct device *dev) {
     }
 }
 
-void daemon_refresh() {
+void daemon_refresh(void) {
     for (size_t i = 0; i < vector_length(g_daemon.devices); i++)
         daemon_refresh_device(vector_get(g_daemon.devices, i));
     g_daemon.lastRefresh = time(NULL);
+}
+
+int daemon_handle_message() {
+    struct message msg;
+    ssize_t read = mq_receive(g_daemon.mq, (char *)&msg, sizeof(msg), 0);
+    if (read == -1)
+        return HIDPP_EAGAIN;
+
+    if (read != sizeof(msg)) {
+        log_printf(
+            "ERROR: incomplete message received (%lu/%lu bytes)",
+            read,
+            sizeof(msg)
+        );
+
+        return HIDPP_EIO;
+    }
+
+    log_printf("Received message kind %d", msg.kind);
+
+    switch (msg.kind) {
+    case MSG_SHUTDOWN:
+        g_daemon.term = 1;
+        break;
+    case MSG_PAIR_ID:
+    case MSG_PAIR_PATH:
+        daemon_pair(&msg);
+        break;
+    case MSG_DIVERT:
+        daemon_divert(&msg);
+        break;
+    case MSG_REFRESH:
+        daemon_refresh();
+        break;
+    }
+
+    return HIDPP_OK;
 }
 
 void daemon_poll(void) {
