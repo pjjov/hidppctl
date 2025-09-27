@@ -11,9 +11,11 @@ project('hidppctl', 'c')
 hidapi_dep = dependency('hidapi', required: true)
 xdo_dep = declare_dependency(link_args : ['-lxdo'])
 
+libiter_dep = dependency('libiter', required: true)
+
 executable(
     'hidppctl',
-    dependencies: [hidapi_dep, xdo_dep],
+    dependencies: [hidapi_dep, xdo_dep, libiter_dep],
     sources: [
         'src/daemon.c',
         'src/hidppctl.c',
