@@ -291,11 +291,11 @@ void cmd_divert(void) {
     if (!ctrlid && !(ctrlid = strtol(g_args.argv[1], NULL, 0)))
         errorf("Unknown HID++ button '%s'.", g_args.argv[1]);
 
-    if (len + 1 > sizeof(msg.as.divert.keysym))
-        errorf("Keysym '%s' is too long!", g_args.argv[2]);
+    if (len + 1 > sizeof(msg.as.divert.keyseq))
+        errorf("Key sequence '%s' is too long!", g_args.argv[2]);
 
     msg.as.divert.ctrlid = ctrlid;
-    memcpy(msg.as.divert.keysym, g_args.argv[2], len + 1);
+    memcpy(msg.as.divert.keyseq, g_args.argv[2], len + 1);
 
     if (send_message(&msg))
         errorf("Unable to divert button; daemon is not running!");
