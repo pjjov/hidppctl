@@ -242,9 +242,21 @@ int daemon_handle_message() {
     return HIDPP_OK;
 }
 
-void daemon_poll(void) { daemon_handle_message(); }
+int daemon_handle_event(const struct hidpp_event *e, void *user) {
 
-void cmd_start(void) {
+    return HIDPP_OK;
+}
+
+void daemon_poll(void) {
+    daemon_handle_message();
+
+    for (int i = 0; i < vector_length(g_daemon.devices); i++) {
+        hidpp_device *dev = *vector_get(g_daemon.devices, i);
+        hidpp_poll(dev, daemon_handle_event, NULL);
+    }
+}
+
+void daemon_start(void) {
     const char *dir = getenv("XDG_RUNTIME_DIR");
     daemonize(dir ? dir : "/tmp", LOCK_NAME);
 

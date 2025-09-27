@@ -17,6 +17,10 @@
 
 #define SWID 4
 
+/* daemon.c */
+extern void daemon_start(void);
+extern int send_message(struct message *msg);
+
 static struct {
     int paramc;
     int argc;
@@ -238,9 +242,7 @@ void cmd_info() {
     }
 }
 
-/* daemon.c */
-extern void cmd_start(void);
-extern int send_message(struct message *msg);
+void cmd_start(void) { daemon_start(); }
 
 void cmd_stop(void) {
     struct message msg;
