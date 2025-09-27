@@ -24,6 +24,8 @@ enum hidpp_report_types {
 #define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xF))
 #define HIDPP_LSB(word) ((uint8_t)((word) & 0xF))
 
+#define TIMEOUT 10
+
 typedef uint8_t hidpp_report[20];
 
 struct hidpp_device {
@@ -31,6 +33,7 @@ struct hidpp_device {
     uint8_t id;
     uint8_t swid;
     uint16_t version;
+    int timeout;
 
     uint8_t featcount;
     uint8_t namelen;
@@ -193,6 +196,7 @@ hidpp_device *hidpp_open(hid_device *handle, uint8_t id, uint8_t swid) {
     dev->id = id;
     dev->swid = swid;
     dev->version = hidpp__version(dev);
+    dev->timeout = TIMEOUT;
 
     if (dev->version < HIDPP_WORD(2, 0)) {
         free(dev);
@@ -370,8 +374,9 @@ int hidpp_poll(hidpp_device *dev, hidpp_handler *handler, void *user) {
 
     hidpp_report res;
     struct hidpp_event e;
+    size_t size = sizeof(res);
 
-    if (sizeof(res) != hid_read(dev->handle, res, sizeof(res)))
+    if (size != hid_read_timeout(dev->handle, res, size, dev->timeout))
         return HIDPP_EIO;
 
     if (res[1] != dev->id || res[3] & 0xF)
