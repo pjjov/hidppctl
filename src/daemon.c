@@ -44,11 +44,14 @@ static struct {
     vector(hid_device *) receivers;
     vector(struct device) devices;
     vector(struct diversion) diversions;
+
+    time_t lastRefresh;
 } g_daemon;
 
 #define QUEUE_NAME "/hidppctl.mq"
 #define LOCK_NAME "hidppctl.lock"
 #define LOG_NAME "hidppctl.log"
+#define REFRESH 5 * 60
 #define SWID 5
 
 static int contains_u16(const uint16_t *array, size_t len, uint16_t val) {
@@ -296,7 +299,23 @@ int daemon_handle_event(const struct hidpp_event *e, void *user) {
     return HIDPP_OK;
 }
 
+void daemon_refresh_device(struct device *dev) {
+    for (size_t i = 0; i < vector_length(g_daemon.diversions); i++) {
+        struct diversion *div = vector_get(g_daemon.diversions, i);
+        hidpp_button_divert(dev->handle, div->ctrlid);
+    }
+}
+
+void daemon_refresh() {
+    for (size_t i = 0; i < vector_length(g_daemon.devices); i++)
+        daemon_refresh_device(vector_get(g_daemon.devices, i));
+    g_daemon.lastRefresh = time(NULL);
+}
+
 void daemon_poll(void) {
+    if (time(NULL) - g_daemon.lastRefresh > REFRESH)
+        daemon_refresh();
+
     daemon_handle_message();
 
     for (int i = 0; i < vector_length(g_daemon.devices); i++) {
@@ -329,6 +348,7 @@ void daemon_start(void) {
     g_daemon.receivers = vector_create(hid_device *, NULL);
     g_daemon.devices = vector_create(struct device, NULL);
     g_daemon.diversions = vector_create(struct diversion, NULL);
+    g_daemon.lastRefresh = time(NULL);
 
     while (!g_daemon.term) {
         daemon_poll();
