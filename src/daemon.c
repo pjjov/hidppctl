@@ -11,6 +11,8 @@
 #include "hidpp.h"
 #include "protocol.h"
 
+#include <iter/vector.h>
+
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -25,10 +27,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define HANDLE_MAX 4
-#define DEVICE_MAX 16
-#define DIVERT_MAX 16
-
 static struct {
     const char *dir;
     sig_atomic_t term;
@@ -36,12 +34,9 @@ static struct {
     int lock;
     mqd_t mq;
 
-    hid_device *handles[HANDLE_MAX];
-    hidpp_device *devices[DEVICE_MAX];
-    struct diversion diversions[DIVERT_MAX];
-    int handleCount;
-    int deviceCount;
-    int divertCount;
+    vector(hid_device *) receivers;
+    vector(hidpp_device *) devices;
+    vector(struct diversion) diversions;
 } g_daemon;
 
 #define QUEUE_NAME "/hidppctl.mq"
@@ -144,11 +139,13 @@ mqd_t open_queue(void) {
 void daemon_exit(int code) {
     log_printf("Shutting down!");
 
-    for (int i = 0; i < g_daemon.deviceCount; i++)
-        hidpp_close(g_daemon.devices[i]);
+    for (size_t i = 0; i < vector_length(g_daemon.devices); i++)
+        hidpp_close(*vector_get(g_daemon.devices, i));
+    vector_destroy(g_daemon.devices);
 
-    for (int i = 0; i < g_daemon.handleCount; i++)
-        hid_close(g_daemon.handles[i]);
+    for (size_t i = 0; i < vector_length(g_daemon.receivers); i++)
+        hid_close(*vector_get(g_daemon.receivers, i));
+    vector_destroy(g_daemon.receivers);
 
     mq_close(g_daemon.mq);
     mq_unlink(QUEUE_NAME);
@@ -160,6 +157,7 @@ void daemon_exit(int code) {
 
 int daemon_pair(struct message *msg) {
     hid_device *handle;
+    hidpp_device *dev;
 
     if (msg->kind == MSG_PAIR_PATH)
         handle = hid_open_path(msg->as.path);
@@ -180,38 +178,34 @@ int daemon_pair(struct message *msg) {
         return HIDPP_EINVAL;
     }
 
-    if (g_daemon.handleCount >= HANDLE_MAX) {
-        log_printf("ERROR: Too many paired receivers!");
+    if (vector_push(g_daemon.receivers, &handle, 1)) {
+        hid_close(handle);
         return HIDPP_ENOMEM;
     }
 
-    g_daemon.handles[g_daemon.handleCount++] = handle;
+    wchar_t wbuffer[129] = L"";
+    hid_get_product_string(handle, wbuffer, 129);
+    log_printf("Paired receiver '%s'.");
+
     for (int i = 1; i < 6; i++) {
-        if (g_daemon.deviceCount >= DEVICE_MAX) {
-            log_printf("ERROR: Too many paired devices!");
+        if (!(dev = hidpp_open(handle, i, SWID)))
+            continue;
+
+        if (vector_push(g_daemon.devices, &dev, 1)) {
+            hidpp_close(dev);
             return HIDPP_ENOMEM;
         }
 
-        hidpp_device *dev = hidpp_open(handle, i, SWID);
-        if (dev) {
-            char buffer[257];
-            hidpp_device_name(dev, buffer, 257);
-            log_printf("Paired device '%s'", buffer);
-            g_daemon.devices[g_daemon.deviceCount++] = dev;
-        }
+        char buffer[257] = "";
+        hidpp_device_name(dev, buffer, 257);
+        log_printf("Paired device '%s'.", buffer);
     }
 
     return HIDPP_OK;
 }
 
 int daemon_divert(struct message *msg) {
-    if (g_daemon.divertCount >= DIVERT_MAX) {
-        log_printf("ERROR: Too many diverted buttons!");
-        return HIDPP_ENOMEM;
-    }
-
-    g_daemon.diversions[g_daemon.divertCount++] = msg->as.divert;
-    return HIDPP_OK;
+    return vector_push(g_daemon.diversions, &msg->as.divert, 1);
 }
 
 int daemon_handle_message() {
@@ -240,6 +234,9 @@ int daemon_handle_message() {
     case MSG_PAIR_PATH:
         daemon_pair(&msg);
         break;
+    case MSG_DIVERT:
+        daemon_divert(&msg);
+        break;
     }
 
     return HIDPP_OK;
@@ -265,9 +262,9 @@ void cmd_start(void) {
     signal(SIGTERM, signal_handler);
     signal(SIGHUP, signal_handler);
 
-    g_daemon.handleCount = 0;
-    g_daemon.deviceCount = 0;
-    g_daemon.divertCount = 0;
+    g_daemon.receivers = vector_create(hid_device *, NULL);
+    g_daemon.devices = vector_create(hidpp_device *, NULL);
+    g_daemon.diversions = vector_create(struct diversion, NULL);
 
     while (!g_daemon.term) {
         daemon_poll();
