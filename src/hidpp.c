@@ -94,6 +94,14 @@ static size_t packet_length(int kind) {
     }
 }
 
+static void make_packet(
+    hidpp_packet_t *out, hidpp_device_t *dev, uint8_t feat, uint8_t func
+) {
+    hidpp_receiver_t *rcv = dev->receiver;
+    hidpp_make(out, dev->index, feat, HIDPP_BYTE(func, rcv->swid), NULL, 0);
+    memset(out->params, 0, sizeof(out->params));
+}
+
 int hidpp_make(
     hidpp_packet_t *out,
     uint8_t device,
@@ -262,8 +270,8 @@ static int protocol_version(hidpp_device_t *dev) {
     hidpp_receiver_t *rcv = dev->receiver;
 
     hidpp_packet_t req, res;
-    uint8_t params[3] = { 0x00, 0x00, 0xAA };
-    hidpp_make(&req, dev->index, 0, HIDPP_BYTE(1, rcv->swid), params, 3);
+    make_packet(&req, dev, 0, 1);
+    req.params[2] = 0xAA;
 
     if (hidpp_request(rcv, &req, &res))
         return HIDPP_EIO;
@@ -280,8 +288,9 @@ static uint8_t feature_index(hidpp_device_t *dev, uint16_t feat) {
     hidpp_receiver_t *rcv = dev->receiver;
 
     hidpp_packet_t req, res;
-    uint8_t params[2] = { HIDPP_MSB(feat), HIDPP_LSB(feat) };
-    hidpp_make(&req, dev->index, 0, HIDPP_LSN(rcv->swid), params, 2);
+    make_packet(&req, dev, 0, 0);
+    req.params[0] = HIDPP_MSB(feat);
+    req.params[1] = HIDPP_LSB(feat);
 
     if (hidpp_request(rcv, &req, &res))
         return 0;
@@ -296,7 +305,7 @@ static uint8_t feature_count(hidpp_device_t *dev) {
         return HIDPP_EIO;
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, featIndex, HIDPP_LSN(rcv->swid), NULL, 0);
+    make_packet(&req, dev, featIndex, 0);
 
     if (hidpp_request(rcv, &req, &res))
         return 0;
@@ -310,7 +319,7 @@ static int find_features(hidpp_device_t *dev) {
     dev->numFeatures = feature_count(dev);
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, featIndex, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+    make_packet(&req, dev, featIndex, 1);
 
     for (int i = 0; i < dev->numFeatures; i++) {
         req.params[0] = (uint8_t)i;
@@ -328,10 +337,10 @@ static int find_device_name(hidpp_device_t *dev) {
     uint8_t feat = hidpp_feature_id(dev, 0x0005);
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, feat, HIDPP_LSN(rcv->swid), NULL, 0);
+    make_packet(&req, dev, feat, 0);
     size_t len = hidpp_request(rcv, &req, &res) ? 0 : res.params[0];
 
-    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+    make_packet(&req, dev, feat, 1);
     size_t read = 0;
 
     while (read < len) {
@@ -355,7 +364,7 @@ static int find_device_type(hidpp_device_t *dev) {
     uint8_t feat = hidpp_feature_id(dev, 0x0005);
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(2, rcv->swid), NULL, 0);
+    make_packet(&req, dev, feat, 2);
     return hidpp_request(rcv, &req, &res) ? -1 : res.params[0];
 }
 
@@ -427,7 +436,8 @@ int hidpp_ping(hidpp_device_t *dev, uint8_t data) {
     hidpp_receiver_t *rcv = dev->receiver;
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, 0, HIDPP_BYTE(1, rcv->swid), &data, 1);
+    make_packet(&req, dev, 0, 1);
+    req.params[0] = data;
 
     if (hidpp_request(rcv, &req, &res) || res.params[2] != req.params[2])
         return HIDPP_EIO;
@@ -444,7 +454,7 @@ static uint8_t control_count(hidpp_device_t *dev) {
     uint8_t feat = dev->keymap.feature;
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, feat, HIDPP_LSN(rcv->swid), NULL, 0);
+    make_packet(&req, dev, feat, 0);
 
     if (feat == 0 || hidpp_request(rcv, &req, &res))
         return 0;
@@ -458,7 +468,7 @@ static void find_controls(hidpp_device_t *dev) {
     uint8_t feat = map->feature;
 
     hidpp_packet_t req, res;
-    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+    make_packet(&req, dev, feat, 1);
 
     for (int i = 0; i < map->numControls; i++) {
         req.params[0] = (uint8_t)i;
@@ -514,9 +524,7 @@ int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
     hidpp_receiver_t *rcv = dev->receiver;
 
     hidpp_packet_t req = { 0 };
-    hidpp_make(
-        &req, dev->index, map->feature, HIDPP_BYTE(3, rcv->swid), NULL, 0
-    );
+    make_packet(&req, dev, map->feature, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
     req.params[2] = value ? 3 : 0;
@@ -532,9 +540,7 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
     hidpp_receiver_t *rcv = dev->receiver;
 
     hidpp_packet_t req = { 0 };
-    hidpp_make(
-        &req, dev->index, map->feature, HIDPP_BYTE(3, rcv->swid), NULL, 0
-    );
+    make_packet(&req, dev, map->feature, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
     req.params[2] = 0;
