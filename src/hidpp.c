@@ -27,6 +27,14 @@
 #define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
 #define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
 
+struct hidpp_keymap_t {
+    hidpp_device_t *dev;
+    uint8_t initialized;
+    uint8_t feature;
+    uint8_t numControls;
+    uint16_t controls[UINT8_MAX];
+};
+
 struct hidpp_device_t {
     hidpp_receiver_t *receiver;
     uint16_t version;
@@ -36,6 +44,8 @@ struct hidpp_device_t {
 
     uint16_t features[UINT8_MAX];
     char name[UINT8_MAX];
+
+    hidpp_keymap_t keymap;
 };
 
 struct hidpp_receiver_t {
@@ -349,7 +359,7 @@ static int find_device_type(hidpp_device_t *dev) {
     return hidpp_request(rcv, &req, &res) ? -1 : res.params[0];
 }
 
-hidpp_device_t *hidpp_open_device(hidpp_receiver_t *rcv, uint8_t device) {
+hidpp_device_t *hidpp_device_open(hidpp_receiver_t *rcv, uint8_t device) {
     if (!rcv || device == 0 || (device > 6 && device != 0xFF))
         return NULL;
 
@@ -370,7 +380,7 @@ hidpp_device_t *hidpp_open_device(hidpp_receiver_t *rcv, uint8_t device) {
     return dev;
 }
 
-int hidpp_close_device(hidpp_device_t *dev) {
+int hidpp_device_close(hidpp_device_t *dev) {
     if (!dev)
         return HIDPP_EINVAL;
 
@@ -423,6 +433,76 @@ int hidpp_ping(hidpp_device_t *dev, uint8_t data) {
         return HIDPP_EIO;
 
     return HIDPP_OK;
+}
+
+static uint8_t keymap_index(hidpp_device_t *dev) {
+    return hidpp_feature_index(dev, 0x1B04);
+}
+
+static uint8_t control_count(hidpp_device_t *dev) {
+    hidpp_receiver_t *rcv = dev->receiver;
+    uint8_t feat = dev->keymap.feature;
+
+    hidpp_packet_t req, res;
+    hidpp_make(&req, dev->index, feat, HIDPP_LSN(rcv->swid), NULL, 0);
+
+    if (feat == 0 || hidpp_request(rcv, &req, &res))
+        return 0;
+
+    return res.params[0];
+}
+
+static void find_controls(hidpp_device_t *dev) {
+    hidpp_receiver_t *rcv = dev->receiver;
+    hidpp_keymap_t *map = &dev->keymap;
+    uint8_t feat = map->feature;
+
+    hidpp_packet_t req, res;
+    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+
+    for (int i = 0; i < map->numControls; i++) {
+        req.params[0] = (uint8_t)i;
+        map->controls[i] = 0;
+
+        if (HIDPP_OK == hidpp_request(rcv, &req, &res))
+            map->controls[i] = HIDPP_WORD(res.params[0], res.params[1]);
+    }
+}
+
+static hidpp_keymap_t *init_keymap(hidpp_device_t *dev) {
+    hidpp_keymap_t *map = &dev->keymap;
+    map->numControls = control_count(dev);
+    find_controls(dev);
+    map->initialized = HIDPP_TRUE;
+    return map;
+}
+
+hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev) {
+    if (!dev || keymap_index(dev))
+        return NULL;
+
+    if (dev->keymap.initialized)
+        return &dev->keymap;
+
+    dev->keymap.feature = keymap_index(dev);
+    return init_keymap(dev);
+}
+
+int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control) {
+    if (!map)
+        return HIDPP_EINVAL;
+
+    for (int i = 0; i < map->numControls; i++)
+        if (map->controls[i] == control)
+            return i;
+
+    return HIDPP_ENOENT;
+}
+
+int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index) {
+    if (!map)
+        return HIDPP_EINVAL;
+    return index < map->numControls ? map->controls[index] : HIDPP_ENOENT;
 }
 
 struct hid_device_info *hidpp_enumerate(

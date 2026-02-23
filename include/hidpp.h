@@ -47,6 +47,11 @@ enum hidpp_error {
     HIDPP_ETIMEDOUT = -110,
 };
 
+enum hidpp_bool {
+    HIDPP_FALSE = 0,
+    HIDPP_TRUE = 1,
+};
+
 enum hidpp_device_type {
     HIDPP_TYPE_KEYBOARD,
     HIDPP_TYPE_REMOTE,
@@ -146,6 +151,15 @@ HIDPP_API int hidpp_device_info(
 
 /** Pings the device with `data`. **/
 HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
+
+/** Returns the object for configuring device's keybindings. **/
+HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
+
+/** Resolve a control ID to its index on the device. **/
+HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);
+
+/** Resolve a keymap index to its ID on the device. **/
+HIDPP_API int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
