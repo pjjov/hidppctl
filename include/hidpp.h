@@ -128,16 +128,16 @@ HIDPP_API hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device);
 HIDPP_API int hidpp_close_device(hidpp_device *dev);
 
 /** Resolve a feature ID to its index on the device. **/
-HIDPP_API int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature);
+HIDPP_API int hidpp_feature_index(hidpp_device *dev, uint16_t feature);
 
 /** Resolve a feature index to its ID on the device. **/
-HIDPP_API int hidpp_get_feature_id(hidpp_device *dev, uint8_t index);
+HIDPP_API int hidpp_feature_id(hidpp_device *dev, uint8_t index);
 
 /** Returns the name of the feature with the passed ID. **/
-HIDPP_API const char *hidpp_get_feature_name(uint16_t feature);
+HIDPP_API const char *hidpp_feature_name(uint16_t feature);
 
 /** Reads device information to `out`. **/
-HIDPP_API int hidpp_get_device_info(
+HIDPP_API int hidpp_device_info(
     hidpp_device *dev, struct hidpp_device_info *out
 );
 

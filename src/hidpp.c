@@ -311,7 +311,7 @@ static int find_features(hidpp_device *dev) {
 
 static int find_device_name(hidpp_device *dev) {
     hidpp_receiver *rcv = dev->receiver;
-    uint8_t feat = hidpp_get_feature_id(dev, 0x0005);
+    uint8_t feat = hidpp_feature_id(dev, 0x0005);
 
     hidpp_packet req, res;
     hidpp_make(&req, dev->index, feat, HIDPP_LSN(rcv->swid), NULL, 0);
@@ -338,7 +338,7 @@ static int find_device_name(hidpp_device *dev) {
 
 static int find_device_type(hidpp_device *dev) {
     hidpp_receiver *rcv = dev->receiver;
-    uint8_t feat = hidpp_get_feature_id(dev, 0x0005);
+    uint8_t feat = hidpp_feature_id(dev, 0x0005);
 
     hidpp_packet req, res;
     hidpp_make(&req, dev->index, feat, HIDPP_BYTE(2, rcv->swid), NULL, 0);
@@ -374,7 +374,7 @@ int hidpp_close_device(hidpp_device *dev) {
     return HIDPP_OK;
 }
 
-int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature) {
+int hidpp_feature_index(hidpp_device *dev, uint16_t feature) {
     if (!dev)
         return HIDPP_EINVAL;
 
@@ -385,13 +385,13 @@ int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature) {
     return HIDPP_ENOENT;
 }
 
-int hidpp_get_feature_id(hidpp_device *dev, uint8_t index) {
+int hidpp_feature_id(hidpp_device *dev, uint8_t index) {
     if (!dev)
         return HIDPP_EINVAL;
     return index < dev->numFeatures ? dev->features[index] : HIDPP_ENOENT;
 }
 
-int hidpp_get_device_info(hidpp_device *dev, struct hidpp_device_info *out) {
+int hidpp_device_info(hidpp_device *dev, struct hidpp_device_info *out) {
     if (!dev || !out)
         return HIDPP_EINVAL;
 
