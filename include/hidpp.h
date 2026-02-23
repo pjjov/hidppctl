@@ -58,16 +58,17 @@ enum hidpp_device_type {
     HIDPP_TYPE_RECEIVER,
 };
 
-typedef struct hidpp_receiver hidpp_receiver;
-typedef struct hidpp_device hidpp_device;
+typedef struct hidpp_receiver_t hidpp_receiver_t;
+typedef struct hidpp_device_t hidpp_device_t;
+typedef struct hidpp_keymap_t hidpp_keymap_t;
 
-typedef struct hidpp_packet {
+typedef struct hidpp_packet_t {
     uint8_t kind;
     uint8_t device;
     uint8_t feat;
     uint8_t func;
     uint8_t params[HIDPP_LEN_XLONG - 4];
-} hidpp_packet;
+} hidpp_packet_t;
 
 struct hidpp_device_info {
     uint16_t version;
@@ -88,19 +89,19 @@ HIDPP_API void hidpp_exit(void);
 
     > Use hidpp_open_path() to select a specific interface.
 **/
-HIDPP_API hidpp_receiver *hidpp_open(
+HIDPP_API hidpp_receiver_t *hidpp_open(
     unsigned short vid, unsigned short pid, const wchar_t *serial
 );
 
 /** Open a HID++ receiver by platform path. **/
-HIDPP_API hidpp_receiver *hidpp_open_path(const char *path);
+HIDPP_API hidpp_receiver_t *hidpp_open_path(const char *path);
 
 /** Close a HID++ receiver and free its resources. **/
-HIDPP_API void hidpp_close(hidpp_receiver *rcv);
+HIDPP_API void hidpp_close(hidpp_receiver_t *rcv);
 
 /** Initializes `out` with passed parameters. **/
 HIDPP_API int hidpp_make(
-    hidpp_packet *out,
+    hidpp_packet_t *out,
     uint8_t dev,
     uint8_t feat,
     uint8_t func,
@@ -109,37 +110,42 @@ HIDPP_API int hidpp_make(
 );
 
 /** Send `pkt` to HID++ receiver. **/
-HIDPP_API int hidpp_send(hidpp_receiver *rcv, hidpp_packet *pkt);
+HIDPP_API int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt);
 
 /** Read one HID++ report, blocking for up to `timeout`. **/
-HIDPP_API int hidpp_receive(hidpp_receiver *rcv, hidpp_packet *out);
+HIDPP_API int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out);
 
 /** Send a packet and receive the matching response. Automatically
     retries on unrelated incoming packets (e.g. HID input reports).
 **/
 HIDPP_API int hidpp_request(
-    hidpp_receiver *rcv, hidpp_packet *request, hidpp_packet *response
+    hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 );
 
 /** Opens the device at index `device` and returns the connection. **/
-HIDPP_API hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device);
+HIDPP_API hidpp_device_t *hidpp_device_open(
+    hidpp_receiver_t *rcv, uint8_t device
+);
 
 /** Closes the `device` from the receiver. **/
-HIDPP_API int hidpp_close_device(hidpp_device *dev);
+HIDPP_API int hidpp_device_close(hidpp_device_t *dev);
 
 /** Resolve a feature ID to its index on the device. **/
-HIDPP_API int hidpp_feature_index(hidpp_device *dev, uint16_t feature);
+HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
 
 /** Resolve a feature index to its ID on the device. **/
-HIDPP_API int hidpp_feature_id(hidpp_device *dev, uint8_t index);
+HIDPP_API int hidpp_feature_id(hidpp_device_t *dev, uint8_t index);
 
 /** Returns the name of the feature with the passed ID. **/
 HIDPP_API const char *hidpp_feature_name(uint16_t feature);
 
 /** Reads device information to `out`. **/
 HIDPP_API int hidpp_device_info(
-    hidpp_device *dev, struct hidpp_device_info *out
+    hidpp_device_t *dev, struct hidpp_device_info *out
 );
+
+/** Pings the device with `data`. **/
+HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
