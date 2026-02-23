@@ -161,6 +161,12 @@ HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);
 /** Resolve a keymap index to its ID on the device. **/
 HIDPP_API int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index);
 
+/** Returns the ID of the control by it's `name`. **/
+HIDPP_API int hidpp_keymap_from_name(const char *name);
+
+/** Returns the name of the control with the passed ID. **/
+HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
+
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
     unsigned short vid, unsigned short pid
