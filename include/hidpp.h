@@ -81,26 +81,32 @@ HIDPP_API void hidpp_close(hidpp_receiver *rcv);
 
 /** Initializes `out` with passed parameters. **/
 HIDPP_API int hidpp_make(
-    hidpp_packet *out, uint8_t kind, uint8_t dev, uint8_t feat, uint8_t func
+    hidpp_packet *out,
+    uint8_t dev,
+    uint8_t feat,
+    uint8_t func,
+    uint8_t *data,
+    size_t length
 );
 
 /** Send `pkt` to HID++ receiver. **/
 HIDPP_API int hidpp_send(hidpp_receiver *rcv, hidpp_packet *pkt);
 
 /** Read one HID++ report, blocking for up to `timeout`. **/
-HIDPP_API int hidpp_receive(
-    hidpp_receiver *rcv, hidpp_packet *out, int timeout
-);
+HIDPP_API int hidpp_receive(hidpp_receiver *rcv, hidpp_packet *out);
 
 /** Send a packet and receive the matching response. Automatically
     retries on unrelated incoming packets (e.g. HID input reports).
 **/
 HIDPP_API int hidpp_request(
-    hidpp_receiver *rcv,
-    hidpp_packet *request,
-    hidpp_packet *response,
-    int timeout
+    hidpp_receiver *rcv, hidpp_packet *request, hidpp_packet *response
 );
+
+/** Opens the device at index `device` and returns the connection. **/
+HIDPP_API hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device);
+
+/** Closes the `device` from the receiver. **/
+HIDPP_API int hidpp_close_device(hidpp_device *dev);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(

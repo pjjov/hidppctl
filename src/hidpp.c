@@ -20,11 +20,22 @@
 #define MAX_RETRY 16
 
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
+#define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
 #define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xF))
 #define HIDPP_LSB(word) ((uint8_t)((word) & 0xF))
 
+struct hidpp_device {
+    hidpp_receiver *receiver;
+    uint16_t version;
+};
+
 struct hidpp_receiver {
     hid_device *handle;
+    uint8_t swid;
+    uint8_t retries;
+    int timeout;
+
+    hidpp_device devices[7];
     wchar_t error[MAX_ERROR];
 };
 
@@ -65,13 +76,26 @@ static size_t packet_length(int kind) {
 }
 
 int hidpp_make(
-    hidpp_packet *out, uint8_t kind, uint8_t device, uint8_t feat, uint8_t func
+    hidpp_packet *out,
+    uint8_t device,
+    uint8_t feat,
+    uint8_t func,
+    uint8_t *data,
+    size_t length
 ) {
-    out->kind = kind;
+    if (length <= HIDPP_LEN_SHORT - 4)
+        out->kind = HIDPP_KIND_SHORT;
+    else if (length <= HIDPP_LEN_LONG - 4)
+        out->kind = HIDPP_KIND_LONG;
+    else if (length <= HIDPP_LEN_XLONG - 4)
+        out->kind = HIDPP_KIND_XLONG;
+    else
+        return HIDPP_EINVAL;
+
     out->device = device;
     out->feat = feat;
     out->func = func;
-    memset(out->params, 0, sizeof(out->params));
+    memcpy(out->params, data, length);
     return HIDPP_OK;
 }
 
@@ -87,6 +111,7 @@ static hidpp_receiver *create_receiver(hid_device *handle) {
     }
 
     rcv->handle = handle;
+    rcv->retries = MAX_RETRY;
     return rcv;
 }
 
@@ -126,9 +151,9 @@ int hidpp_send(hidpp_receiver *rcv, hidpp_packet *pkt) {
     return HIDPP_OK;
 }
 
-int hidpp_receive(hidpp_receiver *rcv, hidpp_packet *out, int timeout) {
+int hidpp_receive(hidpp_receiver *rcv, hidpp_packet *out) {
     int ret = hid_read_timeout(
-        rcv->handle, (uint8_t *)out, sizeof(*out), timeout
+        rcv->handle, (uint8_t *)out, sizeof(*out), rcv->timeout
     );
 
     if (ret < 0) {
@@ -174,18 +199,15 @@ static const char *hidpp_strerror(uint8_t code) {
 }
 
 int hidpp_request(
-    hidpp_receiver *rcv,
-    hidpp_packet *request,
-    hidpp_packet *response,
-    int timeout
+    hidpp_receiver *rcv, hidpp_packet *request, hidpp_packet *response
 ) {
     int ret = hidpp_send(rcv, request);
 
     if (ret < 0)
         return ret;
 
-    for (int attempts = 0; attempts < MAX_RETRY; ++attempts) {
-        ret = hidpp_receive(rcv, response, timeout);
+    for (int attempts = 0; attempts < rcv->retries; ++attempts) {
+        ret = hidpp_receive(rcv, response);
 
         if (ret < 0)
             return ret;
@@ -210,6 +232,40 @@ const wchar_t *hidpp_error(hidpp_receiver *rcv) {
     if (rcv->error[0] != L'\0')
         return rcv->error;
     return hid_error(rcv->handle);
+}
+
+hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device) {
+    if (!rcv || device == 0 || (device > 6 && device != 0xFF))
+        return NULL;
+
+    hidpp_device *dev = &rcv->devices[device != 0xFF ? device : 0];
+
+    if (dev->version != 0)
+        return dev;
+
+    hidpp_packet req, res;
+    uint8_t params[3] = { 0x00, 0x00, 0xAA };
+    hidpp_make(&req, device, 0, HIDPP_BYTE(1, rcv->swid), params, 3);
+
+    if (hidpp_request(rcv, &req, &res))
+        return NULL;
+
+    dev->version = HIDPP_WORD(res.params[0], res.params[1]);
+
+    if (dev->version < HIDPP_WORD(2, 0)) {
+        dev->version = 0;
+        return NULL;
+    }
+
+    return dev;
+}
+
+int hidpp_close_device(hidpp_device *dev) {
+    if (!dev)
+        return HIDPP_EINVAL;
+
+    dev->version = 0;
+    return HIDPP_OK;
 }
 
 struct hid_device_info *hidpp_enumerate(
