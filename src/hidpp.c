@@ -28,7 +28,7 @@
 #define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
 
 struct hidpp_keymap_t {
-    hidpp_device_t *dev;
+    hidpp_device_t *device;
     uint8_t initialized;
     uint8_t feature;
     uint8_t numControls;
@@ -471,6 +471,7 @@ static void find_controls(hidpp_device_t *dev) {
 
 static hidpp_keymap_t *init_keymap(hidpp_device_t *dev) {
     hidpp_keymap_t *map = &dev->keymap;
+    map->device = dev;
     map->numControls = control_count(dev);
     find_controls(dev);
     map->initialized = HIDPP_TRUE;
@@ -503,6 +504,44 @@ int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index) {
     if (!map)
         return HIDPP_EINVAL;
     return index < map->numControls ? map->controls[index] : HIDPP_ENOENT;
+}
+
+int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
+    if (!map)
+        return HIDPP_EINVAL;
+
+    hidpp_device_t *dev = map->device;
+    hidpp_receiver_t *rcv = dev->receiver;
+
+    hidpp_packet_t req = { 0 };
+    hidpp_make(
+        &req, dev->index, map->feature, HIDPP_BYTE(3, rcv->swid), NULL, 0
+    );
+    req.params[0] = HIDPP_MSB(id);
+    req.params[1] = HIDPP_LSB(id);
+    req.params[2] = value ? 3 : 0;
+
+    return hidpp_send(rcv, &req);
+}
+
+int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
+    if (!map)
+        return HIDPP_EINVAL;
+
+    hidpp_device_t *dev = map->device;
+    hidpp_receiver_t *rcv = dev->receiver;
+
+    hidpp_packet_t req = { 0 };
+    hidpp_make(
+        &req, dev->index, map->feature, HIDPP_BYTE(3, rcv->swid), NULL, 0
+    );
+    req.params[0] = HIDPP_MSB(id);
+    req.params[1] = HIDPP_LSB(id);
+    req.params[2] = 0;
+    req.params[3] = HIDPP_MSB(remap);
+    req.params[4] = HIDPP_LSB(remap);
+
+    return hidpp_send(rcv, &req);
 }
 
 struct hid_device_info *hidpp_enumerate(

@@ -167,6 +167,14 @@ HIDPP_API int hidpp_keymap_from_name(const char *name);
 /** Returns the name of the control with the passed ID. **/
 HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
 
+/** Diverts a control to be handled by the event handler. **/
+HIDPP_API int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value);
+
+/** Remaps control's behaviour to another one's. **/
+HIDPP_API int hidpp_keymap_remap(
+    hidpp_keymap_t *map, uint16_t id, uint16_t remap
+);
+
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
     unsigned short vid, unsigned short pid
