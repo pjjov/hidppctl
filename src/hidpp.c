@@ -20,13 +20,19 @@
 #define MAX_RETRY 16
 
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
+#define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xFF))
+#define HIDPP_LSB(word) ((uint8_t)((word) & 0xFF))
+
 #define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
-#define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xF))
-#define HIDPP_LSB(word) ((uint8_t)((word) & 0xF))
+#define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
+#define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
 
 struct hidpp_device {
     hidpp_receiver *receiver;
     uint16_t version;
+    uint8_t index;
+    uint8_t numFeatures;
+    uint16_t features[UINT8_MAX];
 };
 
 struct hidpp_receiver {
@@ -95,7 +101,8 @@ int hidpp_make(
     out->device = device;
     out->feat = feat;
     out->func = func;
-    memcpy(out->params, data, length);
+    if (length > 0 && data)
+        memcpy(out->params, data, length);
     return HIDPP_OK;
 }
 
@@ -234,6 +241,71 @@ const wchar_t *hidpp_error(hidpp_receiver *rcv) {
     return hid_error(rcv->handle);
 }
 
+static int protocol_version(hidpp_device *dev) {
+    hidpp_receiver *rcv = dev->receiver;
+
+    hidpp_packet req, res;
+    uint8_t params[3] = { 0x00, 0x00, 0xAA };
+    hidpp_make(&req, dev->index, 0, HIDPP_BYTE(1, rcv->swid), params, 3);
+
+    if (hidpp_request(rcv, &req, &res))
+        return HIDPP_EIO;
+
+    dev->version = HIDPP_WORD(res.params[0], res.params[1]);
+
+    if (dev->version < HIDPP_WORD(2, 0))
+        return HIDPP_EINVAL;
+
+    return HIDPP_OK;
+}
+
+static uint8_t feature_index(hidpp_device *dev, uint16_t feat) {
+    hidpp_receiver *rcv = dev->receiver;
+
+    hidpp_packet req, res;
+    uint8_t params[2] = { HIDPP_MSB(feat), HIDPP_LSB(feat) };
+    hidpp_make(&req, dev->index, 0, HIDPP_LSN(rcv->swid), params, 2);
+
+    if (hidpp_request(rcv, &req, &res))
+        return 0;
+    return res.params[0];
+}
+
+static uint8_t feature_count(hidpp_device *dev) {
+    hidpp_receiver *rcv = dev->receiver;
+    uint8_t featIndex = feature_index(dev, 0x0001);
+
+    if (featIndex == 0)
+        return HIDPP_EIO;
+
+    hidpp_packet req, res;
+    hidpp_make(&req, dev->index, featIndex, HIDPP_LSN(rcv->swid), NULL, 0);
+
+    if (hidpp_request(rcv, &req, &res))
+        return 0;
+
+    return res.params[0];
+}
+
+static int find_features(hidpp_device *dev) {
+    hidpp_receiver *rcv = dev->receiver;
+    uint8_t featIndex = feature_index(dev, 0x0001);
+    dev->numFeatures = feature_count(dev);
+
+    hidpp_packet req, res;
+    hidpp_make(&req, dev->index, featIndex, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+
+    for (int i = 0; i < dev->numFeatures; i++) {
+        req.params[0] = (uint8_t)i;
+        dev->features[i] = 0;
+
+        if (HIDPP_OK == hidpp_request(rcv, &req, &res))
+            dev->features[i] = HIDPP_WORD(res.params[0], res.params[1]);
+    }
+
+    return HIDPP_OK;
+}
+
 hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device) {
     if (!rcv || device == 0 || (device > 6 && device != 0xFF))
         return NULL;
@@ -243,20 +315,15 @@ hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device) {
     if (dev->version != 0)
         return dev;
 
-    hidpp_packet req, res;
-    uint8_t params[3] = { 0x00, 0x00, 0xAA };
-    hidpp_make(&req, device, 0, HIDPP_BYTE(1, rcv->swid), params, 3);
+    dev->receiver = rcv;
+    dev->index = device;
 
-    if (hidpp_request(rcv, &req, &res))
-        return NULL;
-
-    dev->version = HIDPP_WORD(res.params[0], res.params[1]);
-
-    if (dev->version < HIDPP_WORD(2, 0)) {
+    if (protocol_version(dev)) {
         dev->version = 0;
         return NULL;
     }
 
+    find_features(dev);
     return dev;
 }
 
@@ -266,6 +333,27 @@ int hidpp_close_device(hidpp_device *dev) {
 
     dev->version = 0;
     return HIDPP_OK;
+}
+
+int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature) {
+    if (!dev)
+        return HIDPP_EINVAL;
+
+    for (int i = 0; i < dev->numFeatures; i++)
+        if (dev->features[i] == feature)
+            return i;
+
+    return HIDPP_ENOENT;
+}
+
+int hidpp_get_feature_id(hidpp_device *dev, uint8_t index) {
+    if (!dev)
+        return HIDPP_EINVAL;
+    return index < dev->numFeatures ? dev->features[index] : HIDPP_ENOENT;
+}
+
+int hidpp_get_feature_count(hidpp_device *dev) {
+    return dev ? dev->numFeatures : HIDPP_EINVAL;
 }
 
 struct hid_device_info *hidpp_enumerate(

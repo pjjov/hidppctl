@@ -108,6 +108,15 @@ HIDPP_API hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device);
 /** Closes the `device` from the receiver. **/
 HIDPP_API int hidpp_close_device(hidpp_device *dev);
 
+/** Resolve a feature ID to its index on the device. **/
+HIDPP_API int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature);
+
+/** Resolve a feature index to its ID on the device. **/
+HIDPP_API int hidpp_get_feature_id(hidpp_device *dev, uint8_t index);
+
+/** Return the number of features available on the device. **/
+HIDPP_API int hidpp_get_feature_count(hidpp_device *dev);
+
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
     unsigned short vid, unsigned short pid
