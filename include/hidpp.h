@@ -47,6 +47,17 @@ enum hidpp_error {
     HIDPP_ETIMEDOUT = -110,
 };
 
+enum hidpp_device_type {
+    HIDPP_TYPE_KEYBOARD,
+    HIDPP_TYPE_REMOTE,
+    HIDPP_TYPE_NUMPAD,
+    HIDPP_TYPE_MOUSE,
+    HIDPP_TYPE_TOUCHPAD,
+    HIDPP_TYPE_TRACKBALL,
+    HIDPP_TYPE_PRESENTER,
+    HIDPP_TYPE_RECEIVER,
+};
+
 typedef struct hidpp_receiver hidpp_receiver;
 typedef struct hidpp_device hidpp_device;
 
@@ -57,6 +68,14 @@ typedef struct hidpp_packet {
     uint8_t func;
     uint8_t params[HIDPP_LEN_XLONG - 4];
 } hidpp_packet;
+
+struct hidpp_device_info {
+    uint16_t version;
+    uint8_t index;
+    uint8_t type;
+    uint8_t numFeatures;
+    const char *name;
+};
 
 /** Initialize the underlying hidapi library. **/
 HIDPP_API int hidpp_init(void);
@@ -117,8 +136,10 @@ HIDPP_API int hidpp_get_feature_id(hidpp_device *dev, uint8_t index);
 /** Returns the name of the feature with the passed ID. **/
 HIDPP_API const char *hidpp_get_feature_name(uint16_t feature);
 
-/** Return the number of features available on the device. **/
-HIDPP_API int hidpp_get_feature_count(hidpp_device *dev);
+/** Reads device information to `out`. **/
+HIDPP_API int hidpp_get_device_info(
+    hidpp_device *dev, struct hidpp_device_info *out
+);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(

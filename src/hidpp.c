@@ -32,7 +32,10 @@ struct hidpp_device {
     uint16_t version;
     uint8_t index;
     uint8_t numFeatures;
+    uint8_t lenName;
+
     uint16_t features[UINT8_MAX];
+    char name[UINT8_MAX];
 };
 
 struct hidpp_receiver {
@@ -306,6 +309,42 @@ static int find_features(hidpp_device *dev) {
     return HIDPP_OK;
 }
 
+static int find_device_name(hidpp_device *dev) {
+    hidpp_receiver *rcv = dev->receiver;
+    uint8_t feat = hidpp_get_feature_id(dev, 0x0005);
+
+    hidpp_packet req, res;
+    hidpp_make(&req, dev->index, feat, HIDPP_LSN(rcv->swid), NULL, 0);
+    size_t len = hidpp_request(rcv, &req, &res) ? 0 : res.params[0];
+
+    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(1, rcv->swid), NULL, 0);
+    size_t read = 0;
+
+    while (read < len) {
+        req.params[0] = read;
+
+        if (hidpp_request(rcv, &req, &res))
+            break;
+
+        size_t size = len - read < 16 ? len - read : 16;
+        memcpy(&dev->name[read], res.params, size);
+        read += size;
+    }
+
+    dev->lenName = read;
+    dev->name[read + 1] = '\0';
+    return HIDPP_OK;
+}
+
+static int find_device_type(hidpp_device *dev) {
+    hidpp_receiver *rcv = dev->receiver;
+    uint8_t feat = hidpp_get_feature_id(dev, 0x0005);
+
+    hidpp_packet req, res;
+    hidpp_make(&req, dev->index, feat, HIDPP_BYTE(2, rcv->swid), NULL, 0);
+    return hidpp_request(rcv, &req, &res) ? -1 : res.params[0];
+}
+
 hidpp_device *hidpp_open_device(hidpp_receiver *rcv, uint8_t device) {
     if (!rcv || device == 0 || (device > 6 && device != 0xFF))
         return NULL;
@@ -352,8 +391,19 @@ int hidpp_get_feature_id(hidpp_device *dev, uint8_t index) {
     return index < dev->numFeatures ? dev->features[index] : HIDPP_ENOENT;
 }
 
-int hidpp_get_feature_count(hidpp_device *dev) {
-    return dev ? dev->numFeatures : HIDPP_EINVAL;
+int hidpp_get_device_info(hidpp_device *dev, struct hidpp_device_info *out) {
+    if (!dev || !out)
+        return HIDPP_EINVAL;
+
+    if (dev->lenName == 0)
+        find_device_name(dev);
+
+    out->version = dev->version;
+    out->index = dev->index;
+    out->type = find_device_type(dev);
+    out->numFeatures = dev->numFeatures;
+    out->name = dev->name;
+    return HIDPP_OK;
 }
 
 struct hid_device_info *hidpp_enumerate(
