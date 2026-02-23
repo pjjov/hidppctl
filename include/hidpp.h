@@ -114,6 +114,9 @@ HIDPP_API int hidpp_get_feature_index(hidpp_device *dev, uint16_t feature);
 /** Resolve a feature index to its ID on the device. **/
 HIDPP_API int hidpp_get_feature_id(hidpp_device *dev, uint8_t index);
 
+/** Returns the name of the feature with the passed ID. **/
+HIDPP_API const char *hidpp_get_feature_name(uint16_t feature);
+
 /** Return the number of features available on the device. **/
 HIDPP_API int hidpp_get_feature_count(hidpp_device *dev);
 
