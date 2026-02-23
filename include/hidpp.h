@@ -14,6 +14,14 @@
 extern "C" {
 #endif
 
+#ifndef HIDPP_INLINE
+    #define HIDPP_INLINE static inline
+#endif
+
+#ifndef HIDPP_API
+    #define HIDPP_API
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -51,41 +59,43 @@ typedef struct hidpp_packet {
 } hidpp_packet;
 
 /** Initialize the underlying hidapi library. **/
-int hidpp_init(void);
+HIDPP_API int hidpp_init(void);
 
 /** Finalize the underlying hidapi library. **/
-void hidpp_exit(void);
+HIDPP_API void hidpp_exit(void);
 
 /** Open a HID++ receiver by Vendor/Product ID. If multiple matching
     receivers are attached, the first enumerated is opened.
 
     > Use hidpp_open_path() to select a specific interface.
 **/
-hidpp_receiver *hidpp_open(
+HIDPP_API hidpp_receiver *hidpp_open(
     unsigned short vid, unsigned short pid, const wchar_t *serial
 );
 
 /** Open a HID++ receiver by platform path. **/
-hidpp_receiver *hidpp_open_path(const char *path);
+HIDPP_API hidpp_receiver *hidpp_open_path(const char *path);
 
 /** Close a HID++ receiver and free its resources. **/
-void hidpp_close(hidpp_receiver *rcv);
+HIDPP_API void hidpp_close(hidpp_receiver *rcv);
 
 /** Initializes `out` with passed parameters. **/
-int hidpp_make(
+HIDPP_API int hidpp_make(
     hidpp_packet *out, uint8_t kind, uint8_t dev, uint8_t feat, uint8_t func
 );
 
 /** Send `pkt` to HID++ receiver. **/
-int hidpp_send(hidpp_receiver *rcv, hidpp_packet *pkt);
+HIDPP_API int hidpp_send(hidpp_receiver *rcv, hidpp_packet *pkt);
 
 /** Read one HID++ report, blocking for up to `timeout`. **/
-int hidpp_receive(hidpp_receiver *rcv, hidpp_packet *out, int timeout);
+HIDPP_API int hidpp_receive(
+    hidpp_receiver *rcv, hidpp_packet *out, int timeout
+);
 
 /** Send a packet and receive the matching response. Automatically
     retries on unrelated incoming packets (e.g. HID input reports).
 **/
-int hidpp_request(
+HIDPP_API int hidpp_request(
     hidpp_receiver *rcv,
     hidpp_packet *request,
     hidpp_packet *response,
@@ -93,7 +103,9 @@ int hidpp_request(
 );
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
-struct hid_device_info *hidpp_enumerate(unsigned short vid, unsigned short pid);
+HIDPP_API struct hid_device_info *hidpp_enumerate(
+    unsigned short vid, unsigned short pid
+);
 
 #ifdef __cplusplus
 }
