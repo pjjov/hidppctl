@@ -24,6 +24,7 @@ extern "C" {
 
 #include <stddef.h>
 #include <stdint.h>
+#include <wchar.h>
 
 #define HIDPP_KIND_SHORT 0x10 /**< Short report  (7 bytes payload) */
 #define HIDPP_KIND_LONG 0x11 /**< Long report  (20 bytes payload) */
@@ -76,11 +77,28 @@ typedef struct hidpp_packet_t {
 } hidpp_packet_t;
 
 struct hidpp_device_info {
-    uint16_t version;
+    uint8_t major;
+    uint8_t minor;
+
     uint8_t index;
     uint8_t type;
     uint8_t numFeatures;
     const char *name;
+};
+
+struct hidpp_receiver_info {
+    const char *path;
+    wchar_t *serial;
+    wchar_t *manufacturer;
+    wchar_t *product;
+
+    uint16_t vendorId;
+    uint16_t productId;
+    uint16_t releaseNumber;
+    uint16_t usagePage;
+    uint16_t usage;
+    int interfaceNumber;
+    int busType;
 };
 
 /** Initialize the underlying hidapi library. **/
@@ -143,6 +161,11 @@ HIDPP_API int hidpp_feature_id(hidpp_device_t *dev, uint8_t index);
 
 /** Returns the name of the feature with the passed ID. **/
 HIDPP_API const char *hidpp_feature_name(uint16_t feature);
+
+/** Reads receiver information to `out`. **/
+HIDPP_API int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+);
 
 /** Reads device information to `out`. **/
 HIDPP_API int hidpp_device_info(

@@ -163,6 +163,30 @@ void hidpp_close(hidpp_receiver_t *rcv) {
     free(rcv);
 }
 
+int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+) {
+    if (!rcv || !out)
+        return HIDPP_EINVAL;
+
+    struct hid_device_info *info;
+    if (!(info = hid_get_device_info(rcv->handle)))
+        return HIDPP_EIO;
+
+    out->path = info->path;
+    out->serial = info->serial_number;
+    out->manufacturer = info->manufacturer_string;
+    out->product = info->product_string;
+    out->vendorId = info->vendor_id;
+    out->productId = info->product_id;
+    out->releaseNumber = info->release_number;
+    out->usagePage = info->usage_page;
+    out->usage = info->usage;
+    out->interfaceNumber = info->interface_number;
+    out->busType = info->bus_type;
+    return HIDPP_OK;
+}
+
 int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
     size_t len = packet_length(pkt->kind);
 
@@ -421,7 +445,8 @@ int hidpp_device_info(hidpp_device_t *dev, struct hidpp_device_info *out) {
     if (dev->lenName == 0)
         find_device_name(dev);
 
-    out->version = dev->version;
+    out->major = HIDPP_MSB(dev->version);
+    out->minor = HIDPP_LSB(dev->version);
     out->index = dev->index;
     out->type = find_device_type(dev);
     out->numFeatures = dev->numFeatures;
