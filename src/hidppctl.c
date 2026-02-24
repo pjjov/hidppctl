@@ -12,10 +12,14 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static struct {
     struct pf_argparser *parser;
     const char *command;
+
+    char **argv;
+    int argc;
 
     char help;
     const char *timeout;
@@ -73,7 +77,8 @@ int parse_args(int argc, char *argv[]) {
     static struct pf_argparser infoParser = {
         .name = "hidppctl info",
         .description = "\nShows information about HID++ devices\n\nOptions:\n",
-        .usage = "usage: hidppctl info [OPTIONS]... <device path>\n"
+        .usage = "usage: hidppctl info [OPTIONS]...\n"
+                 "       hidppctl info [OPTIONS]... <device path>\n"
                  "       hidppctl info [OPTIONS]... <vendor_id:product_id>\n",
         .errorInfo = errorInfo,
         .epilog = epilog,
@@ -107,6 +112,73 @@ int parse_args(int argc, char *argv[]) {
     if (pf_argparse(options.parser, mainParser.argc, &argv[1]) < 0)
         return HIDPP_EINVAL;
 
+    options.argc = options.parser->argc;
+    options.argv = options.parser->argv;
+    return HIDPP_OK;
+}
+
+hidpp_receiver_t *open_receiver(const char *name) {
+    hidpp_receiver_t *rcv;
+
+    char *colon, *end;
+    long vid = strtol(name, &colon, 16);
+    long pid = strtol(colon + 1, &end, 16);
+
+    if (vid < 0 || pid < 0 || vid > UINT16_MAX || pid > UINT16_MAX) {
+        errorf("Vendor and product ids must be between 0 and %u.", UINT16_MAX);
+        return NULL;
+    }
+
+    if (*colon == ':' && (*end == ':' || *end == '\0'))
+        rcv = hidpp_open(vid, pid, NULL);
+    else
+        rcv = hidpp_open_path(name);
+
+    if (rcv == NULL)
+        errorf("Unable to open receiver '%s'.", name);
+    return rcv;
+}
+
+int cmd_info_all(void) { return HIDPP_ENOSYS; }
+
+int cmd_info(void) {
+    if (options.argc == 0)
+        return cmd_info_all();
+
+    hidpp_receiver_t *rcv;
+    hidpp_device_t *dev;
+    struct hidpp_receiver_info info;
+    struct hidpp_device_info dinfo;
+
+    if (!(rcv = open_receiver(options.argv[0])))
+        return HIDPP_EIO;
+
+    if (hidpp_receiver_info(rcv, &info))
+        return HIDPP_EIO;
+
+    printf("HID++ receiver '%ls'\n", info.product);
+    printf("  ID: %.4x:%.4x (%s)\n", info.vendorId, info.productId, info.path);
+    printf("  Serial number: %ls\n", info.serial);
+    printf("  Manufacturer: %ls\n", info.manufacturer);
+    printf("  Release number %u\n", info.releaseNumber);
+    printf("  Usage and page: %u, %u\n", info.usage, info.usagePage);
+    printf("  Interface: %d\n", info.interfaceNumber);
+
+    for (int i = 1; i < 7; i++) {
+        if (!(dev = hidpp_device_open(rcv, i))) {
+            printf("  Device %d disconnected\n", i);
+            continue;
+        }
+
+        hidpp_device_info(dev, &dinfo);
+        printf("  Device '%s'\n", dinfo.name);
+        printf("    Version: %u.%u\n", dinfo.major, dinfo.minor);
+        printf("    Type: %u\n", dinfo.type);
+
+        hidpp_device_close(dev);
+    }
+
+    hidpp_close(rcv);
     return HIDPP_OK;
 }
 
@@ -119,5 +191,16 @@ int main(int argc, char *argv[]) {
         return HIDPP_OK;
     }
 
-    return HIDPP_ENOSYS;
+    if (hidpp_init()) {
+        errorf("Unable to initialize the hidpp library!");
+        return HIDPP_EIO;
+    }
+
+    int result = HIDPP_ENOSYS;
+
+    if (0 == strcmp(options.command, "info"))
+        result = cmd_info();
+
+    hidpp_exit();
+    return result;
 }
