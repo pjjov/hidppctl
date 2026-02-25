@@ -604,6 +604,13 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
     return hidpp_send(rcv, &req);
 }
 
+static int is_hidpp_compatible(struct hid_device_info *info) {
+    if (0 == wcscmp(info->manufacturer_string, L"Logitech"))
+        return HIDPP_TRUE;
+
+    return HIDPP_FALSE;
+}
+
 HIDPP_API size_t hidpp_enumerate(
     unsigned short vid,
     unsigned short pid,
@@ -618,12 +625,9 @@ HIDPP_API size_t hidpp_enumerate(
     size_t count = 0;
 
     for (info = head; info && count < max; info = info->next) {
-        if (info->usage_page != 0xFF43)
-            continue;
-
-        convert_receiver_info(&out[count++], info);
+        if (is_hidpp_compatible(info))
+            convert_receiver_info(&out[count++], info);
     }
 
-    hid_free_enumeration(head);
     return count;
 }

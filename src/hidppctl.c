@@ -141,7 +141,32 @@ hidpp_receiver_t *open_receiver(const char *name) {
     return rcv;
 }
 
-int cmd_info_all(void) { return HIDPP_ENOSYS; }
+int cmd_info_all(void) {
+    struct hidpp_receiver_info *info, all[32];
+    size_t len = hidpp_enumerate(0, 0, all, 32);
+
+    if (len == 0) {
+        printf("No HID++ receivers found!\n");
+        return HIDPP_OK;
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        info = &all[i];
+        printf(
+            "HID++ receiver '%ls' from '%ls'\n",
+            info->product,
+            info->manufacturer
+        );
+        printf(
+            "  ID: %.4x:%.4x (%s)\n",
+            info->vendorId,
+            info->productId,
+            info->path
+        );
+    }
+
+    return HIDPP_OK;
+}
 
 static int parse_device_index(const char *arg, uint8_t *out) {
     char *end;
