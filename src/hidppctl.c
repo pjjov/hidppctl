@@ -22,7 +22,11 @@ static struct {
     int argc;
 
     char help;
+    const char *receiver;
+    const char *device;
     const char *timeout;
+
+    uint8_t devId;
 } options = { 0 };
 
 static void errorf(const char *fmt, ...) {
@@ -41,6 +45,8 @@ int parse_args(int argc, char *argv[]) {
 
     static struct pf_option_info mainInfo[] = {
         { "-?, --help", "Shows this information." },
+        { "-r, --receiver", "Specifies which HID++ receiver to use." },
+        { "-d, --device", "Specifies which HID++ device index to use." },
         { "--timeout", "Sets the timeout for IO operations in milliseconds." },
         { 0 },
     };
@@ -48,6 +54,8 @@ int parse_args(int argc, char *argv[]) {
     static struct pf_option mainDef[] = {
         { "help", '?', PF_OPT_BOOL, &options.help },
         { "timeout", 0, PF_OPT_STR, &options.timeout },
+        { "receiver", 'r', PF_OPT_STR, &options.receiver },
+        { "device", 'd', PF_OPT_STR, &options.device },
         { 0 },
     };
 
@@ -76,12 +84,8 @@ int parse_args(int argc, char *argv[]) {
 
     static struct pf_argparser infoParser = {
         .name = "hidppctl info",
-        .description = "\nShows information about HID++ devices\n\nOptions:\n",
-        .usage = "usage: hidppctl info [OPTIONS]...\n"
-                 "       hidppctl info [OPTIONS]... <receiver path> [device "
-                 "index]\n"
-                 "       hidppctl info [OPTIONS]... <vendor_id:product_id> "
-                 "[device index]\n",
+        .description = "\nShows information about HID++ devices.\n\nOptions:\n",
+        .usage = "usage: hidppctl [OPTIONS]... info\n",
         .errorInfo = errorInfo,
         .epilog = epilog,
         .infos = infoInfo,
@@ -173,9 +177,9 @@ int cmd_info_all(void) {
 
 static int parse_device_index(const char *arg, uint8_t *out) {
     char *end;
-    long i = strtol(options.argv[1], &end, 0);
+    long i = strtol(arg, &end, 0);
 
-    if (end == arg || i < 1 || (i > 7 && i != 0xFF))
+    if (end == arg || i < 1 || (i > 6 && i != 0xFF))
         return HIDPP_EINVAL;
 
     *out = i;
@@ -245,24 +249,23 @@ static int cmd_info_dev(hidpp_receiver_t *rcv, uint8_t index) {
 }
 
 int cmd_info(void) {
-    if (options.argc == 0)
+    if (options.argc > 0) {
+        errorf("Subcommand 'info' needs no arguments; found %d", options.argc);
+        return HIDPP_EINVAL;
+    }
+
+    if (options.receiver == NULL)
         return cmd_info_all();
 
     hidpp_receiver_t *rcv;
-    uint8_t devIndex = 0;
 
-    if (options.argc == 2 && parse_device_index(options.argv[1], &devIndex)) {
-        errorf("Invalid device index; must be 256 or between 1 and 6.");
-        return HIDPP_EIO;
-    }
-
-    if (!(rcv = open_receiver(options.argv[0])))
+    if (!(rcv = open_receiver(options.receiver)))
         return HIDPP_EIO;
 
-    if (devIndex == 0)
+    if (options.devId == 0)
         return cmd_info_rcv(rcv);
     else
-        return cmd_info_dev(rcv, devIndex);
+        return cmd_info_dev(rcv, options.devId);
 
     hidpp_close(rcv);
     return HIDPP_OK;
@@ -275,6 +278,11 @@ int main(int argc, char *argv[]) {
     if (options.help) {
         pf_arghelp(options.parser, NULL);
         return HIDPP_OK;
+    }
+
+    if (options.device && parse_device_index(options.device, &options.devId)) {
+        errorf("Invalid device index; must be 256 or between 1 and 6.");
+        return HIDPP_EIO;
     }
 
     if (hidpp_init(NULL)) {
