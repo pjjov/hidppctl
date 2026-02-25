@@ -202,8 +202,11 @@ HIDPP_API int hidpp_keymap_remap(
 const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
-HIDPP_API struct hid_device_info *hidpp_enumerate(
-    unsigned short vid, unsigned short pid
+HIDPP_API size_t hidpp_enumerate(
+    unsigned short vid,
+    unsigned short pid,
+    struct hidpp_receiver_info *out,
+    size_t max
 );
 
 #ifdef __cplusplus

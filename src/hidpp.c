@@ -165,16 +165,9 @@ void hidpp_close(hidpp_receiver_t *rcv) {
     free(rcv);
 }
 
-int hidpp_receiver_info(
-    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+static int convert_receiver_info(
+    struct hidpp_receiver_info *out, struct hid_device_info *info
 ) {
-    if (!rcv || !out)
-        return HIDPP_EINVAL;
-
-    struct hid_device_info *info;
-    if (!(info = hid_get_device_info(rcv->handle)))
-        return HIDPP_EIO;
-
     out->path = info->path;
     out->serial = info->serial_number;
     out->manufacturer = info->manufacturer_string;
@@ -186,6 +179,21 @@ int hidpp_receiver_info(
     out->usage = info->usage;
     out->interfaceNumber = info->interface_number;
     out->busType = info->bus_type;
+
+    return HIDPP_OK;
+}
+
+int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+) {
+    if (!rcv || !out)
+        return HIDPP_EINVAL;
+
+    struct hid_device_info *info;
+    if (!(info = hid_get_device_info(rcv->handle)))
+        return HIDPP_EIO;
+
+    convert_receiver_info(out, info);
     return HIDPP_OK;
 }
 
@@ -375,6 +383,9 @@ static int find_device_name(hidpp_device_t *dev) {
     hidpp_receiver_t *rcv = dev->receiver;
     uint8_t feat = hidpp_feature_id(dev, 0x0005);
 
+    if (feat == 0)
+        return HIDPP_EINVAL;
+
     hidpp_packet_t req, res;
     make_packet(&req, dev, feat, 0);
     size_t len = hidpp_request(rcv, &req, &res) ? 0 : res.params[0];
@@ -401,6 +412,9 @@ static int find_device_name(hidpp_device_t *dev) {
 static int find_device_type(hidpp_device_t *dev) {
     hidpp_receiver_t *rcv = dev->receiver;
     uint8_t feat = hidpp_feature_id(dev, 0x0005);
+
+    if (feat == 0)
+        return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
     make_packet(&req, dev, feat, 2);
@@ -590,25 +604,26 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
     return hidpp_send(rcv, &req);
 }
 
-struct hid_device_info *hidpp_enumerate(
-    unsigned short vid, unsigned short pid
+HIDPP_API size_t hidpp_enumerate(
+    unsigned short vid,
+    unsigned short pid,
+    struct hidpp_receiver_info *out,
+    size_t max
 ) {
+    if (!out || max == 0)
+        return 0;
+
     struct hid_device_info *head = hid_enumerate(vid, pid);
-    struct hid_device_info *prev = NULL, *next;
+    struct hid_device_info *info;
+    size_t count = 0;
 
-    for (struct hid_device_info *cur = head; cur; cur = next) {
-        next = cur->next;
+    for (info = head; info && count < max; info = info->next) {
+        if (info->usage_page != 0xFF43)
+            continue;
 
-        if (cur->usage_page != 0xFF43) {
-            if (prev)
-                prev->next = next;
-            else
-                head = next;
-            cur->next = NULL;
-            hid_free_enumeration(cur);
-        } else {
-            prev = cur;
-        }
+        convert_receiver_info(&out[count++], info);
     }
-    return head;
+
+    hid_free_enumeration(head);
+    return count;
 }
