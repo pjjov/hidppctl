@@ -152,6 +152,7 @@ int cmd_info_all(void) {
 
     for (size_t i = 0; i < len; i++) {
         info = &all[i];
+
         printf(
             "HID++ receiver '%ls' from '%ls'\n",
             info->product,
@@ -163,6 +164,8 @@ int cmd_info_all(void) {
             info->productId,
             info->path
         );
+
+        hidpp_free_info(info);
     }
 
     return HIDPP_OK;
@@ -209,6 +212,7 @@ static int cmd_info_rcv(hidpp_receiver_t *rcv) {
         hidpp_device_close(dev);
     }
 
+    hidpp_free_info(&info);
     return HIDPP_OK;
 }
 
@@ -273,7 +277,7 @@ int main(int argc, char *argv[]) {
         return HIDPP_OK;
     }
 
-    if (hidpp_init()) {
+    if (hidpp_init(NULL)) {
         errorf("Unable to initialize the hidpp library!");
         return HIDPP_EIO;
     }

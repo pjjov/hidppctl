@@ -64,6 +64,7 @@ enum hidpp_device_type {
     HIDPP_TYPE_RECEIVER,
 };
 
+typedef struct allocator_t allocator_t;
 typedef struct hidpp_receiver_t hidpp_receiver_t;
 typedef struct hidpp_device_t hidpp_device_t;
 typedef struct hidpp_keymap_t hidpp_keymap_t;
@@ -88,9 +89,9 @@ struct hidpp_device_info {
 
 struct hidpp_receiver_info {
     const char *path;
-    wchar_t *serial;
-    wchar_t *manufacturer;
-    wchar_t *product;
+    const wchar_t *serial;
+    const wchar_t *manufacturer;
+    const wchar_t *product;
 
     uint16_t vendorId;
     uint16_t productId;
@@ -99,10 +100,12 @@ struct hidpp_receiver_info {
     uint16_t usage;
     int interfaceNumber;
     int busType;
+
+    void *_enumerate;
 };
 
 /** Initialize the underlying hidapi library. **/
-HIDPP_API int hidpp_init(void);
+HIDPP_API int hidpp_init(allocator_t *allocator);
 
 /** Finalize the underlying hidapi library. **/
 HIDPP_API void hidpp_exit(void);
@@ -166,6 +169,8 @@ HIDPP_API const char *hidpp_feature_name(uint16_t feature);
 HIDPP_API int hidpp_receiver_info(
     hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
 );
+
+HIDPP_API void hidpp_free_info(struct hidpp_receiver_info *info);
 
 /** Reads device information to `out`. **/
 HIDPP_API int hidpp_device_info(

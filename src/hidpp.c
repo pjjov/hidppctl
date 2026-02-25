@@ -9,6 +9,8 @@
 
 #include <hidpp.h>
 
+#include <allocator.h>
+#include <allocator_std.h>
 #include <hidapi/hidapi.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -27,6 +29,8 @@
 #define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
 #define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
 #define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
+
+static allocator_t *allocator = NULL;
 
 struct hidpp_keymap_t {
     hidpp_device_t *device;
@@ -128,17 +132,22 @@ int hidpp_make(
     return HIDPP_OK;
 }
 
-int hidpp_init(void) { return hid_init(); }
+int hidpp_init(allocator_t *alloc) {
+    allocator = alloc ? alloc : &standard_allocator;
+    return hid_init();
+}
+
 void hidpp_exit(void) { hid_exit(); }
 
 static hidpp_receiver_t *create_receiver(hid_device *handle) {
     hidpp_receiver_t *rcv;
 
-    if (!(rcv = calloc(1, sizeof(*rcv)))) {
+    if (!(rcv = allocate(allocator, sizeof(*rcv)))) {
         hid_close(handle);
         return NULL;
     }
 
+    memset(rcv, 0, sizeof(*rcv));
     rcv->handle = handle;
     rcv->retries = MAX_RETRY;
     rcv->timeout = DEFAULT_TIMEOUT;
@@ -162,16 +171,49 @@ void hidpp_close(hidpp_receiver_t *rcv) {
         return;
 
     hid_close(rcv->handle);
-    free(rcv);
+    deallocate(allocator, rcv, sizeof(*rcv));
+}
+
+static const char *copy_string(const char *str) {
+    size_t len = strlen(str) + 1;
+    char *out;
+
+    if (!(out = allocate(allocator, len * sizeof(char))))
+        return NULL;
+
+    memcpy(out, str, len);
+    return out;
+}
+
+static const wchar_t *copy_wide_string(const wchar_t *str) {
+    size_t len = wcslen(str) + 1;
+    wchar_t *out;
+
+    if (!(out = allocate(allocator, len * sizeof(wchar_t))))
+        return NULL;
+
+    wmemcpy(out, str, len);
+    return out;
+}
+
+static void free_wide_string(const wchar_t *str) {
+    deallocate(allocator, (void *)str, (wcslen(str) + 1) * sizeof(wchar_t));
+}
+
+void hidpp_free_info(struct hidpp_receiver_info *info) {
+    deallocate(allocator, (void *)info->path, strlen(info->path) + 1);
+    free_wide_string(info->serial);
+    free_wide_string(info->manufacturer);
+    free_wide_string(info->product);
 }
 
 static int convert_receiver_info(
     struct hidpp_receiver_info *out, struct hid_device_info *info
 ) {
-    out->path = info->path;
-    out->serial = info->serial_number;
-    out->manufacturer = info->manufacturer_string;
-    out->product = info->product_string;
+    out->path = copy_string(info->path);
+    out->serial = copy_wide_string(info->serial_number);
+    out->manufacturer = copy_wide_string(info->manufacturer_string);
+    out->product = copy_wide_string(info->product_string);
     out->vendorId = info->vendor_id;
     out->productId = info->product_id;
     out->releaseNumber = info->release_number;
@@ -628,6 +670,8 @@ HIDPP_API size_t hidpp_enumerate(
         if (is_hidpp_compatible(info))
             convert_receiver_info(&out[count++], info);
     }
+
+    hid_free_enumeration(head);
 
     return count;
 }
