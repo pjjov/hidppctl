@@ -422,7 +422,7 @@ static int compare_name(const void *l, const void *r) {
     return _l->id - _r->id;
 }
 
-const char *hidpp_get_feature_name(uint16_t index) {
+const char *hidpp_feature_name(uint16_t index) {
     struct hidpp_name *feat = bsearch(
         &index,
         features,

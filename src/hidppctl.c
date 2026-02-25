@@ -78,8 +78,10 @@ int parse_args(int argc, char *argv[]) {
         .name = "hidppctl info",
         .description = "\nShows information about HID++ devices\n\nOptions:\n",
         .usage = "usage: hidppctl info [OPTIONS]...\n"
-                 "       hidppctl info [OPTIONS]... <device path>\n"
-                 "       hidppctl info [OPTIONS]... <vendor_id:product_id>\n",
+                 "       hidppctl info [OPTIONS]... <receiver path> [device "
+                 "index]\n"
+                 "       hidppctl info [OPTIONS]... <vendor_id:product_id> "
+                 "[device index]\n",
         .errorInfo = errorInfo,
         .epilog = epilog,
         .infos = infoInfo,
@@ -141,17 +143,21 @@ hidpp_receiver_t *open_receiver(const char *name) {
 
 int cmd_info_all(void) { return HIDPP_ENOSYS; }
 
-int cmd_info(void) {
-    if (options.argc == 0)
-        return cmd_info_all();
+static int parse_device_index(const char *arg, uint8_t *out) {
+    char *end;
+    long i = strtol(options.argv[1], &end, 0);
 
-    hidpp_receiver_t *rcv;
+    if (end == arg || i < 1 || (i > 7 && i != 0xFF))
+        return HIDPP_EINVAL;
+
+    *out = i;
+    return HIDPP_OK;
+}
+
+static int cmd_info_rcv(hidpp_receiver_t *rcv) {
     hidpp_device_t *dev;
     struct hidpp_receiver_info info;
     struct hidpp_device_info dinfo;
-
-    if (!(rcv = open_receiver(options.argv[0])))
-        return HIDPP_EIO;
 
     if (hidpp_receiver_info(rcv, &info))
         return HIDPP_EIO;
@@ -177,6 +183,57 @@ int cmd_info(void) {
 
         hidpp_device_close(dev);
     }
+
+    return HIDPP_OK;
+}
+
+static int cmd_info_dev(hidpp_receiver_t *rcv, uint8_t index) {
+    hidpp_device_t *dev;
+    struct hidpp_device_info info;
+
+    if (!(dev = hidpp_device_open(rcv, index))) {
+        errorf("Unable to open device: %ls", hidpp_error(rcv));
+        return HIDPP_EIO;
+    }
+
+    if (hidpp_device_info(dev, &info)) {
+        errorf("Unable to read device information: %ls", hidpp_error(rcv));
+        hidpp_device_close(dev);
+        return HIDPP_EIO;
+    }
+
+    printf("Device %d connected '%s'\n", info.index, info.name);
+    printf("  Version: %u.%u\n", info.major, info.minor);
+    printf("  Type: %u\n", info.type);
+    printf("\n  Supported features:\n");
+
+    for (int i = 0; i < info.numFeatures; i++) {
+        uint16_t feat = hidpp_feature_id(dev, i);
+        printf("    [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
+    }
+
+    return HIDPP_OK;
+}
+
+int cmd_info(void) {
+    if (options.argc == 0)
+        return cmd_info_all();
+
+    hidpp_receiver_t *rcv;
+    uint8_t devIndex = 0;
+
+    if (options.argc == 2 && parse_device_index(options.argv[1], &devIndex)) {
+        errorf("Invalid device index; must be 256 or between 1 and 6.");
+        return HIDPP_EIO;
+    }
+
+    if (!(rcv = open_receiver(options.argv[0])))
+        return HIDPP_EIO;
+
+    if (devIndex == 0)
+        return cmd_info_rcv(rcv);
+    else
+        return cmd_info_dev(rcv, devIndex);
 
     hidpp_close(rcv);
     return HIDPP_OK;
