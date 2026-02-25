@@ -198,6 +198,9 @@ HIDPP_API int hidpp_keymap_remap(
     hidpp_keymap_t *map, uint16_t id, uint16_t remap
 );
 
+/** Returns the last error message of `rcv` or it's devices. **/
+const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
+
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API struct hid_device_info *hidpp_enumerate(
     unsigned short vid, unsigned short pid

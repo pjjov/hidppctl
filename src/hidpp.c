@@ -18,6 +18,7 @@
 
 #define MAX_ERROR 256
 #define MAX_RETRY 16
+#define DEFAULT_TIMEOUT 2000
 
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
 #define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xFF))
@@ -140,6 +141,7 @@ static hidpp_receiver_t *create_receiver(hid_device *handle) {
 
     rcv->handle = handle;
     rcv->retries = MAX_RETRY;
+    rcv->timeout = DEFAULT_TIMEOUT;
     return rcv;
 }
 
@@ -188,15 +190,23 @@ int hidpp_receiver_info(
 }
 
 int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
+    unsigned char buf[HIDPP_LEN_XLONG];
     size_t len = packet_length(pkt->kind);
 
     if (len <= 0) {
-        set_error(rcv, L"hidpp_send: invalid packet kind");
+        set_error(rcv, L"Cannot send packet; invalid packet kind");
         return HIDPP_EINVAL;
     }
 
-    if (hid_write(rcv->handle, (uint8_t *)pkt, len) < 0) {
-        propagate_error(rcv);
+    buf[0] = pkt->kind;
+    buf[1] = pkt->device;
+    buf[2] = pkt->feat;
+    buf[3] = pkt->func;
+    memcpy(&buf[4], pkt->params, len - 4);
+
+    if (hid_write(rcv->handle, buf, len) < 0) {
+        set_error(rcv, L"tried to write %lu bytes.", len);
+        // propagate_error(rcv);
         return HIDPP_EIO;
     }
 
@@ -204,21 +214,26 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
 }
 
 int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
-    int ret = hid_read_timeout(
-        rcv->handle, (uint8_t *)out, sizeof(*out), rcv->timeout
-    );
+    unsigned char buf[HIDPP_LEN_XLONG];
 
-    if (ret < 0) {
+    int ret = hid_read_timeout(rcv->handle, buf, HIDPP_LEN_XLONG, rcv->timeout);
+
+    if (ret == 0) {
+        set_error(rcv, L"Packet reading timed out");
+        return HIDPP_ETIMEDOUT;
+    } else if (ret < 0) {
         propagate_error(rcv);
         return HIDPP_EIO;
     } else if (ret < 4) {
-        set_error(rcv, L"hidpp_receive: read invalid packet");
+        set_error(rcv, L"Cannot receive invalid packet");
         return HIDPP_EIO;
-    } else if (ret == 0) {
-        set_error(rcv, L"hidpp_receive: read timed out");
-        return HIDPP_ETIMEDOUT;
     }
 
+    out->kind = buf[0];
+    out->device = buf[1];
+    out->feat = buf[2];
+    out->func = buf[3];
+    memcpy(out->params, &buf[4], HIDPP_LEN_XLONG - 4);
     return HIDPP_OK;
 }
 
@@ -278,7 +293,7 @@ int hidpp_request(
             return HIDPP_OK;
     }
 
-    set_error(rcv, L"hidpp_request: no response after %d reads", MAX_RETRY);
+    set_error(rcv, L"No response after %d reads", MAX_RETRY);
     return -1;
 }
 

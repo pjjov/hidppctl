@@ -171,7 +171,7 @@ int cmd_info(void) {
         }
 
         hidpp_device_info(dev, &dinfo);
-        printf("  Device '%s'\n", dinfo.name);
+        printf("  Device %d connected '%s'\n", i, dinfo.name);
         printf("    Version: %u.%u\n", dinfo.major, dinfo.minor);
         printf("    Type: %u\n", dinfo.type);
 
