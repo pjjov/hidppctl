@@ -434,7 +434,7 @@ const char *hidpp_feature_name(uint16_t index) {
     return feat ? feat->name : "Unknown HID++ feature";
 }
 
-const char *hidpp_keymap_name(uint16_t feature) {
+const char *hidpp_keymap_name(uint16_t index) {
     struct hidpp_name *control = bsearch(
         &index,
         controls,

@@ -145,6 +145,13 @@ hidpp_receiver_t *open_receiver(const char *name) {
     return rcv;
 }
 
+static hidpp_device_t *open_device(hidpp_receiver_t *rcv, uint8_t index) {
+    hidpp_device_t *dev;
+    if (!(dev = hidpp_device_open(rcv, index)))
+        errorf("Unable to open device: %ls", hidpp_error(rcv));
+    return dev;
+}
+
 int cmd_info_all(void) {
     struct hidpp_receiver_info *info, all[32];
     size_t len = hidpp_enumerate(0, 0, all, 32);
@@ -186,12 +193,14 @@ static int parse_device_index(const char *arg, uint8_t *out) {
     return HIDPP_OK;
 }
 
-static int cmd_info_rcv(hidpp_receiver_t *rcv) {
+static int cmd_info_rcv(void) {
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+
     hidpp_device_t *dev;
     struct hidpp_receiver_info info;
     struct hidpp_device_info dinfo;
 
-    if (hidpp_receiver_info(rcv, &info))
+    if (!rcv || hidpp_receiver_info(rcv, &info))
         return HIDPP_EIO;
 
     printf("HID++ receiver '%ls'\n", info.product);
@@ -217,58 +226,111 @@ static int cmd_info_rcv(hidpp_receiver_t *rcv) {
     }
 
     hidpp_free_info(&info);
+    hidpp_close(rcv);
     return HIDPP_OK;
 }
 
-static int cmd_info_dev(hidpp_receiver_t *rcv, uint8_t index) {
-    hidpp_device_t *dev;
+static int cmd_info_dev(void) {
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
     struct hidpp_device_info info;
 
-    if (!(dev = hidpp_device_open(rcv, index))) {
-        errorf("Unable to open device: %ls", hidpp_error(rcv));
+    if (!rcv || !dev)
         return HIDPP_EIO;
-    }
 
     if (hidpp_device_info(dev, &info)) {
         errorf("Unable to read device information: %ls", hidpp_error(rcv));
         hidpp_device_close(dev);
+        hidpp_close(rcv);
         return HIDPP_EIO;
     }
 
     printf("Device %d connected '%s'\n", info.index, info.name);
     printf("  Version: %u.%u\n", info.major, info.minor);
     printf("  Type: %u\n", info.type);
-    printf("\n  Supported features:\n");
 
-    for (int i = 0; i < info.numFeatures; i++) {
-        uint16_t feat = hidpp_feature_id(dev, i);
-        printf("    [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
-    }
-
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
     return HIDPP_OK;
 }
 
-int cmd_info(void) {
-    if (options.argc > 0) {
-        errorf("Subcommand 'info' needs no arguments; found %d", options.argc);
+static int cmd_info_features(void) {
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
+    struct hidpp_device_info info;
+
+    if (!rcv || !dev)
+        return HIDPP_EIO;
+
+    if (hidpp_device_info(dev, &info)) {
+        errorf("Unable to read device information: %ls", hidpp_error(rcv));
+        hidpp_device_close(dev);
+        hidpp_close(rcv);
+        return HIDPP_EIO;
+    }
+
+    printf("Device supports %u HID++ features:\n", info.numFeatures);
+
+    for (int i = 0; i < info.numFeatures; i++) {
+        uint16_t feat = hidpp_feature_id(dev, i);
+        printf("  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
+    }
+
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
+    return HIDPP_OK;
+}
+
+static int cmd_info_keymap(void) {
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
+    hidpp_keymap_t *map = hidpp_keymap(dev);
+    struct hidpp_keymap_info info;
+
+    if (!rcv || !dev)
+        return HIDPP_EIO;
+
+    if (!map || hidpp_keymap_info(map, &info)) {
+        printf("Selected device doesn't support keymap features!\n");
+        return HIDPP_OK;
+    }
+
+    printf("Device has %u remappable controls:\n", info.numControls);
+
+    for (int i = 0; i < info.numControls; i++) {
+        uint16_t ctrl = hidpp_keymap_id(map, i);
+        printf("  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
+    }
+
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
+    return HIDPP_OK;
+}
+
+static int cmd_info(void) {
+    if (options.argc == 1) {
+        if (0 == strcmp(options.argv[0], "keymap"))
+            return cmd_info_keymap();
+        if (0 == strcmp(options.argv[0], "features"))
+            return cmd_info_features();
+
+        errorf(
+            "Unsupported argument '%s'; Valid values are:\n"
+            "'keymap', 'features'.",
+            options.argv[0]
+        );
+        return HIDPP_EINVAL;
+    } else if (options.argc > 0) {
+        errorf("Subcommand 'info' takes 1 argument; found %d", options.argc);
         return HIDPP_EINVAL;
     }
 
     if (options.receiver == NULL)
         return cmd_info_all();
+    if (options.devId != 0)
+        return cmd_info_dev();
 
-    hidpp_receiver_t *rcv;
-
-    if (!(rcv = open_receiver(options.receiver)))
-        return HIDPP_EIO;
-
-    if (options.devId == 0)
-        return cmd_info_rcv(rcv);
-    else
-        return cmd_info_dev(rcv, options.devId);
-
-    hidpp_close(rcv);
-    return HIDPP_OK;
+    return cmd_info_rcv();
 }
 
 int main(int argc, char *argv[]) {

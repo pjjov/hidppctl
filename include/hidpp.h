@@ -104,6 +104,10 @@ struct hidpp_receiver_info {
     void *_enumerate;
 };
 
+struct hidpp_keymap_info {
+    uint8_t numControls;
+};
+
 /** Initialize the underlying hidapi library. **/
 HIDPP_API int hidpp_init(allocator_t *allocator);
 
@@ -182,6 +186,11 @@ HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
 
 /** Returns the object for configuring device's keybindings. **/
 HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
+
+/** Reads device's keymap information to `out`. **/
+HIDPP_API int hidpp_keymap_info(
+    hidpp_keymap_t *map, struct hidpp_keymap_info *out
+);
 
 /** Resolve a control ID to its index on the device. **/
 HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);

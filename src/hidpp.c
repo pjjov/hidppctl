@@ -585,7 +585,7 @@ static hidpp_keymap_t *init_keymap(hidpp_device_t *dev) {
 }
 
 hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev) {
-    if (!dev || keymap_index(dev))
+    if (!dev || 0 == keymap_index(dev))
         return NULL;
 
     if (dev->keymap.initialized)
@@ -593,6 +593,14 @@ hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev) {
 
     dev->keymap.feature = keymap_index(dev);
     return init_keymap(dev);
+}
+
+int hidpp_keymap_info(hidpp_keymap_t *map, struct hidpp_keymap_info *out) {
+    if (!map || !out)
+        return HIDPP_EINVAL;
+
+    out->numControls = map->numControls;
+    return HIDPP_OK;
 }
 
 int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control) {
