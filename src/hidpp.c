@@ -595,11 +595,45 @@ hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev) {
     return init_keymap(dev);
 }
 
-int hidpp_keymap_info(hidpp_keymap_t *map, struct hidpp_keymap_info *out) {
+int hidpp_keymap_info(
+    hidpp_keymap_t *map, struct hidpp_keymap_info *out, uint16_t id
+) {
     if (!map || !out)
         return HIDPP_EINVAL;
 
+    hidpp_receiver_t *rcv = map->device->receiver;
     out->numControls = map->numControls;
+
+    if (id != 0) {
+        uint8_t index = hidpp_keymap_index(map, id);
+
+        hidpp_packet_t req, res;
+        make_packet(&req, map->device, map->feature, 1);
+        req.params[0] = index;
+
+        if (hidpp_request(rcv, &req, &res))
+            return HIDPP_EIO;
+
+        out->controlIndex = index;
+        out->controlId = HIDPP_WORD(res.params[0], res.params[1]);
+        out->taskId = HIDPP_WORD(res.params[2], res.params[3]);
+        out->flags = res.params[4];
+        out->position = res.params[5];
+        out->group = res.params[6];
+        out->groupMask = res.params[7];
+        out->rawXY = res.params[8];
+
+        make_packet(&req, map->device, map->feature, 2);
+        req.params[0] = HIDPP_MSB(id);
+        req.params[1] = HIDPP_LSB(id);
+
+        if (hidpp_request(rcv, &req, &res))
+            return HIDPP_EIO;
+
+        out->reportFlags = res.params[2];
+        out->remapId = HIDPP_WORD(res.params[3], res.params[4]);
+    }
+
     return HIDPP_OK;
 }
 

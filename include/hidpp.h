@@ -106,6 +106,18 @@ struct hidpp_receiver_info {
 
 struct hidpp_keymap_info {
     uint8_t numControls;
+
+    uint8_t controlIndex;
+    uint16_t controlId;
+    uint16_t taskId;
+    uint8_t flags;
+    uint8_t position;
+    uint8_t group;
+    uint8_t groupMask;
+    uint8_t rawXY;
+
+    uint8_t reportFlags;
+    uint16_t remapId;
 };
 
 /** Initialize the underlying hidapi library. **/
@@ -189,7 +201,7 @@ HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
 
 /** Reads device's keymap information to `out`. **/
 HIDPP_API int hidpp_keymap_info(
-    hidpp_keymap_t *map, struct hidpp_keymap_info *out
+    hidpp_keymap_t *map, struct hidpp_keymap_info *out, uint16_t id
 );
 
 /** Resolve a control ID to its index on the device. **/

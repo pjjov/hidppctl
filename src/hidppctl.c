@@ -290,7 +290,7 @@ static int cmd_info_keymap(void) {
     if (!rcv || !dev)
         return HIDPP_EIO;
 
-    if (!map || hidpp_keymap_info(map, &info)) {
+    if (!map || hidpp_keymap_info(map, &info, 0)) {
         printf("Selected device doesn't support keymap features!\n");
         return HIDPP_OK;
     }
