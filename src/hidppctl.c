@@ -532,6 +532,9 @@ static int cmd_divert_poll(
     if (hidpp_device_poll(dev, &e))
         return HIDPP_EIO;
 
+    if (e.type != HIDPP_EVENT_DIVERTED)
+        return HIDPP_ENOSYS;
+
     for (int i = 0; i < options.argc; i++) {
         struct diversion *div = &diversions[i];
         int value = 0;

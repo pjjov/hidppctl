@@ -189,7 +189,7 @@ int hidpp_input_open(void) {
         ioctl(fd, UI_SET_KEYBIT, i);
 
     struct uinput_setup usetup = { 0 };
-    usetup.id.bustype = BUS_USB;
+    usetup.id.bustype = BUS_VIRTUAL;
     usetup.id.vendor = 0x0000;
     usetup.id.product = 0x682b;
     strncpy(usetup.name, "hidppctl", UINPUT_MAX_NAME_SIZE);
@@ -210,11 +210,8 @@ void hidpp_input_close(int fd) {
 }
 
 int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
-    if (!fd || (!mods && count > 0))
+    if (fd < 0 || (!mods && count > 0))
         return HIDPP_EINVAL;
-
-    if (count == 0)
-        return HIDPP_OK;
 
 #ifdef _WIN32
     if (count + 1 > HIDPP_MAX_INPUT)
@@ -241,7 +238,8 @@ int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
 
     for (int i = 0; i < count; i++)
         uinput_emit(fd, EV_KEY, mods[i], value ? 1 : 0);
-    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+    if (count > 0)
+        uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
 
     uinput_emit(fd, EV_KEY, key, value ? 1 : 0);
     uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
