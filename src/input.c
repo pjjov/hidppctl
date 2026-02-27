@@ -10,6 +10,7 @@
 #include <hidpp.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -78,6 +79,7 @@ struct {
     {"mediaplay",  VK_MEDIA_PLAY_PAUSE},
     {"medianext",  VK_MEDIA_NEXT_TRACK},
     {"mediaprev",  VK_MEDIA_PREV_TRACK},
+    { "", 0 },
     /* clang-format on */
 };
 
@@ -142,6 +144,7 @@ struct {
     {"apostrophe",KEY_APOSTROPHE},{"grave",     KEY_GRAVE},
     {"comma",     KEY_COMMA},     {"dot",       KEY_DOT},
     {"slash",     KEY_SLASH},
+    { "", 0 },
     /* clang-format on */
 };
 
@@ -149,9 +152,13 @@ int hidpp_input_key(const char *name) {
     if (!name)
         return HIDPP_EINVAL;
 
-    size_t len = sizeof(hidpp_input_table) / sizeof(hidpp_input_table[0]);
+    char *end;
+    int value = strtol(name, &end, 0);
 
-    for (size_t i = 0; i < len; i++) {
+    if (end != name)
+        return value;
+
+    for (size_t i = 0; hidpp_input_table[i].code; i++) {
     #ifdef _WIN32
         if (_stricmp(name, hidpp_input_table[i].name) == 0)
             return hidpp_input_table[i].code;

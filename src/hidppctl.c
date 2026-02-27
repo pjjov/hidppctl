@@ -307,12 +307,47 @@ static int cmd_info_keymap(void) {
     return HIDPP_OK;
 }
 
+extern struct {
+    const char name[12];
+    int code;
+} hidpp_input_table[];
+
+static int cmd_info_keycodes(void) {
+    printf("Aside from numeric values, key codes also have following aliases:");
+
+    const char *columns = getenv("COLUMNS");
+    size_t max = 0;
+
+    if (columns)
+        max = strtol(columns, NULL, 0);
+    if (max == 0)
+        max = 80;
+
+    size_t length = max;
+    for (size_t i = 0; hidpp_input_table[i].code; i++) {
+        size_t curr = strlen(hidpp_input_table[i].name) + 4;
+        length += curr;
+
+        if (length >= max) {
+            printf("\n  ");
+            length = 2 + curr;
+        }
+
+        printf("'%s', ", hidpp_input_table[i].name);
+    }
+
+    putc('\n', stdout);
+    return HIDPP_OK;
+}
+
 static int cmd_info(void) {
     if (options.argc == 1) {
         if (0 == strcmp(options.argv[0], "keymap"))
             return cmd_info_keymap();
         if (0 == strcmp(options.argv[0], "features"))
             return cmd_info_features();
+        if (0 == strcmp(options.argv[0], "keycodes"))
+            return cmd_info_keycodes();
 
         errorf(
             "Unsupported argument '%s'; Valid values are:\n"
