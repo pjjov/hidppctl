@@ -235,6 +235,21 @@ HIDPP_API size_t hidpp_enumerate(
     size_t max
 );
 
+/** Opens a file descriptor for simulating keyboard input. **/
+HIDPP_API int hidpp_input_open(void);
+
+/** Closes the file descriptor for simulating keyboard input. **/
+HIDPP_API void hidpp_input_close(int fd);
+
+/** Returns a platform-specific key code for a given `name`. **/
+HIDPP_API int hidpp_input_key(const char *name);
+
+/** Simulates key press using specified modifiers. **/
+HIDPP_API int hidpp_input_press(int fd, int key, int *mods, size_t count);
+
+/** Simulates key release using specified modifiers. **/
+HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
+
 #ifdef __cplusplus
 }
 #endif
