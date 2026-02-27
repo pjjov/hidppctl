@@ -10,14 +10,17 @@
 #include <hidpp.h>
 #include <pf_argparse.h>
 
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+static volatile sig_atomic_t terminate = 0;
+
 #define HIDPP_MAX_DIVERT 32
 #define HIDPP_MAX_MODS 8
 
-struct diversion {
+static struct diversion {
     uint16_t ctrl;
     char state;
     int key;
@@ -39,6 +42,8 @@ static struct {
 
     uint8_t devId;
 } options = { 0 };
+
+static void signal_handler(int sig) { terminate = 1; }
 
 static void errorf(const char *fmt, ...) {
     va_list args;
@@ -483,7 +488,7 @@ static int parse_diversion(int i, char *arg) {
 }
 
 static int cmd_divert_init(hidpp_keymap_t *map) {
-    if (map) {
+    if (!map) {
         errorf("Specified device doesn't support diversion!");
         return HIDPP_EIO;
     }
@@ -557,7 +562,11 @@ static int cmd_divert_loop(int needsInput) {
     if (!dev || !rcv || cmd_divert_init(map))
         return HIDPP_EIO;
 
-    cmd_divert_poll(dev, map, input);
+    signal(SIGTERM, signal_handler);
+    printf("Type Ctrl+C to stop the program.\n");
+
+    while (!terminate)
+        cmd_divert_poll(dev, map, input);
 
     cmd_divert_term(map);
     hidpp_device_close(dev);
