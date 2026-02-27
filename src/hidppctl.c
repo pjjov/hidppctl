@@ -14,6 +14,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define HIDPP_MAX_DIVERT 32
+#define HIDPP_MAX_MODS 8
+
+struct diversion {
+    uint16_t ctrl;
+    char state;
+    int key;
+    int count;
+    int mods[HIDPP_MAX_MODS];
+} diversions[HIDPP_MAX_DIVERT] = { 0 };
+
 static struct {
     struct pf_argparser *parser;
     const char *command;
@@ -93,6 +104,32 @@ int parse_args(int argc, char *argv[]) {
         .parent = &mainParser
     };
 
+    static struct pf_option_info divertInfo[] = {
+        { "-?, --help", "Shows this information." },
+        { 0 },
+    };
+
+    static struct pf_option divertDef[] = {
+        { "help", '?', PF_OPT_BOOL, &options.help },
+        { 0 },
+    };
+
+    static struct pf_argparser divertParser = {
+        .name = "hidppctl divert",
+        .description
+        = "\nDiverts specified device's buttons and prints associated events."
+          "\nYou can also rebind device's buttons using an argument like this:"
+          "\n    '<button code>=<key code>[+<modifier>]' "
+          "\nFor example: '0x0104=home+lshift'."
+          "\n\nOptions:\n",
+        .usage = "usage: hidppctl [OPTIONS]... divert [buttons]...\n",
+        .errorInfo = errorInfo,
+        .epilog = epilog,
+        .infos = divertInfo,
+        .options = divertDef,
+        .parent = &mainParser
+    };
+
     if (pf_argparse(&mainParser, argc, argv) < 0)
         return HIDPP_EINVAL;
 
@@ -108,6 +145,8 @@ int parse_args(int argc, char *argv[]) {
 
     if (0 == strcmp(cmd, "info"))
         options.parser = &infoParser;
+    if (0 == strcmp(cmd, "divert"))
+        options.parser = &divertParser;
 
     if (options.parser == &mainParser) {
         errorf("Unknown subcommand '%s'!", cmd);
@@ -368,6 +407,193 @@ static int cmd_info(void) {
     return cmd_info_rcv();
 }
 
+static char *find_next_chr(char *str, char chr) {
+    char *out = strchr(str, chr);
+    if (out)
+        *out = '\0';
+    return out;
+}
+
+static int parse_diversion_ctrl(char *str, uint16_t *out) {
+    char *end;
+    long ctrl = strtol(str, &end, 0);
+
+    if (end == str) {
+        ctrl = hidpp_keymap_from_name(str);
+
+        if (ctrl == 0) {
+            errorf("Unknown control name '%s'", str);
+            return HIDPP_EINVAL;
+        }
+    }
+
+    if (ctrl < 0 || ctrl > UINT16_MAX) {
+        errorf(
+            "Control codes must be between 0 and %u; got %ld", UINT16_MAX, ctrl
+        );
+        return HIDPP_EINVAL;
+    }
+
+    *out = ctrl;
+    return HIDPP_OK;
+}
+
+static int parse_diversion_keys(char *str, int i) {
+    char *start = str;
+    char *end;
+    int count = -1;
+
+    do {
+        if (count > HIDPP_MAX_MODS) {
+            errorf("Too many modifiers!");
+            return HIDPP_ENOMEM;
+        }
+
+        end = find_next_chr(start, '+');
+        int key = hidpp_input_key(start);
+
+        if (key < 0) {
+            errorf("Unknown key code '%s'.", start);
+            return HIDPP_EINVAL;
+        }
+
+        if (count == -1)
+            diversions[i].key = key;
+        else
+            diversions[i].mods[count] = key;
+
+        count++;
+        start = end + 1;
+    } while (end);
+
+    diversions[i].count = count;
+    return HIDPP_OK;
+}
+
+static int parse_diversion(int i, char *arg) {
+    char *ctrlEnd = find_next_chr(arg, '=');
+
+    if (parse_diversion_ctrl(arg, &diversions[i].ctrl))
+        return HIDPP_EINVAL;
+
+    if (ctrlEnd && parse_diversion_keys(&ctrlEnd[1], i))
+        return HIDPP_EINVAL;
+
+    return HIDPP_OK;
+}
+
+static int cmd_divert_init(hidpp_keymap_t *map) {
+    if (map) {
+        errorf("Specified device doesn't support diversion!");
+        return HIDPP_EIO;
+    }
+
+    for (int i = 0; i < options.argc; i++) {
+        uint16_t ctrl = diversions[i].ctrl;
+
+        if (hidpp_keymap_divert(map, ctrl, HIDPP_TRUE)) {
+            errorf("Unable to divert the control with id 0x%.4x!", ctrl);
+            return HIDPP_EIO;
+        }
+    }
+
+    return HIDPP_OK;
+}
+
+static int cmd_divert_term(hidpp_keymap_t *map) {
+    for (int i = 0; i < options.argc; i++) {
+        uint16_t ctrl = diversions[i].ctrl;
+
+        if (hidpp_keymap_divert(map, ctrl, HIDPP_FALSE))
+            errorf("Unable to undivert the control with id 0x%.4x!", ctrl);
+    }
+
+    return HIDPP_OK;
+}
+
+static void cmd_divert_set(struct diversion *div, int input, int value) {
+    if (div->state == value)
+        return;
+
+    hidpp_input_set(input, div->key, div->mods, div->count, value);
+    div->state = value;
+}
+
+static int cmd_divert_poll(
+    hidpp_device_t *dev, hidpp_keymap_t *map, int input
+) {
+    struct hidpp_event e;
+
+    if (hidpp_device_poll(dev, &e))
+        return HIDPP_EIO;
+
+    for (int i = 0; i < options.argc; i++) {
+        struct diversion *div = &diversions[i];
+        int value = 0;
+
+        for (int i = 0; i < 4; i++)
+            if (e.as.diverted[i] == div->ctrl)
+                value = 1;
+
+        if (value != div->state)
+            cmd_divert_set(div, input, value);
+    }
+
+    return HIDPP_OK;
+}
+
+static int cmd_divert_loop(int needsInput) {
+    int input = -1;
+
+    if (needsInput && -1 == (input = hidpp_input_open())) {
+        errorf("Unable to simulate input!");
+        return HIDPP_EIO;
+    }
+
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
+    hidpp_keymap_t *map = hidpp_keymap(dev);
+
+    if (!dev || !rcv || cmd_divert_init(map))
+        return HIDPP_EIO;
+
+    cmd_divert_poll(dev, map, input);
+
+    cmd_divert_term(map);
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
+
+    if (needsInput)
+        hidpp_input_close(input);
+    return HIDPP_OK;
+}
+
+static int cmd_divert(void) {
+    if (options.argc == 0)
+        return HIDPP_EINVAL;
+
+    if (options.argc > HIDPP_MAX_DIVERT) {
+        errorf("Too many diversions specified!");
+        return HIDPP_ENOMEM;
+    }
+
+    if (!options.receiver || options.devId == 0) {
+        errorf("Subcommand requires both a receiver and a device specified!");
+        return HIDPP_EINVAL;
+    }
+
+    int hasInput = HIDPP_FALSE;
+
+    for (int i = 0; i < options.argc; i++) {
+        if (parse_diversion(i, options.argv[i]))
+            return HIDPP_EINVAL;
+        if (diversions[i].key)
+            hasInput = HIDPP_TRUE;
+    }
+
+    return cmd_divert_loop(hasInput);
+}
+
 int main(int argc, char *argv[]) {
     if (parse_args(argc, argv))
         return HIDPP_EINVAL;
@@ -391,6 +617,8 @@ int main(int argc, char *argv[]) {
 
     if (0 == strcmp(options.command, "info"))
         result = cmd_info();
+    else if (0 == strcmp(options.command, "divert"))
+        result = cmd_divert();
 
     hidpp_exit();
     return result;

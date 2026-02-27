@@ -268,6 +268,11 @@ HIDPP_API int hidpp_input_press(int fd, int key, int *mods, size_t count);
 /** Simulates key release using specified modifiers. **/
 HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
 
+/** Simulates key press or release using specified modifiers. **/
+HIDPP_API int hidpp_input_set(
+    int fd, int key, int *mods, size_t count, int value
+);
+
 #ifdef __cplusplus
 }
 #endif

@@ -209,9 +209,7 @@ void hidpp_input_close(int fd) {
 #endif
 }
 
-static int hidpp__input_set(
-    int fd, int key, int *mods, size_t count, int value
-) {
+int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
     if (!fd || (!mods && count > 0))
         return HIDPP_EINVAL;
 
@@ -253,9 +251,9 @@ static int hidpp__input_set(
 }
 
 int hidpp_input_press(int fd, int key, int *mods, size_t count) {
-    return hidpp__input_set(fd, key, mods, count, 1);
+    return hidpp_input_set(fd, key, mods, count, 1);
 }
 
 int hidpp_input_release(int fd, int key, int *mods, size_t count) {
-    return hidpp__input_set(fd, key, mods, count, 0);
+    return hidpp_input_set(fd, key, mods, count, 0);
 }
