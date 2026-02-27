@@ -492,6 +492,50 @@ int hidpp_device_close(hidpp_device_t *dev) {
     return HIDPP_OK;
 }
 
+static int parse_event(
+    hidpp_device_t *dev, struct hidpp_event *e, hidpp_packet_t *pkt
+) {
+    uint16_t feat = hidpp_feature_id(dev, pkt->feat);
+    uint8_t func = pkt->func >> 8;
+
+    switch (feat) {
+    case 0x1b00:
+    case 0x1b02:
+    case 0x1b04:
+        if (func == 0) {
+            e->type = HIDPP_EVENT_DIVERTED;
+            e->as.diverted[0] = HIDPP_WORD(pkt->params[0], pkt->params[1]);
+            e->as.diverted[1] = HIDPP_WORD(pkt->params[2], pkt->params[3]);
+            e->as.diverted[2] = HIDPP_WORD(pkt->params[4], pkt->params[5]);
+            e->as.diverted[3] = HIDPP_WORD(pkt->params[6], pkt->params[7]);
+            return HIDPP_OK;
+        }
+
+        break;
+
+    default:
+        break;
+    }
+
+    e->type = HIDPP_EVENT_NONE;
+    return HIDPP_EIO;
+}
+
+int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out) {
+    if (!dev || !out)
+        return HIDPP_EINVAL;
+
+    hidpp_packet_t pkt;
+    int res;
+
+    do {
+        if ((res = hidpp_receive(dev->receiver, &pkt)))
+            return res;
+    } while (dev->index != pkt.device || pkt.func & 0xF);
+
+    return parse_event(dev, out, &pkt);
+}
+
 int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature) {
     if (!dev)
         return HIDPP_EINVAL;

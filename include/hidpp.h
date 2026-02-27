@@ -120,6 +120,21 @@ struct hidpp_keymap_info {
     uint16_t remapId;
 };
 
+enum hidpp_event_type {
+    HIDPP_EVENT_NONE,
+    HIDPP_EVENT_DIVERTED,
+};
+
+struct hidpp_event {
+    int type;
+    union {
+        char _size[64];
+        void *_alignment;
+
+        uint16_t diverted[4];
+    } as;
+};
+
 /** Initialize the underlying hidapi library. **/
 HIDPP_API int hidpp_init(allocator_t *allocator);
 
@@ -171,6 +186,9 @@ HIDPP_API hidpp_device_t *hidpp_device_open(
 
 /** Closes the `device` from the receiver. **/
 HIDPP_API int hidpp_device_close(hidpp_device_t *dev);
+
+/** Polls the device for available events. **/
+HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
 
 /** Resolve a feature ID to its index on the device. **/
 HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
