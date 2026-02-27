@@ -57,7 +57,8 @@ static void errorf(const char *fmt, ...) {
 int parse_args(int argc, char *argv[]) {
     static const char errorInfo[] = "Run `hidppctl --help' for more "
                                     "information\n";
-    static const char epilog[] = "\nFor more information, run `man nanodoc'.\n";
+    static const char epilog[] = "\nFor more information, run `man "
+                                 "hidppctl.1'.\n";
 
     static struct pf_option_info mainInfo[] = {
         { "-?, --help", "Shows this information." },
@@ -82,7 +83,7 @@ int parse_args(int argc, char *argv[]) {
         .errorInfo = errorInfo,
         .epilog = "\nSubcommands:\n"
                   "  info            shows information about HID++ devices.\n"
-                  "\nFor more information, run `man nanodoc'.\n",
+                  "\nFor more information, run `man hidppctl.1'.\n",
         .infos = mainInfo,
         .options = mainDef,
         .stopAtFirst = PF_ARGPARSE_TRUE,

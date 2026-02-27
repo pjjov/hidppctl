@@ -1,0 +1,516 @@
+.\" hidppctl -- Configure HID++ compatible peripherals.
+.\"
+.\" Copyright (C) 2026 Предраг Јовановић
+.\" SPDX-FileCopyrightText: 2026 Предраг Јовановић
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.\"
+.\" Look at the COPYING file for more information.
+.TH libhidpp 3 "February 27, 2026" hidppctl 
+.SH NAME
+
+.PP
+\fBlibhidpp\fR \- configure HID++ compatible peripherals\&.
+
+.SH DESCRIPTION
+
+.PP
+This C library is a counterpart to the \fBhidppctl\fR command\-line tool\&.
+
+.PP
+The library provides functions for querying and configuring devices that use the proprietary HID++ protocol\&. Alongside that, it provides functions for simulating basic inputs, such as keyboard presses\&.
+
+.PP
+The \fBhidpp_receiver_t\fR object refers to a HID++ Bluetooth receiver which allows for multiple devices to connect to it\&. You can interact with these devices using \fBhidpp_device_t\fR objects\&.
+
+.PP
+.SH SYNOPSIS
+.P
+.nf
+HIDPP_API int hidpp_init(allocator_t *allocator);
+HIDPP_API void hidpp_exit(void);
+HIDPP_API hidpp_receiver_t *hidpp_open(
+    unsigned short vid, unsigned short pid, const wchar_t *serial
+);
+HIDPP_API hidpp_receiver_t *hidpp_open_path(const char *path);
+HIDPP_API void hidpp_close(hidpp_receiver_t *rcv);
+HIDPP_API int hidpp_make(
+    hidpp_packet_t *out,
+    uint8_t dev,
+    uint8_t feat,
+    uint8_t func,
+    uint8_t *data,
+    size_t length
+);
+HIDPP_API int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt);
+HIDPP_API int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out);
+HIDPP_API int hidpp_request(
+    hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
+);
+HIDPP_API hidpp_device_t *hidpp_device_open(
+    hidpp_receiver_t *rcv, uint8_t device
+);
+HIDPP_API int hidpp_device_close(hidpp_device_t *dev);
+HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
+HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
+HIDPP_API int hidpp_feature_id(hidpp_device_t *dev, uint8_t index);
+HIDPP_API const char *hidpp_feature_name(uint16_t feature);
+HIDPP_API int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+);
+HIDPP_API int hidpp_device_info(
+    hidpp_device_t *dev, struct hidpp_device_info *out
+);
+HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
+HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
+HIDPP_API int hidpp_keymap_info(
+    hidpp_keymap_t *map, struct hidpp_keymap_info *out, uint16_t id
+);
+HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);
+HIDPP_API int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index);
+HIDPP_API int hidpp_keymap_from_name(const char *name);
+HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
+HIDPP_API int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value);
+HIDPP_API int hidpp_keymap_remap(
+    hidpp_keymap_t *map, uint16_t id, uint16_t remap
+);
+const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
+HIDPP_API size_t hidpp_enumerate(
+    unsigned short vid,
+    unsigned short pid,
+    struct hidpp_receiver_info *out,
+    size_t max
+);
+HIDPP_API int hidpp_input_open(void);
+HIDPP_API void hidpp_input_close(int fd);
+HIDPP_API int hidpp_input_key(const char *name);
+HIDPP_API int hidpp_input_press(int fd, int key, int *mods, size_t count);
+HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
+HIDPP_API int hidpp_input_set(
+    int fd, int key, int *mods, size_t count, int value
+);
+.fi
+
+
+.SH REFERENCE
+
+.SS hidpp_init
+
+.nf
+.RS
+HIDPP_API int hidpp_init(allocator_t *allocator);
+.RE
+.fi
+
+.PP
+Initialize the underlying hidapi library\&.
+
+.SS hidpp_exit
+
+.nf
+.RS
+HIDPP_API void hidpp_exit(void);
+.RE
+.fi
+
+.PP
+Finalize the underlying hidapi library\&.
+
+.SS hidpp_open
+
+.nf
+.RS
+HIDPP_API hidpp_receiver_t *hidpp_open(
+    unsigned short vid, unsigned short pid, const wchar_t *serial
+);
+.RE
+.fi
+
+.PP
+Open a HID++ receiver by Vendor/Product ID\&. If multiple matching receivers are attached, the first enumerated is opened\&.
+
+.PP
+Use hidpp_open_path() to select a specific interface\&.
+
+
+.SS hidpp_open_path
+
+.nf
+.RS
+HIDPP_API hidpp_receiver_t *hidpp_open_path(const char *path);
+.RE
+.fi
+
+.PP
+Open a HID++ receiver by platform path\&.
+
+.SS hidpp_close
+
+.nf
+.RS
+HIDPP_API void hidpp_close(hidpp_receiver_t *rcv);
+.RE
+.fi
+
+.PP
+Close a HID++ receiver and free its resources\&.
+
+.SS hidpp_make
+
+.nf
+.RS
+HIDPP_API int hidpp_make(
+    hidpp_packet_t *out,
+    uint8_t dev,
+    uint8_t feat,
+    uint8_t func,
+    uint8_t *data,
+    size_t length
+);
+.RE
+.fi
+
+.PP
+Initializes \fBout\fR with passed parameters\&.
+
+.SS hidpp_send
+
+.nf
+.RS
+HIDPP_API int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt);
+.RE
+.fi
+
+.PP
+Send \fBpkt\fR to HID++ receiver\&.
+
+.SS hidpp_receive
+
+.nf
+.RS
+HIDPP_API int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out);
+.RE
+.fi
+
+.PP
+Read one HID++ report, blocking for up to \fBtimeout\fR\&.
+
+.SS hidpp_request
+
+.nf
+.RS
+HIDPP_API int hidpp_request(
+    hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
+);
+.RE
+.fi
+
+.PP
+Send a packet and receive the matching response\&. Automatically retries on unrelated incoming packets (e\&.g\&. HID input reports)\&.
+
+.SS hidpp_device_open
+
+.nf
+.RS
+HIDPP_API hidpp_device_t *hidpp_device_open(
+    hidpp_receiver_t *rcv, uint8_t device
+);
+.RE
+.fi
+
+.PP
+Opens the device at index \fBdevice\fR and returns the connection\&.
+
+.SS hidpp_device_close
+
+.nf
+.RS
+HIDPP_API int hidpp_device_close(hidpp_device_t *dev);
+.RE
+.fi
+
+.PP
+Closes the \fBdevice\fR from the receiver\&.
+
+.SS hidpp_device_poll
+
+.nf
+.RS
+HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
+.RE
+.fi
+
+.PP
+Polls the device for available events\&.
+
+.SS hidpp_feature_index
+
+.nf
+.RS
+HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
+.RE
+.fi
+
+.PP
+Resolve a feature ID to its index on the device\&.
+
+.SS hidpp_feature_id
+
+.nf
+.RS
+HIDPP_API int hidpp_feature_id(hidpp_device_t *dev, uint8_t index);
+.RE
+.fi
+
+.PP
+Resolve a feature index to its ID on the device\&.
+
+.SS hidpp_feature_name
+
+.nf
+.RS
+HIDPP_API const char *hidpp_feature_name(uint16_t feature);
+.RE
+.fi
+
+.PP
+Returns the name of the feature with the passed ID\&.
+
+.SS hidpp_receiver_info
+
+.nf
+.RS
+HIDPP_API int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+);
+.RE
+.fi
+
+.PP
+Reads receiver information to \fBout\fR\&.
+
+.SS hidpp_device_info
+
+.nf
+.RS
+HIDPP_API int hidpp_device_info(
+    hidpp_device_t *dev, struct hidpp_device_info *out
+);
+.RE
+.fi
+
+.PP
+Reads device information to \fBout\fR\&.
+
+.SS hidpp_ping
+
+.nf
+.RS
+HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
+.RE
+.fi
+
+.PP
+Pings the device with \fBdata\fR\&.
+
+.SS hidpp_keymap
+
+.nf
+.RS
+HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
+.RE
+.fi
+
+.PP
+Returns the object for configuring device's keybindings\&.
+
+.SS hidpp_keymap_info
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_info(
+    hidpp_keymap_t *map, struct hidpp_keymap_info *out, uint16_t id
+);
+.RE
+.fi
+
+.PP
+Reads device's keymap information to \fBout\fR\&.
+
+.SS hidpp_keymap_index
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);
+.RE
+.fi
+
+.PP
+Resolve a control ID to its index on the device\&.
+
+.SS hidpp_keymap_id
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index);
+.RE
+.fi
+
+.PP
+Resolve a keymap index to its ID on the device\&.
+
+.SS hidpp_keymap_from_name
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_from_name(const char *name);
+.RE
+.fi
+
+.PP
+Returns the ID of the control by it's \fBname\fR\&.
+
+.SS hidpp_keymap_name
+
+.nf
+.RS
+HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
+.RE
+.fi
+
+.PP
+Returns the name of the control with the passed ID\&.
+
+.SS hidpp_keymap_divert
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value);
+.RE
+.fi
+
+.PP
+Diverts a control to be handled by the event handler\&.
+
+.SS hidpp_keymap_remap
+
+.nf
+.RS
+HIDPP_API int hidpp_keymap_remap(
+    hidpp_keymap_t *map, uint16_t id, uint16_t remap
+);
+.RE
+.fi
+
+.PP
+Remaps control's behaviour to another one's\&.
+
+.SS hidpp_error
+
+.nf
+.RS
+const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
+.RE
+.fi
+
+.PP
+Returns the last error message of \fBrcv\fR or it's devices\&.
+
+.SS hidpp_enumerate
+
+.nf
+.RS
+HIDPP_API size_t hidpp_enumerate(
+    unsigned short vid,
+    unsigned short pid,
+    struct hidpp_receiver_info *out,
+    size_t max
+);
+.RE
+.fi
+
+.PP
+Enumerate HID++ capable devices using \fBhid_enumerate\fR\&.
+
+.SS hidpp_input_open
+
+.nf
+.RS
+HIDPP_API int hidpp_input_open(void);
+.RE
+.fi
+
+.PP
+Opens a file descriptor for simulating keyboard input\&.
+
+.SS hidpp_input_close
+
+.nf
+.RS
+HIDPP_API void hidpp_input_close(int fd);
+.RE
+.fi
+
+.PP
+Closes the file descriptor for simulating keyboard input\&.
+
+.SS hidpp_input_key
+
+.nf
+.RS
+HIDPP_API int hidpp_input_key(const char *name);
+.RE
+.fi
+
+.PP
+Returns a platform\-specific key code for a given \fBname\fR\&.
+
+.SS hidpp_input_press
+
+.nf
+.RS
+HIDPP_API int hidpp_input_press(int fd, int key, int *mods, size_t count);
+.RE
+.fi
+
+.PP
+Simulates key press using specified modifiers\&.
+
+.SS hidpp_input_release
+
+.nf
+.RS
+HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
+.RE
+.fi
+
+.PP
+Simulates key release using specified modifiers\&.
+
+.SS hidpp_input_set
+
+.nf
+.RS
+HIDPP_API int hidpp_input_set(
+    int fd, int key, int *mods, size_t count, int value
+);
+.RE
+.fi
+
+.PP
+Simulates key press or release using specified modifiers\&.
+
+
+.SH RETURN VALUE
+.PP
+For functions that return signed integers, a 0 indicates that the function exited successfully.
+If instead a negative number is returned, it indicates a specific error that occurred during function's execution.
+The returned error codes are made to resemble POSIX in both meaning and numeric value.
+.PP
+The lifetime of most object is tied to the parent \fIhidpp_receiver_t\fR object,
+Exceptions to this are input handlers from \fIhidpp_input_open\fR and
+\fIhidpp_receiver_info\fR structures, which are freed by the \fIhidpp_free_info\fR function.
+.SH SEE ALSO
+.BR hidppctl (1),
+.BR libhidpp (3).
+.SH AUTHOR
+Copyright (C) 2026 Предраг Јовановић

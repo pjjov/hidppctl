@@ -1,0 +1,101 @@
+.\" hidppctl -- Configure HID++ compatible peripherals.
+.\"
+.\" Copyright (C) 2026 Предраг Јовановић
+.\" SPDX-FileCopyrightText: 2026 Предраг Јовановић
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.\"
+.\" Look at the COPYING file for more information.
+.TH hidppctl 1 "February 2026" "hidppctl"
+.SH NAME
+hidppctl \- Configure HID++ compatible peripherals.
+.SH SYNOPSIS
+.nf
+    \fBhidppctl\fR [\fIOPTIONS\fR]... \fI<subcommand>\fR
+    \fBhidppctl\fR [\fIOPTIONS\fR]... \fIinfo\fR \fI[parameter]\fR
+    \fBhidppctl\fR [\fIOPTIONS\fR]... \fIdivert [buttons]...\fR
+.fi
+.SH DESCRIPTION
+\hidppctl\fR enables configuration of peripherals that use the proprietary HID++ protocol.
+
+.SS Remappable controls
+.PP
+\fBhidppctl\fR supports the HID++ remappable buttons feature.
+To remap a control to another one, you can use the \fIremap\fR subcommand:
+
+.nf
+    hidppctl remap <control-id-or-name> <remap-id-or-name>
+    hidppctl remap Page_Up Mute_Microphone
+    hidppctl remap 0x104 0x105
+.fi
+.PP
+To view a list of all available controls, run:
+
+.ni
+    hidppctl (your device) info keymap
+.fi
+
+.PP
+You can also divert controls to be handled by your application using the \fIdivert\fR subcommand:
+
+.nf
+    hidppctl divert [button-ids-or-names]...
+    hidppctl divert Page_Up 0x104
+.fi
+
+.PP
+Diverting controls will print their associated events to the standard output, for example:
+
+.nf
+    0x0104 Emoji_Smiley_Heart_Eyes press
+    0x0104 Emoji_Smiley_Heart_Eyes release
+    0x0104 Emoji_Smiley_Heart_Eyes press
+    0x011A Page_Up press
+    0x0104 Emoji_Smiley_Heart_Eyes release
+    0x011A Page_Up release
+.fi
+
+.PP
+\fBhidppctl\fR also supports simulating input so that you can turn otherwise
+unresponsive controls into a shortcut with modifiers. This is done by adding
+a \fB=\fR character and a keybind specification after it.
+
+.nf
+    hidppctl divert <control-id-or-name>=<key>[+modifiers...]
+    hidppctl divert Emoji_Smiley_Heart_Eyes=Home
+    hidppctl divert 0x11A=PageUp+LShift+LCtrl
+.fi
+
+.PP
+Keybind can also use a platform-specific numeric code.
+To view a list of all available keycode names, run:
+
+.ni
+    hidppctl info keycodes
+.fi
+
+.SH OPTIONS
+.TP
+.BR \-? ", " \-\-help
+Shows help information and exits.
+.TP
+.BR \-r ", " \-\-receiver =\fIPATH-OR-ID\fR
+Specifies which HID receiver to use. The argument can be a path to a raw device (\fI/dev/hidraw4\fR for example),
+or a vendor and product id pair separated by \fB:\fR character (\fI046d:c548\fR for example).
+.TP
+.BR \-d ", " \-\-device =\fIINDEX\fR
+Specifies which device to pick from the receiver.
+.TP
+.BR \-\-timeout =\fIMS\fR
+Sets the timeout of IO operations in milliseconds.
+.SH EXIT STATUS
+.TP
+.B 0
+Successful program execution.
+.TP
+.B non-zero
+An error occurred during processing.
+.SH SEE ALSO
+.BR hidppctl (1),
+.BR libhidpp (3).
+.SH AUTHOR
+Copyright (C) 2026 Предраг Јовановић

@@ -26,9 +26,31 @@ extern "C" {
 #include <stdint.h>
 #include <wchar.h>
 
-#define HIDPP_KIND_SHORT 0x10 /**< Short report  (7 bytes payload) */
-#define HIDPP_KIND_LONG 0x11 /**< Long report  (20 bytes payload) */
-#define HIDPP_KIND_XLONG 0x12 /**< Very-long report (64 bytes payload) */
+/** ## NAME
+
+    **libhidpp** - configure HID++ compatible peripherals.
+
+    ## DESCRIPTION
+
+    This C library is a counterpart to the **hidppctl** command-line tool.
+
+    The library provides functions for querying and configuring devices that use
+    the proprietary HID++ protocol. Alongside that, it provides functions for
+    simulating basic inputs, such as keyboard presses.
+
+    The `hidpp_receiver_t` object refers to a HID++ Bluetooth receiver which
+    allows for multiple devices to connect to it. You can interact with these
+    devices using `hidpp_device_t` objects.
+
+    [TOC]
+
+    ## REFERENCE
+
+**/
+
+#define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
+#define HIDPP_KIND_LONG 0x11 /* Long report  (20 bytes payload) */
+#define HIDPP_KIND_XLONG 0x12 /* Very-long report (64 bytes payload) */
 
 #define HIDPP_LEN_SHORT 7
 #define HIDPP_LEN_LONG 20
