@@ -86,6 +86,7 @@ int parse_args(int argc, char *argv[]) {
           "  info            shows information about HID++ devices.\n"
           "  poll            polls specified devices for incoming events.\n"
           "  divert          diverts events of reprogrammable buttons.\n"
+          "  remap           remaps device's control to a different one.\n"
           "\nFor more information, run `man hidppctl.1'.\n",
         .infos = mainInfo,
         .options = mainDef,
@@ -141,6 +142,18 @@ int parse_args(int argc, char *argv[]) {
         .parent = &mainParser
     };
 
+    static struct pf_argparser remapParser = {
+        .name = "hidppctl remap",
+        .description = "\nRemaps device's specified control to a different one."
+                       "\n\nOptions:\n",
+        .usage = "usage: hidppctl [OPTIONS]... remap <control-id> <remap-id>\n",
+        .errorInfo = errorInfo,
+        .epilog = epilog,
+        .infos = basicInfo,
+        .options = basicDef,
+        .parent = &mainParser
+    };
+
     if (pf_argparse(&mainParser, argc, argv) < 0)
         return HIDPP_EINVAL;
 
@@ -160,6 +173,8 @@ int parse_args(int argc, char *argv[]) {
         options.parser = &divertParser;
     if (0 == strcmp(cmd, "poll"))
         options.parser = &pollParser;
+    if (0 == strcmp(cmd, "remap"))
+        options.parser = &remapParser;
 
     if (options.parser == &mainParser) {
         errorf("Unknown subcommand '%s'!", cmd);
@@ -764,6 +779,64 @@ static int cmd_poll(void) {
     return HIDPP_OK;
 }
 
+static int cmd_remap_parse(const char *arg, uint16_t *out) {
+    char *end;
+    long value = strtol(arg, &end, 0);
+
+    if (end == arg) {
+        errorf("Expected a number; got '%s' instead.", arg);
+        return HIDPP_EINVAL;
+    }
+
+    if (value < 0 || value > UINT16_MAX) {
+        errorf(
+            "Control id must be between 0 and %u; got %ld instead.",
+            UINT16_MAX,
+            value
+        );
+        return HIDPP_EINVAL;
+    }
+
+    *out = value;
+    return HIDPP_OK;
+}
+
+static int cmd_remap(void) {
+    if (options.argc != 2) {
+        errorf(
+            "Subcommand 'remap' requires exactly 2 arguments; got %d instead",
+            options.argc
+        );
+        return HIDPP_EINVAL;
+    }
+
+    uint16_t ctrl, remap;
+    if (cmd_remap_parse(options.argv[0], &ctrl)
+        || cmd_remap_parse(options.argv[1], &remap))
+        return HIDPP_EINVAL;
+
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
+    hidpp_keymap_t *map;
+
+    if (!dev || !rcv)
+        return HIDPP_EIO;
+
+    if (!(map = hidpp_keymap(dev))) {
+        errorf("Specified device doesn't support control remapping.");
+        return HIDPP_EIO;
+    }
+
+    if (hidpp_keymap_remap(map, ctrl, remap)) {
+        errorf("Unable to remap control: %ls", hidpp_error(rcv));
+        return HIDPP_EIO;
+    }
+
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
+    return HIDPP_OK;
+}
+
 int main(int argc, char *argv[]) {
     if (parse_args(argc, argv))
         return HIDPP_EINVAL;
@@ -791,6 +864,8 @@ int main(int argc, char *argv[]) {
         result = cmd_divert();
     else if (0 == strcmp(options.command, "poll"))
         result = cmd_poll();
+    else if (0 == strcmp(options.command, "remap"))
+        result = cmd_remap();
 
     hidpp_exit();
     return result;
