@@ -533,7 +533,7 @@ static int cmd_divert_poll(
     if (hidpp_device_poll(dev, &e))
         return HIDPP_EIO;
 
-    if (e.type != HIDPP_EVENT_DIVERTED)
+    if (e.type != HIDPP_EVENT_BUTTON)
         return HIDPP_ENOSYS;
 
     for (int i = 0; i < options.argc; i++) {
@@ -541,7 +541,7 @@ static int cmd_divert_poll(
         int value = 0;
 
         for (int i = 0; i < 4; i++)
-            if (e.as.diverted[i] == div->ctrl)
+            if (e.as.buttons[i] == div->ctrl)
                 value = 1;
 
         if (value != div->state)

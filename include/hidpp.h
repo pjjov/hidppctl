@@ -144,7 +144,30 @@ struct hidpp_keymap_info {
 
 enum hidpp_event_type {
     HIDPP_EVENT_NONE,
-    HIDPP_EVENT_DIVERTED,
+    HIDPP_EVENT_UNKNOWN,
+    HIDPP_EVENT_BUTTON,
+    HIDPP_EVENT_MOUSE,
+    HIDPP_EVENT_BATTERY,
+    HIDPP_EVENT_WHEEL,
+    HIDPP_EVENT_RATCHET,
+    HIDPP_EVENT_RATCHET_SWITCH,
+    HIDPP_EVENT_TOUCH_PAD_POINTS,
+    HIDPP_EVENT_TOUCH_MOUSE_POINTS,
+    HIDPP_EVENT_TOUCH_MOUSE_STATUS,
+};
+
+enum hidpp_battery_level {
+    HIDPP_BATTERY_CRITICAL = 1,
+    HIDPP_BATTERY_LOW = 2,
+    HIDPP_BATTERY_GOOD = 4,
+    HIDPP_BATTERY_FULL = 8,
+};
+
+enum hidpp_battery_charge {
+    HIDPP_BATTERY_DISCHARGING = 0,
+    HIDPP_BATTERY_CHARGING = 1,
+    HIDPP_BATTERY_CHARGE_COMPLETE = 2,
+    HIDPP_BATTERY_CHARGE_ERROR = 3,
 };
 
 struct hidpp_event {
@@ -153,7 +176,55 @@ struct hidpp_event {
         char _size[64];
         void *_alignment;
 
-        uint16_t diverted[4];
+        hidpp_packet_t unknown;
+        uint16_t buttons[4];
+        uint16_t mouse[2];
+
+        struct {
+            uint8_t chargeState;
+            uint8_t batteryLevel;
+            uint8_t chargeStatus;
+            uint8_t externalPower;
+        } battery;
+
+        struct {
+            uint8_t flags;
+            int16_t delta;
+        } wheel;
+
+        uint8_t rachetSwitch;
+
+        struct {
+            int8_t deltaV;
+            int8_t deltaH;
+        } ratchet;
+
+        struct hidpp_touch_mouse_point {
+            uint16_t x;
+            uint16_t y;
+            uint8_t wx;
+            uint8_t wy;
+        } touchMousePoints[4];
+
+        struct {
+            uint8_t flags;
+            uint8_t mouseLifted;
+            uint8_t buttonDown;
+        } touchMouseStatus;
+
+        struct {
+            uint16_t timestamp;
+            struct hidpp_touch_pad_point {
+                uint8_t type;
+                uint8_t status;
+                uint16_t x;
+                uint16_t y;
+                uint8_t force;
+                uint8_t area;
+                uint8_t flags;
+                uint8_t finger;
+            } data[2];
+        } touchPadPoints;
     } as;
 };
 
