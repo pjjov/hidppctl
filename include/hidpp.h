@@ -154,6 +154,7 @@ enum hidpp_event_type {
     HIDPP_EVENT_TOUCH_PAD_POINTS,
     HIDPP_EVENT_TOUCH_MOUSE_POINTS,
     HIDPP_EVENT_TOUCH_MOUSE_STATUS,
+    HIDPP__EVENT_MAX,
 };
 
 enum hidpp_battery_level {

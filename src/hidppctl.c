@@ -81,20 +81,23 @@ int parse_args(int argc, char *argv[]) {
         .description = "\nConfigure HID++ compatible devices.\n\nOptions:\n",
         .usage = "usage: hidppctl [OPTIONS]... <command>\n",
         .errorInfo = errorInfo,
-        .epilog = "\nSubcommands:\n"
-                  "  info            shows information about HID++ devices.\n"
-                  "\nFor more information, run `man hidppctl.1'.\n",
+        .epilog
+        = "\nSubcommands:\n"
+          "  info            shows information about HID++ devices.\n"
+          "  poll            polls specified devices for incoming events.\n"
+          "  divert          diverts events of reprogrammable buttons.\n"
+          "\nFor more information, run `man hidppctl.1'.\n",
         .infos = mainInfo,
         .options = mainDef,
         .stopAtFirst = PF_ARGPARSE_TRUE,
     };
 
-    static struct pf_option_info infoInfo[] = {
+    static struct pf_option_info basicInfo[] = {
         { "-?, --help", "Shows this information." },
         { 0 },
     };
 
-    static struct pf_option infoDef[] = {
+    static struct pf_option basicDef[] = {
         { "help", '?', PF_OPT_BOOL, &options.help },
         { 0 },
     };
@@ -105,19 +108,9 @@ int parse_args(int argc, char *argv[]) {
         .usage = "usage: hidppctl [OPTIONS]... info\n",
         .errorInfo = errorInfo,
         .epilog = epilog,
-        .infos = infoInfo,
-        .options = infoDef,
+        .infos = basicInfo,
+        .options = basicDef,
         .parent = &mainParser
-    };
-
-    static struct pf_option_info divertInfo[] = {
-        { "-?, --help", "Shows this information." },
-        { 0 },
-    };
-
-    static struct pf_option divertDef[] = {
-        { "help", '?', PF_OPT_BOOL, &options.help },
-        { 0 },
     };
 
     static struct pf_argparser divertParser = {
@@ -131,8 +124,20 @@ int parse_args(int argc, char *argv[]) {
         .usage = "usage: hidppctl [OPTIONS]... divert [buttons]...\n",
         .errorInfo = errorInfo,
         .epilog = epilog,
-        .infos = divertInfo,
-        .options = divertDef,
+        .infos = basicInfo,
+        .options = basicDef,
+        .parent = &mainParser
+    };
+
+    static struct pf_argparser pollParser = {
+        .name = "hidppctl poll",
+        .description = "\nPolls specified device for incoming events."
+                       "\n\nOptions:\n",
+        .usage = "usage: hidppctl [OPTIONS]... poll\n",
+        .errorInfo = errorInfo,
+        .epilog = epilog,
+        .infos = basicInfo,
+        .options = basicDef,
         .parent = &mainParser
     };
 
@@ -153,6 +158,8 @@ int parse_args(int argc, char *argv[]) {
         options.parser = &infoParser;
     if (0 == strcmp(cmd, "divert"))
         options.parser = &divertParser;
+    if (0 == strcmp(cmd, "poll"))
+        options.parser = &pollParser;
 
     if (options.parser == &mainParser) {
         errorf("Unknown subcommand '%s'!", cmd);
@@ -169,6 +176,11 @@ int parse_args(int argc, char *argv[]) {
 }
 
 hidpp_receiver_t *open_receiver(const char *name) {
+    if (!name) {
+        errorf("The HID++ receiver must be specified!");
+        return NULL;
+    }
+
     hidpp_receiver_t *rcv;
 
     char *colon, *end;
@@ -192,6 +204,12 @@ hidpp_receiver_t *open_receiver(const char *name) {
 
 static hidpp_device_t *open_device(hidpp_receiver_t *rcv, uint8_t index) {
     hidpp_device_t *dev;
+
+    if (index == 0) {
+        errorf("The HID++ device must be specified!");
+        return NULL;
+    }
+
     if (!(dev = hidpp_device_open(rcv, index)))
         errorf("Unable to open device: %ls", hidpp_error(rcv));
     return dev;
@@ -607,6 +625,145 @@ static int cmd_divert(void) {
     return cmd_divert_loop(hasInput);
 }
 
+static const char *eventNames[HIDPP__EVENT_MAX] = {
+    "NONE",
+    "UNKNOWN",
+    "BUTTON",
+    "MOUSE",
+    "BATTERY",
+    "WHEEL",
+    "RATCHET",
+    "RATCHET_SWITCH",
+    "TOUCH_PAD_POINTS",
+    "TOUCH_MOUSE_POINTS",
+    "TOUCH_MOUSE_STATUS",
+};
+
+static int cmd_poll_parse(hidpp_device_t *dev, struct hidpp_event *e) {
+    if (e->type > HIDPP__EVENT_MAX || e->type < HIDPP_EVENT_NONE) {
+        printf("ERROR Unreachable!");
+        return HIDPP_EIO;
+    }
+
+    printf("%s ", eventNames[e->type]);
+
+    switch (e->type) {
+    case HIDPP_EVENT_UNKNOWN: {
+        hidpp_packet_t *pkt = &e->as.unknown;
+        size_t length;
+
+        if (pkt->kind <= HIDPP_KIND_SHORT)
+            length = HIDPP_LEN_SHORT;
+        else if (pkt->kind <= HIDPP_KIND_LONG)
+            length = HIDPP_LEN_LONG;
+        else if (pkt->kind <= HIDPP_KIND_XLONG)
+            length = HIDPP_LEN_XLONG;
+        else
+            return HIDPP_EINVAL;
+
+        for (size_t i = 0; i < length; i++)
+            printf("%.2x", ((uint8_t *)pkt)[i]);
+        break;
+    }
+
+    case HIDPP_EVENT_BUTTON:
+        for (int i = 0; i < 4; i++)
+            printf(" 0x%.4x", e->as.buttons[i]);
+        break;
+
+    case HIDPP_EVENT_MOUSE:
+        printf("%u %u", e->as.mouse[0], e->as.mouse[1]);
+        break;
+
+    case HIDPP_EVENT_BATTERY:
+        printf(
+            "%u %u %u %u",
+            e->as.battery.chargeState,
+            e->as.battery.batteryLevel,
+            e->as.battery.chargeStatus,
+            e->as.battery.externalPower
+        );
+        break;
+
+    case HIDPP_EVENT_WHEEL:
+        printf("%.2x %d", e->as.wheel.flags, e->as.wheel.delta);
+        break;
+
+    case HIDPP_EVENT_RATCHET:
+        printf("%d %d", e->as.ratchet.deltaV, e->as.ratchet.deltaH);
+        break;
+
+    case HIDPP_EVENT_RATCHET_SWITCH:
+        printf("%u", e->as.rachetSwitch);
+        break;
+
+    case HIDPP_EVENT_TOUCH_PAD_POINTS:
+        printf("%u ", e->as.touchPadPoints.timestamp);
+
+        for (int i = 0; i < 4; i++) {
+            struct hidpp_touch_pad_point *p = &e->as.touchPadPoints.data[i];
+            printf(
+                "{%u,%u,%u,%u,%u,%u,%.2x,%u}",
+                p->type,
+                p->status,
+                p->x,
+                p->y,
+                p->force,
+                p->area,
+                p->flags,
+                p->finger
+            );
+        }
+
+        break;
+
+    case HIDPP_EVENT_TOUCH_MOUSE_POINTS:
+        for (int i = 0; i < 4; i++) {
+            struct hidpp_touch_mouse_point *p = &e->as.touchMousePoints[i];
+            printf("{%u,%u,%u,%u}", p->x, p->y, p->wx, p->wy);
+        }
+
+        break;
+
+    case HIDPP_EVENT_TOUCH_MOUSE_STATUS:
+        printf(
+            "%u %u %u",
+            e->as.touchMouseStatus.flags,
+            e->as.touchMouseStatus.mouseLifted,
+            e->as.touchMouseStatus.buttonDown
+        );
+
+        break;
+
+    default:
+        break;
+    }
+
+    fputc('\n', stdout);
+    return HIDPP_OK;
+}
+
+static int cmd_poll(void) {
+    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+    hidpp_device_t *dev = open_device(rcv, options.devId);
+    struct hidpp_event e;
+
+    if (!dev || !rcv)
+        return HIDPP_EIO;
+
+    signal(SIGTERM, signal_handler);
+    printf("Type Ctrl+C to stop the program.\n");
+
+    while (!terminate) {
+        if (HIDPP_OK == hidpp_device_poll(dev, &e))
+            cmd_poll_parse(dev, &e);
+    }
+
+    hidpp_device_close(dev);
+    hidpp_close(rcv);
+    return HIDPP_OK;
+}
+
 int main(int argc, char *argv[]) {
     if (parse_args(argc, argv))
         return HIDPP_EINVAL;
@@ -632,6 +789,8 @@ int main(int argc, char *argv[]) {
         result = cmd_info();
     else if (0 == strcmp(options.command, "divert"))
         result = cmd_divert();
+    else if (0 == strcmp(options.command, "poll"))
+        result = cmd_poll();
 
     hidpp_exit();
     return result;
