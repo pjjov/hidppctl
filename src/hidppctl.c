@@ -43,6 +43,20 @@ static struct {
     uint8_t devId;
 } options = { 0 };
 
+static const char *eventNames[HIDPP__EVENT_MAX] = {
+    "NONE",
+    "UNKNOWN",
+    "BUTTON",
+    "MOUSE",
+    "BATTERY",
+    "WHEEL",
+    "RATCHET",
+    "RATCHET_SWITCH",
+    "TOUCH_PAD_POINTS",
+    "TOUCH_MOUSE_POINTS",
+    "TOUCH_MOUSE_STATUS",
+};
+
 static void signal_handler(int sig) { terminate = 1; }
 
 static void errorf(const char *fmt, ...) {
@@ -385,6 +399,15 @@ static int cmd_info_keymap(void) {
     return HIDPP_OK;
 }
 
+static int column_count(void) {
+    const char *columns = getenv("COLUMNS");
+    size_t max = 0;
+
+    if (columns)
+        max = strtol(columns, NULL, 0);
+    return max > 0 ? max : 80;
+}
+
 extern struct {
     const char name[12];
     int code;
@@ -393,15 +416,9 @@ extern struct {
 static int cmd_info_keycodes(void) {
     printf("Aside from numeric values, key codes also have following aliases:");
 
-    const char *columns = getenv("COLUMNS");
-    size_t max = 0;
-
-    if (columns)
-        max = strtol(columns, NULL, 0);
-    if (max == 0)
-        max = 80;
-
+    size_t max = column_count();
     size_t length = max;
+
     for (size_t i = 0; hidpp_input_table[i].code; i++) {
         size_t curr = strlen(hidpp_input_table[i].name) + 4;
         length += curr;
@@ -418,6 +435,28 @@ static int cmd_info_keycodes(void) {
     return HIDPP_OK;
 }
 
+static int cmd_info_events(void) {
+    printf("Supported event types:");
+
+    size_t max = column_count();
+    size_t length = max;
+
+    for (int i = 0; i < HIDPP__EVENT_MAX; i++) {
+        size_t curr = strlen(eventNames[i]) + 4;
+        length += curr;
+
+        if (length >= max) {
+            printf("\n  ");
+            length = 2 + curr;
+        }
+
+        printf("'%s', ", eventNames[i]);
+    }
+
+    putc('\n', stdout);
+    return HIDPP_OK;
+}
+
 static int cmd_info(void) {
     if (options.argc == 1) {
         if (0 == strcmp(options.argv[0], "keymap"))
@@ -426,10 +465,12 @@ static int cmd_info(void) {
             return cmd_info_features();
         if (0 == strcmp(options.argv[0], "keycodes"))
             return cmd_info_keycodes();
+        if (0 == strcmp(options.argv[0], "events"))
+            return cmd_info_events();
 
         errorf(
             "Unsupported argument '%s'; Valid values are:\n"
-            "'keymap', 'features'.",
+            "'keymap', 'features', 'keycodes', 'events'.",
             options.argv[0]
         );
         return HIDPP_EINVAL;
@@ -640,26 +681,7 @@ static int cmd_divert(void) {
     return cmd_divert_loop(hasInput);
 }
 
-static const char *eventNames[HIDPP__EVENT_MAX] = {
-    "NONE",
-    "UNKNOWN",
-    "BUTTON",
-    "MOUSE",
-    "BATTERY",
-    "WHEEL",
-    "RATCHET",
-    "RATCHET_SWITCH",
-    "TOUCH_PAD_POINTS",
-    "TOUCH_MOUSE_POINTS",
-    "TOUCH_MOUSE_STATUS",
-};
-
-static int cmd_poll_parse(hidpp_device_t *dev, struct hidpp_event *e) {
-    if (e->type > HIDPP__EVENT_MAX || e->type < HIDPP_EVENT_NONE) {
-        printf("ERROR Unreachable!");
-        return HIDPP_EIO;
-    }
-
+static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
     printf("%s ", eventNames[e->type]);
 
     switch (e->type) {
@@ -758,7 +780,29 @@ static int cmd_poll_parse(hidpp_device_t *dev, struct hidpp_event *e) {
     return HIDPP_OK;
 }
 
+static int cmd_poll_parse(const char *arg) {
+    for (int i = 1; i < HIDPP__EVENT_MAX; i++)
+        if (0 == strcmp(arg, eventNames[i]))
+            return i;
+
+    errorf("Unknown event name '%s'.", arg);
+    return 0;
+}
+
 static int cmd_poll(void) {
+    char masks[HIDPP__EVENT_MAX] = { 0 };
+
+    if (options.argc == 0) {
+        for (int i = 0; i < HIDPP__EVENT_MAX; i++)
+            masks[i] = HIDPP_TRUE;
+    } else {
+        for (int j, i = 0; i < options.argc; i++) {
+            if (0 == (j = cmd_poll_parse(options.argv[i])))
+                return HIDPP_EINVAL;
+            masks[j] = HIDPP_TRUE;
+        }
+    }
+
     hidpp_receiver_t *rcv = open_receiver(options.receiver);
     hidpp_device_t *dev = open_device(rcv, options.devId);
     struct hidpp_event e;
@@ -770,8 +814,16 @@ static int cmd_poll(void) {
     printf("Type Ctrl+C to stop the program.\n");
 
     while (!terminate) {
-        if (HIDPP_OK == hidpp_device_poll(dev, &e))
-            cmd_poll_parse(dev, &e);
+        if (HIDPP_OK != hidpp_device_poll(dev, &e))
+            continue;
+
+        if (e.type > HIDPP__EVENT_MAX || e.type < HIDPP_EVENT_NONE) {
+            printf("ERROR Invalid event type!");
+            break;
+        }
+
+        if (masks[e.type] == HIDPP_TRUE)
+            cmd_poll_handle(dev, &e);
     }
 
     hidpp_device_close(dev);
