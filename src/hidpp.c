@@ -21,6 +21,7 @@
 #define MAX_ERROR 256
 #define MAX_RETRY 16
 #define DEFAULT_TIMEOUT 2000
+#define DEFAULT_SWID 14
 
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
 #define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xFF))
@@ -151,6 +152,7 @@ static hidpp_receiver_t *create_receiver(hid_device *handle) {
     rcv->handle = handle;
     rcv->retries = MAX_RETRY;
     rcv->timeout = DEFAULT_TIMEOUT;
+    rcv->swid = DEFAULT_SWID;
     return rcv;
 }
 
@@ -361,6 +363,24 @@ int hidpp_poll(hidpp_receiver_t *rcv, struct hidpp_event *out) {
 
     out->type = HIDPP_EVENT_UNKNOWN;
     memcpy(&out->as.unknown, &pkt, sizeof(pkt));
+    return HIDPP_OK;
+}
+
+/** Sets the timeout in milliseconds for IO operations. **/
+int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout) {
+    if (!rcv)
+        return HIDPP_EINVAL;
+
+    rcv->timeout = timeout;
+    return HIDPP_OK;
+}
+
+/** Sets the software id of the HID++ requests. **/
+int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid) {
+    if (!rcv)
+        return HIDPP_EINVAL;
+
+    rcv->swid = swid;
     return HIDPP_OK;
 }
 

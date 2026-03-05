@@ -273,6 +273,12 @@ HIDPP_API int hidpp_request(
     hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 );
 
+/** Sets the timeout in milliseconds for IO operations. **/
+HIDPP_API int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout);
+
+/** Sets the software id of the HID++ requests. **/
+HIDPP_API int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid);
+
 /** Polls the receiver for available events. Unlike `hidpp_device_poll`,
     this function can only output events of type `HIDPP_EVENT_UNKNOWN`.
 **/

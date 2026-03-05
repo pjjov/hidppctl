@@ -38,9 +38,12 @@ static struct {
     char help;
     const char *receiver;
     const char *device;
-    const char *timeout;
+    const char *timeoutStr;
+    const char *swidStr;
 
     uint8_t devId;
+    uint8_t swid;
+    int timeout;
 } options = { 0 };
 
 static const char *eventNames[HIDPP__EVENT_MAX] = {
@@ -68,6 +71,59 @@ static void errorf(const char *fmt, ...) {
     va_end(args);
 }
 
+static int parse_device_index(const char *arg, uint8_t *out) {
+    char *end;
+    long i = strtol(arg, &end, 0);
+
+    if (end == arg || i < 1 || (i > 6 && i != 0xFF))
+        return HIDPP_EINVAL;
+
+    *out = i;
+    return HIDPP_OK;
+}
+
+static int parse_string_args(void) {
+    char *end;
+
+    if (options.timeoutStr) {
+        options.timeout = strtol(options.timeoutStr, &end, 0);
+
+        if (end == options.timeoutStr) {
+            errorf(
+                "Expected a numeric value for timeout; got '%s' instead.",
+                options.timeoutStr
+            );
+            return HIDPP_EINVAL;
+        }
+    }
+
+    if (options.swidStr) {
+        long swid = strtol(options.swidStr, &end, 0);
+
+        if (end == options.swidStr) {
+            errorf(
+                "Expected a numeric value for software id; got '%s' instead.",
+                options.swidStr
+            );
+            return HIDPP_EINVAL;
+        }
+
+        if (swid < 0 || swid > 15) {
+            errorf("Software id must be between 0 and 15 (inclusive).");
+            return HIDPP_EINVAL;
+        }
+
+        options.swid = swid;
+    }
+
+    if (options.device && parse_device_index(options.device, &options.devId)) {
+        errorf("Invalid device index; must be 256 or between 1 and 6.");
+        return HIDPP_EIO;
+    }
+
+    return HIDPP_OK;
+}
+
 int parse_args(int argc, char *argv[]) {
     static const char errorInfo[] = "Run `hidppctl --help' for more "
                                     "information\n";
@@ -79,12 +135,14 @@ int parse_args(int argc, char *argv[]) {
         { "-r, --receiver", "Specifies which HID++ receiver to use." },
         { "-d, --device", "Specifies which HID++ device index to use." },
         { "--timeout", "Sets the timeout for IO operations in milliseconds." },
+        { "--swid", "Sets the software ID to use for HID++ requests." },
         { 0 },
     };
 
     static struct pf_option mainDef[] = {
         { "help", '?', PF_OPT_BOOL, &options.help },
         { "timeout", 0, PF_OPT_STR, &options.timeout },
+        { "swid", 0, PF_OPT_STR, &options.swid },
         { "receiver", 'r', PF_OPT_STR, &options.receiver },
         { "device", 'd', PF_OPT_STR, &options.device },
         { 0 },
@@ -201,7 +259,7 @@ int parse_args(int argc, char *argv[]) {
 
     options.argc = options.parser->argc;
     options.argv = options.parser->argv;
-    return HIDPP_OK;
+    return parse_string_args();
 }
 
 hidpp_receiver_t *open_receiver(const char *name) {
@@ -228,6 +286,11 @@ hidpp_receiver_t *open_receiver(const char *name) {
 
     if (rcv == NULL)
         errorf("Unable to open receiver '%s'.", name);
+
+    if (options.timeoutStr)
+        hidpp_set_timeout(rcv, options.timeout);
+    if (options.swidStr)
+        hidpp_set_swid(rcv, options.swid);
     return rcv;
 }
 
@@ -271,17 +334,6 @@ int cmd_info_all(void) {
         hidpp_free_info(info);
     }
 
-    return HIDPP_OK;
-}
-
-static int parse_device_index(const char *arg, uint8_t *out) {
-    char *end;
-    long i = strtol(arg, &end, 0);
-
-    if (end == arg || i < 1 || (i > 6 && i != 0xFF))
-        return HIDPP_EINVAL;
-
-    *out = i;
     return HIDPP_OK;
 }
 
@@ -896,11 +948,6 @@ int main(int argc, char *argv[]) {
     if (options.help) {
         pf_arghelp(options.parser, NULL);
         return HIDPP_OK;
-    }
-
-    if (options.device && parse_device_index(options.device, &options.devId)) {
-        errorf("Invalid device index; must be 256 or between 1 and 6.");
-        return HIDPP_EIO;
     }
 
     if (hidpp_init(NULL)) {
