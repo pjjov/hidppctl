@@ -347,6 +347,23 @@ int hidpp_request(
     return -1;
 }
 
+int hidpp_poll(hidpp_receiver_t *rcv, struct hidpp_event *out) {
+    if (!rcv || !out)
+        return HIDPP_EINVAL;
+
+    hidpp_packet_t pkt;
+    int res;
+
+    do {
+        if ((res = hidpp_receive(rcv, &pkt)))
+            return res;
+    } while (pkt.func & 0xF);
+
+    out->type = HIDPP_EVENT_UNKNOWN;
+    memcpy(&out->as.unknown, &pkt, sizeof(pkt));
+    return HIDPP_OK;
+}
+
 const wchar_t *hidpp_error(hidpp_receiver_t *rcv) {
     if (!rcv)
         return hid_error(NULL);

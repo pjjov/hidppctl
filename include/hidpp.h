@@ -273,6 +273,11 @@ HIDPP_API int hidpp_request(
     hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 );
 
+/** Polls the receiver for available events. Unlike `hidpp_device_poll`,
+    this function can only output events of type `HIDPP_EVENT_UNKNOWN`.
+**/
+HIDPP_API int hidpp_poll(hidpp_receiver_t *rcv, struct hidpp_event *out);
+
 /** Opens the device at index `device` and returns the connection. **/
 HIDPP_API hidpp_device_t *hidpp_device_open(
     hidpp_receiver_t *rcv, uint8_t device
