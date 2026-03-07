@@ -247,6 +247,13 @@ HIDPP_API hidpp_receiver_t *hidpp_open(
 /** Open a HID++ receiver by platform path. **/
 HIDPP_API hidpp_receiver_t *hidpp_open_path(const char *path);
 
+/** Open a HID++ receiver by Vendor/Product ID and interface number.
+    If multiple matching receivers are found, the first one is opened.
+**/
+HIDPP_API hidpp_receiver_t *hidpp_open_interface(
+    unsigned short vid, unsigned short pid, int interfaceNumber
+);
+
 /** Close a HID++ receiver and free its resources. **/
 HIDPP_API void hidpp_close(hidpp_receiver_t *rcv);
 

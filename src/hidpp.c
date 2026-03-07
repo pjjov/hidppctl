@@ -168,6 +168,20 @@ hidpp_receiver_t *hidpp_open_path(const char *path) {
     return handle ? create_receiver(handle) : NULL;
 }
 
+HIDPP_API hidpp_receiver_t *hidpp_open_interface(
+    unsigned short vid, unsigned short pid, int interfaceNumber
+) {
+    struct hid_device_info *info, *head = hid_enumerate(vid, pid);
+    hidpp_receiver_t *rcv = NULL;
+
+    for (info = head; !rcv && info; info = info->next)
+        if (info->interface_number == interfaceNumber)
+            rcv = hidpp_open_path(info->path);
+
+    hid_free_enumeration(head);
+    return rcv;
+}
+
 void hidpp_close(hidpp_receiver_t *rcv) {
     if (!rcv)
         return;

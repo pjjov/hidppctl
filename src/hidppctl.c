@@ -40,10 +40,12 @@ static struct {
     const char *device;
     const char *timeoutStr;
     const char *swidStr;
+    const char *interfaceStr;
 
     uint8_t devId;
     uint8_t swid;
     int timeout;
+    int interface;
 } options = { 0 };
 
 static const char *eventNames[HIDPP__EVENT_MAX] = {
@@ -82,32 +84,37 @@ static int parse_device_index(const char *arg, uint8_t *out) {
     return HIDPP_OK;
 }
 
-static int parse_string_args(void) {
+static int parse_string_num(const char *str, const char *name, long *out) {
+    if (!str)
+        return HIDPP_OK;
+
     char *end;
+    *out = strtol(str, &end, 0);
 
-    if (options.timeoutStr) {
-        options.timeout = strtol(options.timeoutStr, &end, 0);
-
-        if (end == options.timeoutStr) {
-            errorf(
-                "Expected a numeric value for timeout; got '%s' instead.",
-                options.timeoutStr
-            );
-            return HIDPP_EINVAL;
-        }
+    if (end == str) {
+        errorf("Expected a numeric value for %s; got '%s' instead.", name, str);
+        return HIDPP_EINVAL;
     }
 
+    return HIDPP_OK;
+}
+
+static int parse_string_args(void) {
+    long timeout = 0;
+    long interface = 0;
+    long swid = 0;
+
+    if (parse_string_num(options.timeoutStr, "timeout", &timeout))
+        return HIDPP_EINVAL;
+    if (parse_string_num(options.interfaceStr, "the interface", &interface))
+        return HIDPP_EINVAL;
+    if (parse_string_num(options.swidStr, "software id", &swid))
+        return HIDPP_EINVAL;
+
+    options.timeout = timeout;
+    options.interface = interface;
+
     if (options.swidStr) {
-        long swid = strtol(options.swidStr, &end, 0);
-
-        if (end == options.swidStr) {
-            errorf(
-                "Expected a numeric value for software id; got '%s' instead.",
-                options.swidStr
-            );
-            return HIDPP_EINVAL;
-        }
-
         if (swid < 0 || swid > 15) {
             errorf("Software id must be between 0 and 15 (inclusive).");
             return HIDPP_EINVAL;
@@ -117,7 +124,7 @@ static int parse_string_args(void) {
     }
 
     if (options.device && parse_device_index(options.device, &options.devId)) {
-        errorf("Invalid device index; must be 256 or between 1 and 6.");
+        errorf("Invalid device index; must be 255 or between 1 and 6.");
         return HIDPP_EIO;
     }
 
@@ -134,6 +141,7 @@ int parse_args(int argc, char *argv[]) {
         { "-?, --help", "Shows this information." },
         { "-r, --receiver", "Specifies which HID++ receiver to use." },
         { "-d, --device", "Specifies which HID++ device index to use." },
+        { "--interface", "Specifies the interface number of the receiver" },
         { "--timeout", "Sets the timeout for IO operations in milliseconds." },
         { "--swid", "Sets the software ID to use for HID++ requests." },
         { 0 },
@@ -143,6 +151,7 @@ int parse_args(int argc, char *argv[]) {
         { "help", '?', PF_OPT_BOOL, &options.help },
         { "timeout", 0, PF_OPT_STR, &options.timeout },
         { "swid", 0, PF_OPT_STR, &options.swid },
+        { "interface", 0, PF_OPT_STR, &options.interfaceStr },
         { "receiver", 'r', PF_OPT_STR, &options.receiver },
         { "device", 'd', PF_OPT_STR, &options.device },
         { 0 },
@@ -279,10 +288,14 @@ hidpp_receiver_t *open_receiver(const char *name) {
         return NULL;
     }
 
-    if (*colon == ':' && (*end == ':' || *end == '\0'))
-        rcv = hidpp_open(vid, pid, NULL);
-    else
+    if (*colon == ':' && (*end == ':' || *end == '\0')) {
+        if (options.interfaceStr)
+            rcv = hidpp_open_interface(vid, pid, options.interface);
+        else
+            rcv = hidpp_open(vid, pid, NULL);
+    } else {
         rcv = hidpp_open_path(name);
+    }
 
     if (rcv == NULL)
         errorf("Unable to open receiver '%s'.", name);
@@ -329,6 +342,13 @@ int cmd_info_all(void) {
             info->vendorId,
             info->productId,
             info->path
+        );
+
+        printf(
+            "  Interface and usage: %d %u/%u\n",
+            info->interfaceNumber,
+            info->usage,
+            info->usagePage
         );
 
         hidpp_free_info(info);
