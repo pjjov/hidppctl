@@ -71,6 +71,7 @@ enum hidpp_error {
 };
 
 enum hidpp_bool {
+    HIDPP_TOGGLE = -1,
     HIDPP_FALSE = 0,
     HIDPP_TRUE = 1,
 };
@@ -193,7 +194,7 @@ struct hidpp_event {
             int16_t delta;
         } wheel;
 
-        uint8_t rachetSwitch;
+        uint8_t ratchetSwitch;
 
         struct {
             int8_t deltaV;
@@ -326,6 +327,9 @@ HIDPP_API int hidpp_device_info(
 /** Pings the device with `data`. **/
 HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
 
+/** Inverts the Fn button behaviour on keyboards. **/
+HIDPP_API int hidpp_invert_fn(hidpp_device_t *dev, int value);
+
 /** Returns the object for configuring device's keybindings. **/
 HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
 
@@ -355,7 +359,7 @@ HIDPP_API int hidpp_keymap_remap(
 );
 
 /** Returns the last error message of `rcv` or it's devices. **/
-const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
+HIDPP_API const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API size_t hidpp_enumerate(

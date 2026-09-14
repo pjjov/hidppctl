@@ -9,6 +9,8 @@
 
 #include <hidpp.h>
 
+#include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +31,7 @@ static INPUT make_input(int vk, int flags) {
 
 struct {
     const char name[12];
-    int vk;
+    int code;
 } hidpp_input_table[] = {
     /* clang-format off */
     /* Letters (VK codes == uppercase ASCII) */
@@ -148,30 +150,40 @@ struct {
     /* clang-format on */
 };
 
+#endif
+
+static_assert(
+    sizeof(hidpp_input_table[0].name) == 12,
+    "hidpp_input_table name field size changed"
+);
+
 int hidpp_input_key(const char *name) {
     if (!name)
         return HIDPP_EINVAL;
 
+    /* Only treat the input as a raw numeric code if it is made up
+       entirely of digits (optionally signed / 0x-prefixed) -- this
+       stops single-digit names like "0".."9" from being shadowed by
+       strtol() before the name table (which maps them to KEY_0..KEY_9,
+       not the literal value 0..9) ever gets consulted. */
     char *end;
     int value = strtol(name, &end, 0);
 
-    if (end != name)
+    if (end != name && *end == '\0' && !isalpha((unsigned char)name[0]))
         return value;
 
     for (size_t i = 0; hidpp_input_table[i].code; i++) {
-    #ifdef _WIN32
+#ifdef _WIN32
         if (_stricmp(name, hidpp_input_table[i].name) == 0)
             return hidpp_input_table[i].code;
-    #else
+#else
         if (strcasecmp(name, hidpp_input_table[i].name) == 0)
             return hidpp_input_table[i].code;
-    #endif
+#endif
     }
 
     return HIDPP_ENOENT;
 }
-
-#endif
 
 int hidpp_input_open(void) {
 #ifdef _WIN32
@@ -225,7 +237,7 @@ int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
         if (code < 0)
             return HIDPP_EINVAL;
 
-        inputs[i] = make_key_input(code, value ? 0 : KEYEVENTF_KEYUP);
+        inputs[i] = make_input(code, value ? 0 : KEYEVENTF_KEYUP);
     }
 
     UINT sent = SendInput(count + 1, inputs, sizeof(INPUT));
@@ -236,7 +248,7 @@ int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
     return HIDPP_OK;
 #else
 
-    for (int i = 0; i < count; i++)
+    for (size_t i = 0; i < count; i++)
         uinput_emit(fd, EV_KEY, mods[i], value ? 1 : 0);
     if (count > 0)
         uinput_emit(fd, EV_SYN, SYN_REPORT, 0);

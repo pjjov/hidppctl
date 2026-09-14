@@ -47,6 +47,7 @@ struct hidpp_device_t {
     uint8_t index;
     uint8_t numFeatures;
     uint8_t lenName;
+    uint8_t hasInvertFn : 1;
 
     uint16_t features[UINT8_MAX];
     char name[UINT8_MAX];
@@ -890,6 +891,42 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
     req.params[4] = HIDPP_LSB(remap);
 
     return hidpp_send(rcv, &req);
+}
+
+static int check_invert_fn(hidpp_device_t *dev, uint8_t feat) {
+    if (dev->hasInvertFn)
+        return HIDPP_OK;
+
+    hidpp_packet_t req, res;
+    make_packet(&req, dev, feat, 0);
+
+    if (hidpp_request(dev->receiver, &req, &res))
+        return HIDPP_EIO;
+
+    dev->hasInvertFn = res.params[0] & 0x2;
+    return dev->hasInvertFn ? HIDPP_OK : HIDPP_ENOSYS;
+}
+
+int hidpp_invert_fn(hidpp_device_t *dev, int value) {
+    if (!dev)
+        return HIDPP_EINVAL;
+
+    uint8_t feat = hidpp_feature_index(dev, 0x40A2);
+    hidpp_packet_t req, res;
+
+    if (feat == 0 || check_invert_fn(dev, feat))
+        return HIDPP_ENOSYS;
+
+    if (value == HIDPP_TOGGLE) {
+        make_packet(&req, dev, feat, 1);
+
+        if (hidpp_request(dev->receiver, &req, &res))
+            return HIDPP_EIO;
+
+        value = res.params[0] & 0x2;
+    }
+
+    return HIDPP_ENOSYS;
 }
 
 static int is_hidpp_compatible(struct hid_device_info *info) {

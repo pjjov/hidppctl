@@ -7,6 +7,7 @@
     Look at the COPYING file for more information.
 */
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -416,6 +417,8 @@ static struct hidpp_name controls[] = {
     { 0x0141, "Play_Pause" },
     { 0 },
 };
+
+static_assert(sizeof(features[0].name) == 34, "table name field size changed");
 
 static int compare_name(const void *l, const void *r) {
     const struct hidpp_name *_l = l, *_r = r;
