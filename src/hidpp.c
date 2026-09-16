@@ -134,6 +134,8 @@ int hidpp_make(
     return HIDPP_OK;
 }
 
+const char *hidpp_version(void) { return HIDPP_VERSION_STRING; }
+
 int hidpp_init(allocator_t *alloc) {
     allocator = alloc ? alloc : &standard_allocator;
     return hid_init();

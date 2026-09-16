@@ -56,6 +56,22 @@ extern "C" {
 #define HIDPP_LEN_LONG 20
 #define HIDPP_LEN_XLONG 64
 
+/* Library version. HIDPP_VERSION is suitable for numeric
+   feature-detection (e.g. #if HIDPP_VERSION >= HIDPP_MAKE_VERSION(1,0,0)). */
+#define HIDPP_VERSION_MAJOR 0
+#define HIDPP_VERSION_MINOR 1
+#define HIDPP_VERSION_PATCH 0
+
+#define HIDPP_MAKE_VERSION(major, minor, patch)        \
+    (((major) * 1000000) + ((minor) * 1000) + (patch))
+
+#define HIDPP_VERSION                                                 \
+    HIDPP_MAKE_VERSION(                                               \
+        HIDPP_VERSION_MAJOR, HIDPP_VERSION_MINOR, HIDPP_VERSION_PATCH \
+    )
+
+#define HIDPP_VERSION_STRING "0.1.0"
+
 enum hidpp_error {
     HIDPP_OK = 0,
     HIDPP_ENOENT = -2,
@@ -229,6 +245,12 @@ struct hidpp_event {
         } touchPadPoints;
     } as;
 };
+
+/** Returns the library's runtime version string (see HIDPP_VERSION_STRING).
+    Useful for shared-library consumers to detect a mismatch against the
+    header they compiled with.
+**/
+HIDPP_API const char *hidpp_version(void);
 
 /** Initialize the underlying hidapi library. **/
 HIDPP_API int hidpp_init(allocator_t *allocator);
