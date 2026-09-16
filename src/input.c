@@ -10,7 +10,7 @@
 #include <hidpp.h>
 
 #include <assert.h>
-#include <ctype.h>
+#include <pf_ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -169,7 +169,7 @@ int hidpp_input_key(const char *name) {
     char *end;
     int value = strtol(name, &end, 0);
 
-    if (end != name && *end == '\0' && !isalpha((unsigned char)name[0]))
+    if (end != name && *end == '\0' && !pf_isalpha((unsigned char)name[0]))
         return value;
 
     for (size_t i = 0; hidpp_input_table[i].code; i++) {
@@ -196,9 +196,15 @@ int hidpp_input_open(void) {
 
     ioctl(fd, UI_SET_EVBIT, EV_KEY);
     ioctl(fd, UI_SET_EVBIT, EV_SYN);
+    ioctl(fd, UI_SET_EVBIT, EV_REL);
 
     for (int i = 0; i < KEY_MAX; i++)
         ioctl(fd, UI_SET_KEYBIT, i);
+
+    ioctl(fd, UI_SET_RELBIT, REL_X);
+    ioctl(fd, UI_SET_RELBIT, REL_Y);
+    ioctl(fd, UI_SET_RELBIT, REL_WHEEL);
+    ioctl(fd, UI_SET_RELBIT, REL_HWHEEL);
 
     struct uinput_setup usetup = { 0 };
     usetup.id.bustype = BUS_VIRTUAL;
@@ -266,4 +272,237 @@ int hidpp_input_press(int fd, int key, int *mods, size_t count) {
 
 int hidpp_input_release(int fd, int key, int *mods, size_t count) {
     return hidpp_input_set(fd, key, mods, count, 0);
+}
+
+int hidpp_input_move(int fd, int dx, int dy) {
+    if (fd < 0)
+        return HIDPP_EINVAL;
+
+#ifdef _WIN32
+    INPUT in = { 0 };
+    in.type = INPUT_MOUSE;
+    in.mi.dx = dx;
+    in.mi.dy = dy;
+    in.mi.dwFlags = MOUSEEVENTF_MOVE;
+
+    if (SendInput(1, &in, sizeof(INPUT)) != 1)
+        return HIDPP_EIO;
+
+    return HIDPP_OK;
+#else
+    if (dx)
+        uinput_emit(fd, EV_REL, REL_X, dx);
+    if (dy)
+        uinput_emit(fd, EV_REL, REL_Y, dy);
+    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+
+    return HIDPP_OK;
+#endif
+}
+
+int hidpp_input_button(int fd, int button, int value) {
+    if (fd < 0)
+        return HIDPP_EINVAL;
+
+#ifdef _WIN32
+    DWORD flags;
+
+    switch (button) {
+    case HIDPP_BTN_LEFT:
+        flags = value ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+        break;
+    case HIDPP_BTN_RIGHT:
+        flags = value ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+        break;
+    case HIDPP_BTN_MIDDLE:
+        flags = value ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+        break;
+    case HIDPP_BTN_SIDE:
+    case HIDPP_BTN_EXTRA:
+        flags = value ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP;
+        break;
+    default:
+        return HIDPP_EINVAL;
+    }
+
+    INPUT in = { 0 };
+    in.type = INPUT_MOUSE;
+    in.mi.dwFlags = flags;
+
+    if (button == HIDPP_BTN_SIDE)
+        in.mi.mouseData = XBUTTON1;
+    else if (button == HIDPP_BTN_EXTRA)
+        in.mi.mouseData = XBUTTON2;
+
+    if (SendInput(1, &in, sizeof(INPUT)) != 1)
+        return HIDPP_EIO;
+
+    return HIDPP_OK;
+#else
+    int code;
+
+    switch (button) {
+    case HIDPP_BTN_LEFT:
+        code = BTN_LEFT;
+        break;
+    case HIDPP_BTN_RIGHT:
+        code = BTN_RIGHT;
+        break;
+    case HIDPP_BTN_MIDDLE:
+        code = BTN_MIDDLE;
+        break;
+    case HIDPP_BTN_SIDE:
+        code = BTN_SIDE;
+        break;
+    case HIDPP_BTN_EXTRA:
+        code = BTN_EXTRA;
+        break;
+    default:
+        return HIDPP_EINVAL;
+    }
+
+    uinput_emit(fd, EV_KEY, code, value ? 1 : 0);
+    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+
+    return HIDPP_OK;
+#endif
+}
+
+int hidpp_input_scroll(int fd, int dx, int dy) {
+    if (fd < 0)
+        return HIDPP_EINVAL;
+
+#ifdef _WIN32
+    int ret = HIDPP_OK;
+
+    if (dy) {
+        INPUT in = { 0 };
+        in.type = INPUT_MOUSE;
+        in.mi.dwFlags = MOUSEEVENTF_WHEEL;
+        in.mi.mouseData = dy * WHEEL_DELTA;
+
+        if (SendInput(1, &in, sizeof(INPUT)) != 1)
+            ret = HIDPP_EIO;
+    }
+
+    if (dx) {
+        INPUT in = { 0 };
+        in.type = INPUT_MOUSE;
+        in.mi.dwFlags = MOUSEEVENTF_HWHEEL;
+        in.mi.mouseData = dx * WHEEL_DELTA;
+
+        if (SendInput(1, &in, sizeof(INPUT)) != 1)
+            ret = HIDPP_EIO;
+    }
+
+    return ret;
+#else
+    /* REL_WHEEL/REL_HWHEEL follow "positive is up/right" like the
+       public API; uinput's convention already matches that, so no
+       sign flip is needed here. */
+    if (dy)
+        uinput_emit(fd, EV_REL, REL_WHEEL, dy);
+    if (dx)
+        uinput_emit(fd, EV_REL, REL_HWHEEL, dx);
+    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+
+    return HIDPP_OK;
+#endif
+}
+
+/* Maps punctuation characters not already covered by hidpp_input_table
+   (letters/digits) to a key name plus whether shift is required, for
+   hidpp_input_type(). US-layout only. */
+static const struct {
+    char ch;
+    const char *key;
+    int shift;
+} hidpp_char_table[] = {
+    /* clang-format off */
+    {'\t', "tab", 0},
+    {'-', "minus", 0},      {'_', "minus", 1},
+    {'=', "equal", 0},      {'+', "equal", 1},
+    {'[', "leftbrace", 0},  {'{', "leftbrace", 1},
+    {']', "rightbrace", 0}, {'}', "rightbrace", 1},
+    {'\\', "backslash", 0}, {'|', "backslash", 1},
+    {';', "semicolon", 0},  {':', "semicolon", 1},
+    {'\'', "apostrophe", 0},{'"', "apostrophe", 1},
+    {'`', "grave", 0},      {'~', "grave", 1},
+    {',', "comma", 0},      {'<', "comma", 1},
+    {'.', "dot", 0},        {'>', "dot", 1},
+    {'/', "slash", 0},      {'?', "slash", 1},
+    {'1', "1", 0}, {'!', "1", 1},
+    {'2', "2", 0}, {'@', "2", 1},
+    {'3', "3", 0}, {'#', "3", 1},
+    {'4', "4", 0}, {'$', "4", 1},
+    {'5', "5", 0}, {'%', "5", 1},
+    {'6', "6", 0}, {'^', "6", 1},
+    {'7', "7", 0}, {'&', "7", 1},
+    {'8', "8", 0}, {'*', "8", 1},
+    {'9', "9", 0}, {'(', "9", 1},
+    {'0', "0", 0}, {')', "0", 1},
+    /* clang-format on */
+};
+
+int hidpp_input_type(int fd, const char *text) {
+    if (fd < 0 || !text)
+        return HIDPP_EINVAL;
+
+    int shiftKey = hidpp_input_key("shift");
+
+    if (shiftKey < 0)
+        return shiftKey;
+
+    for (const char *p = text; *p; p++) {
+        char c = *p;
+        const char *keyName = NULL;
+        int shift = 0;
+
+        if (c == ' ') {
+            keyName = "space";
+        } else if (c == '\n') {
+            keyName = "enter";
+        } else if (pf_isalpha((unsigned char)c)) {
+            static char letter[2] = { 0, 0 };
+            letter[0] = (char)pf_tolower((unsigned char)c);
+            keyName = letter;
+            shift = pf_isupper((unsigned char)c);
+        } else {
+            for (size_t i = 0;
+                 i < sizeof(hidpp_char_table) / sizeof(hidpp_char_table[0]);
+                 i++) {
+                if (hidpp_char_table[i].ch == c) {
+                    keyName = hidpp_char_table[i].key;
+                    shift = hidpp_char_table[i].shift;
+                    break;
+                }
+            }
+        }
+
+        if (!keyName)
+            continue; /* unmappable character: skip it */
+
+        int key = hidpp_input_key(keyName);
+
+        if (key < 0)
+            continue;
+
+        int mods[1];
+        size_t modCount = 0;
+
+        if (shift) {
+            mods[0] = shiftKey;
+            modCount = 1;
+        }
+
+        int ret = hidpp_input_press(fd, key, mods, modCount);
+        if (ret < 0)
+            return ret;
+
+        ret = hidpp_input_release(fd, key, mods, modCount);
+        if (ret < 0)
+            return ret;
+    }
+
+    return HIDPP_OK;
 }

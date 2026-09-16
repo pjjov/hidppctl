@@ -103,6 +103,15 @@ enum hidpp_device_type {
     HIDPP_TYPE_RECEIVER,
 };
 
+/** Buttons usable with hidpp_input_button(). **/
+enum hidpp_mouse_button {
+    HIDPP_BTN_LEFT = 1,
+    HIDPP_BTN_RIGHT = 2,
+    HIDPP_BTN_MIDDLE = 3,
+    HIDPP_BTN_SIDE = 4,
+    HIDPP_BTN_EXTRA = 5,
+};
+
 typedef struct allocator_t allocator_t;
 typedef struct hidpp_receiver_t hidpp_receiver_t;
 typedef struct hidpp_device_t hidpp_device_t;
@@ -331,6 +340,13 @@ HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
 /** Resolve a feature index to its ID on the device. **/
 HIDPP_API int hidpp_feature_id(hidpp_device_t *dev, uint8_t index);
 
+/** Copies up to `max` of the device's feature IDs into `out`, in index
+    order (index 0 is the Root feature, so `out[0]` is always 0x0000).
+    Returns the number of entries written.
+**/
+HIDPP_API size_t
+hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max);
+
 /** Returns the name of the feature with the passed ID. **/
 HIDPP_API const char *hidpp_feature_name(uint16_t feature);
 
@@ -391,7 +407,13 @@ HIDPP_API size_t hidpp_enumerate(
     size_t max
 );
 
-/** Opens a file descriptor for simulating keyboard input. **/
+/** Opens a handle for simulating keyboard/mouse input. On POSIX this is a
+    real uinput file descriptor (>= 0) to pass to the other hidpp_input_*
+    functions, or a negative hidpp_error on failure. On Windows there is no
+    such handle -- input is injected directly via SendInput() -- so this
+    always returns 0 on success; treat any negative return as failure on
+    both platforms, but do not otherwise interpret the value on Windows.
+**/
 HIDPP_API int hidpp_input_open(void);
 
 /** Closes the file descriptor for simulating keyboard input. **/
@@ -410,6 +432,27 @@ HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
 HIDPP_API int hidpp_input_set(
     int fd, int key, int *mods, size_t count, int value
 );
+
+/** Types out `text` as a sequence of key presses/releases, applying
+    shift automatically for uppercase letters and shifted punctuation.
+    Only covers the printable US-layout ASCII range plus '\t' and '\n';
+    unmappable characters are skipped. Returns HIDPP_OK, or a negative
+    hidpp_error if `fd` is invalid.
+**/
+HIDPP_API int hidpp_input_type(int fd, const char *text);
+
+/** Simulates a relative mouse movement of (`dx`, `dy`) pixels/counts. **/
+HIDPP_API int hidpp_input_move(int fd, int dx, int dy);
+
+/** Simulates a press (`value` != 0) or release (`value` == 0) of a
+    mouse button (see enum hidpp_mouse_button).
+**/
+HIDPP_API int hidpp_input_button(int fd, int button, int value);
+
+/** Simulates scroll wheel movement. `dy` is vertical scroll (positive is
+    up), `dx` is horizontal scroll (positive is right); either may be 0.
+**/
+HIDPP_API int hidpp_input_scroll(int fd, int dx, int dy);
 
 #ifdef __cplusplus
 }

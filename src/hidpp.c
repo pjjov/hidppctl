@@ -593,7 +593,7 @@ static int parse_event(
             return HIDPP_OK;
         } else if (func == 1) {
             e->type = HIDPP_EVENT_RATCHET_SWITCH;
-            e->as.rachetSwitch = pkt->params[0];
+            e->as.ratchetSwitch = pkt->params[0];
             return HIDPP_OK;
         }
 
@@ -714,6 +714,15 @@ int hidpp_feature_id(hidpp_device_t *dev, uint8_t index) {
     if (!dev)
         return HIDPP_EINVAL;
     return index < dev->numFeatures ? dev->features[index] : HIDPP_ENOENT;
+}
+
+size_t hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max) {
+    if (!dev || !out || max == 0)
+        return 0;
+
+    size_t count = dev->numFeatures < max ? dev->numFeatures : max;
+    memcpy(out, dev->features, count * sizeof(*out));
+    return count;
 }
 
 int hidpp_device_info(hidpp_device_t *dev, struct hidpp_device_info *out) {
