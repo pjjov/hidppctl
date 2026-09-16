@@ -315,6 +315,18 @@ HIDPP_API int hidpp_request(
 /** Sets the timeout in milliseconds for IO operations. **/
 HIDPP_API int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout);
 
+/** Enables (`nonblock` != 0) or disables non-blocking reads on `rcv`.
+    With non-blocking reads enabled, hidpp_receive/hidpp_poll/
+    hidpp_device_poll return HIDPP_EAGAIN immediately instead of
+    blocking for up to the configured timeout when no report is
+    available yet -- useful for integrating with an external event
+    loop (call hidpp_poll periodically, e.g. on a timer or whenever
+    your loop is otherwise idle, instead of dedicating a thread to it).
+    hidpp_request() is unaffected: it always waits (up to its own retry
+    budget) for a matching response.
+**/
+HIDPP_API int hidpp_set_nonblocking(hidpp_receiver_t *rcv, int nonblock);
+
 /** Sets the software id of the HID++ requests. **/
 HIDPP_API int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid);
 
@@ -398,6 +410,12 @@ HIDPP_API int hidpp_keymap_remap(
 
 /** Returns the last error message of `rcv` or it's devices. **/
 HIDPP_API const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
+
+/** Returns a human-readable string for a `hidpp_error` code (e.g.
+    HIDPP_EIO -> "I/O error"). Unlike hidpp_error(), this does not
+    depend on a receiver and never returns NULL.
+**/
+HIDPP_API const char *hidpp_error_str(int code);
 
 /** Enumerate HID++ capable devices using `hid_enumerate`. **/
 HIDPP_API size_t hidpp_enumerate(

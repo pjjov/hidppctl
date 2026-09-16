@@ -59,6 +59,7 @@ struct hidpp_receiver_t {
     hid_device *handle;
     uint8_t swid;
     uint8_t retries;
+    uint8_t nonblocking : 1;
     int timeout;
 
     hidpp_device_t devices[7];
@@ -285,9 +286,13 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
 int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
     unsigned char buf[HIDPP_LEN_XLONG];
 
-    int ret = hid_read_timeout(rcv->handle, buf, HIDPP_LEN_XLONG, rcv->timeout);
+    int ret = rcv->nonblocking
+        ? hid_read(rcv->handle, buf, HIDPP_LEN_XLONG)
+        : hid_read_timeout(rcv->handle, buf, HIDPP_LEN_XLONG, rcv->timeout);
 
     if (ret == 0) {
+        if (rcv->nonblocking)
+            return HIDPP_EAGAIN;
         set_error(rcv, L"Packet reading timed out");
         return HIDPP_ETIMEDOUT;
     } else if (ret < 0) {
@@ -341,28 +346,43 @@ static const char *hidpp_strerror(uint8_t code) {
 int hidpp_request(
     hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 ) {
+    /* hidpp_request always waits for a matching response, even if the
+       receiver has been put into non-blocking mode for event-loop
+       polling elsewhere -- save/restore that flag around the retry
+       loop below. */
+    int wasNonblocking = rcv->nonblocking;
+    rcv->nonblocking = 0;
+
     int ret = hidpp_send(rcv, request);
 
-    if (ret < 0)
+    if (ret < 0) {
+        rcv->nonblocking = wasNonblocking;
         return ret;
+    }
 
     for (int attempts = 0; attempts < rcv->retries; ++attempts) {
         ret = hidpp_receive(rcv, response);
 
-        if (ret < 0)
+        if (ret < 0) {
+            rcv->nonblocking = wasNonblocking;
             return ret;
+        }
 
         if (is_error_packet(request, response)) {
             const char *error = hidpp_strerror(response->params[2]);
             set_error(rcv, L"HID++ error: %hs", error);
+            rcv->nonblocking = wasNonblocking;
             return HIDPP_EIO;
         }
 
-        if (is_good_packet(request, response))
+        if (is_good_packet(request, response)) {
+            rcv->nonblocking = wasNonblocking;
             return HIDPP_OK;
+        }
     }
 
     set_error(rcv, L"No response after %d reads", MAX_RETRY);
+    rcv->nonblocking = wasNonblocking;
     return -1;
 }
 
@@ -392,6 +412,19 @@ int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout) {
     return HIDPP_OK;
 }
 
+int hidpp_set_nonblocking(hidpp_receiver_t *rcv, int nonblock) {
+    if (!rcv)
+        return HIDPP_EINVAL;
+
+    if (hid_set_nonblocking(rcv->handle, nonblock ? 1 : 0) < 0) {
+        propagate_error(rcv);
+        return HIDPP_EIO;
+    }
+
+    rcv->nonblocking = nonblock ? 1 : 0;
+    return HIDPP_OK;
+}
+
 /** Sets the software id of the HID++ requests. **/
 int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid) {
     if (!rcv)
@@ -407,6 +440,25 @@ const wchar_t *hidpp_error(hidpp_receiver_t *rcv) {
     if (rcv->error[0] != L'\0')
         return rcv->error;
     return hid_error(rcv->handle);
+}
+
+const char *hidpp_error_str(int code) {
+    switch (code) {
+        /* clang-format off */
+    case HIDPP_OK:         return "Success";
+    case HIDPP_ENOENT:     return "No such entry";
+    case HIDPP_EINTR:      return "Interrupted";
+    case HIDPP_EIO:        return "I/O error";
+    case HIDPP_EAGAIN:     return "Resource temporarily unavailable";
+    case HIDPP_ENOMEM:     return "Out of memory";
+    case HIDPP_EEXIST:     return "Already exists";
+    case HIDPP_EINVAL:     return "Invalid argument";
+    case HIDPP_ENOSYS:     return "Not supported";
+    case HIDPP_ENODATA:    return "No data available";
+    case HIDPP_ETIMEDOUT:  return "Operation timed out";
+    default:               return "Unknown error";
+        /* clang-format on */
+    }
 }
 
 static int protocol_version(hidpp_device_t *dev) {
