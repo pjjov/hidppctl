@@ -111,72 +111,79 @@ static const char *eventNames[HIDPP__EVENT_MAX] = {
     "TOUCH_MOUSE_STATUS",
 };
 
-static const char help_main[]
-    = "usage: hidppctl [OPTIONS]... <command>"
-      "\n"
-      "\nConfigure HID++ compatible devices."
-      "\n"
-      "\nOptions:"
-      "\n-?, --help       Shows this information."
-      "\n-r, --receiver   Specifies which HID++ receiver to use."
-      "\n-d, --device     Specifies which HID++ device index to use."
-      "\n--timeout        Sets the timeout for IO operations in milliseconds."
-      "\n"
-      "\nSubcommands:"
-      "\ninfo            shows information about HID++ devices."
-      "\npoll            polls specified devices for incoming events."
-      "\ndivert          diverts events of reprogrammable buttons."
-      "\nremap           remaps device's control to a different one."
-      "\n"
-      "\nFor more information, run `man hidppctl.1'.";
+struct definition {
+    const char *name;
+    const char *description;
+};
 
-static const char *help_info = "usage: hidppctl [OPTIONS]... info"
-                               "\n"
-                               "\nShows information about HID++ devices."
-                               "\n"
-                               "\nFor more information, run `man hidppctl.1'.";
+static const char *help_epilog = "For more information, run `man hidppctl.1'.";
 
-static const char *help_poll = "usage: hidppctl [OPTIONS]... poll"
-                               "\n"
-                               "\nPolls specified device for incoming events."
-                               "\n"
-                               "\nFor more information, run `man hidppctl.1'.";
+static const char *help_usage_list[] = {
+    [HIDPPCTL_NONE] = "hidppctl [OPTIONS]... <command>",
+    [HIDPPCTL_INFO] = "hidppctl [OPTIONS]... info",
+    [HIDPPCTL_POLL] = "hidppctl [OPTIONS]... poll",
+    [HIDPPCTL_DIVERT] = "hidppctl [OPTIONS]... divert [buttons...]",
+    [HIDPPCTL_REMAP] = "hidppctl [OPTIONS]... remap <control-id> <remap-id>",
+};
 
-static const char *help_divert
-    = "usage: hidppctl [OPTIONS]... divert [buttons...]"
-      "\n"
-      "\nDiverts specified device's buttons and prints associated events."
+static const char *help_desc_list[] = {
+    [HIDPPCTL_NONE] = "Configure HID++ compatible devices.",
+    [HIDPPCTL_INFO] = "Shows information about HID++ devices.",
+    [HIDPPCTL_POLL] = "Polls specified device for incoming events.",
+    [HIDPPCTL_REMAP] = "Remaps device's specified control to a different one.",
+    [HIDPPCTL_DIVERT]
+    = "Diverts specified device's buttons and prints associated events."
       "\nYou can also rebind device's buttons using an argument like this:"
       "\n    '<button code>=<key code>[+<modifier>]'"
-      "\nFor example: '0x0104=home+lshift'."
-      "\n"
-      "\nFor more information, run `man hidppctl.1'.";
+      "\nFor example: '0x0104=home+lshift'.",
+};
 
-static const char
-    *help_remap = "usage: hidppctl [OPTIONS]... remap <control-id> <remap-id>"
-                  "\n"
-                  "\nRemaps device's specified control to a different one."
-                  "\n"
-                  "\nFor more information, run `man hidppctl.1'.";
+static struct definition help_options[] = {
+    { "-?, --help", "Shows this information." },
+    { "-v, --verbose", "Print more verbose messages." },
+    { "--quiet", "Disables output and error printing." },
+    { "-r, --receiver", "Specifies which HID++ receiver to use." },
+    { "-d, --device", "Specifies which HID++ device index to use." },
+    { "--interface", "Specifies which HID interface to use." },
+    { "--timeout", "Sets the timeout for IO operations in milliseconds." },
+    { "--swid", "Sets the software ID for interacting with devices." },
+    { 0 },
+};
 
-static void signal_handler(int sig) { terminate = 1; }
+static struct definition help_subcommands[] = {
+    { "info", "shows information about HID++ devices." },
+    { "poll", "polls specified devices for incoming events." },
+    { "divert", "diverts events of reprogrammable buttons." },
+    { "remap", "remaps device's control to a different one." },
+    { 0 },
+};
+
+static void print_definitions(pf_cli_t *cli, struct definition *def) {
+    for (; def->name; def++)
+        pf_cli_help_definition(cli, def->name, def->description);
+}
 
 static int print_help(hidppctl_t *ctl) {
-    const char *help;
+    pf_cli_t *cli = ctl->cli;
+    int cmd = ctl->options->command;
 
-    switch (ctl->options->command) {
-        /* clang-format off */
-    case HIDPPCTL_INFO:   help = help_info;   break;
-    case HIDPPCTL_POLL:   help = help_poll;   break;
-    case HIDPPCTL_DIVERT: help = help_divert; break;
-    case HIDPPCTL_REMAP:  help = help_remap;  break;
-    default:              help = help_main;
-        /* clang-format on */
+    pf_cli_printf(
+        cli, "usage: %s\n\n%s\n", help_usage_list[cmd], help_desc_list[cmd]
+    );
+
+    pf_cli_help_section(cli, "Options:");
+    print_definitions(cli, help_options);
+
+    if (cmd == HIDPPCTL_NONE) {
+        pf_cli_help_section(cli, "Subcommands:");
+        print_definitions(cli, help_subcommands);
     }
 
-    pf_cli_cprintf(ctl->cli, PF_CLI_RESET, help);
+    pf_cli_printf(cli, "\n%s\n", help_epilog);
     return HIDPP_OK;
 }
+
+static void signal_handler(int sig) { terminate = 1; }
 
 static char *find_next_chr(char *str, char chr) {
     char *out = strchr(str, chr);
