@@ -9,6 +9,7 @@
 
 #include <hidpp.h>
 #include <pf_argparse.h>
+#include <pf_cli.h>
 
 #include <signal.h>
 #include <stdarg.h>
@@ -20,33 +21,81 @@ static volatile sig_atomic_t terminate = 0;
 #define HIDPP_MAX_DIVERT 32
 #define HIDPP_MAX_MODS 8
 
-static struct diversion {
+struct diversion {
     uint16_t ctrl;
     char state;
     int key;
     int count;
     int mods[HIDPP_MAX_MODS];
-} diversions[HIDPP_MAX_DIVERT] = { 0 };
+};
 
-static struct {
-    struct pf_argparser *parser;
-    const char *command;
+typedef struct pf_argparser pf_argparser_t;
 
-    char **argv;
-    int argc;
+typedef struct hidppctl_t {
+    struct hidppctl_opt *options;
+    pf_argparser_t *argparser;
+    pf_cli_t *cli;
+    int inputFd;
+} hidppctl_t;
 
-    char help;
-    const char *receiver;
-    const char *device;
-    const char *timeoutStr;
-    const char *swidStr;
-    const char *interfaceStr;
+struct hidppctl_opt {
+    pf_bool help;
+    pf_bool quiet;
+    pf_bool verbose;
 
-    uint8_t devId;
+    int command;
+    int subject;
+
+    char **paramv;
+    int paramc;
+    char *receiver;
+
+    uint8_t device;
     uint8_t swid;
     int timeout;
     int interface;
-} options = { 0 };
+
+    pf_bool setSwid;
+    pf_bool setTimeout;
+    pf_bool setInterface;
+
+    struct {
+        uint16_t ctrlId;
+        uint16_t remapId;
+    } remap;
+
+    struct {
+        char masks[HIDPP__EVENT_MAX];
+    } poll;
+
+    struct {
+        struct diversion items[HIDPP_MAX_DIVERT];
+    } divert;
+
+    pf_bool requiresInput;
+};
+
+enum hidppctl_command {
+    HIDPPCTL_NONE = 0,
+    HIDPPCTL_INFO,
+    HIDPPCTL_POLL,
+    HIDPPCTL_DIVERT,
+    HIDPPCTL_REMAP,
+};
+
+enum hidppctl_subject {
+    HIDPPCTL_DEVICE,
+    HIDPPCTL_RECEIVER,
+    HIDPPCTL_ALL,
+};
+
+static pf_option_enum_t hidppctl_command_enum[] = {
+    { "info", HIDPPCTL_INFO },
+    { "poll", HIDPPCTL_POLL },
+    { "divert", HIDPPCTL_DIVERT },
+    { "remap", HIDPPCTL_REMAP },
+    { 0 },
+};
 
 static const char *eventNames[HIDPP__EVENT_MAX] = {
     "NONE",
@@ -62,218 +111,367 @@ static const char *eventNames[HIDPP__EVENT_MAX] = {
     "TOUCH_MOUSE_STATUS",
 };
 
+static const char help_main[]
+    = "usage: hidppctl [OPTIONS]... <command>"
+      "\n"
+      "\nConfigure HID++ compatible devices."
+      "\n"
+      "\nOptions:"
+      "\n-?, --help       Shows this information."
+      "\n-r, --receiver   Specifies which HID++ receiver to use."
+      "\n-d, --device     Specifies which HID++ device index to use."
+      "\n--timeout        Sets the timeout for IO operations in milliseconds."
+      "\n"
+      "\nSubcommands:"
+      "\ninfo            shows information about HID++ devices."
+      "\npoll            polls specified devices for incoming events."
+      "\ndivert          diverts events of reprogrammable buttons."
+      "\nremap           remaps device's control to a different one."
+      "\n"
+      "\nFor more information, run `man hidppctl.1'.";
+
+static const char *help_info = "usage: hidppctl [OPTIONS]... info"
+                               "\n"
+                               "\nShows information about HID++ devices."
+                               "\n"
+                               "\nFor more information, run `man hidppctl.1'.";
+
+static const char *help_poll = "usage: hidppctl [OPTIONS]... poll"
+                               "\n"
+                               "\nPolls specified device for incoming events."
+                               "\n"
+                               "\nFor more information, run `man hidppctl.1'.";
+
+static const char *help_divert
+    = "usage: hidppctl [OPTIONS]... divert [buttons...]"
+      "\n"
+      "\nDiverts specified device's buttons and prints associated events."
+      "\nYou can also rebind device's buttons using an argument like this:"
+      "\n    '<button code>=<key code>[+<modifier>]'"
+      "\nFor example: '0x0104=home+lshift'."
+      "\n"
+      "\nFor more information, run `man hidppctl.1'.";
+
+static const char
+    *help_remap = "usage: hidppctl [OPTIONS]... remap <control-id> <remap-id>"
+                  "\n"
+                  "\nRemaps device's specified control to a different one."
+                  "\n"
+                  "\nFor more information, run `man hidppctl.1'.";
+
 static void signal_handler(int sig) { terminate = 1; }
 
-static void errorf(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    fputs("hidppctl: ", stderr);
-    vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
-    va_end(args);
-}
+static int print_help(hidppctl_t *ctl) {
+    const char *help;
 
-static int parse_device_index(const char *arg, uint8_t *out) {
-    char *end;
-    long i = strtol(arg, &end, 0);
+    switch (ctl->options->command) {
+        /* clang-format off */
+    case HIDPPCTL_INFO:   help = help_info;   break;
+    case HIDPPCTL_POLL:   help = help_poll;   break;
+    case HIDPPCTL_DIVERT: help = help_divert; break;
+    case HIDPPCTL_REMAP:  help = help_remap;  break;
+    default:              help = help_main;
+        /* clang-format on */
+    }
 
-    if (end == arg || i < 1 || (i > 6 && i != 0xFF))
-        return HIDPP_EINVAL;
-
-    *out = i;
+    pf_cli_cprintf(ctl->cli, PF_CLI_RESET, help);
     return HIDPP_OK;
 }
 
-static int parse_string_num(const char *str, const char *name, long *out) {
-    if (!str)
-        return HIDPP_OK;
+static char *find_next_chr(char *str, char chr) {
+    char *out = strchr(str, chr);
+    if (out)
+        *out = '\0';
+    return out;
+}
 
+static int parse_diversion_ctrl(pf_argparser_t *p, char *str, uint16_t *out) {
     char *end;
-    *out = strtol(str, &end, 0);
+    long ctrl = strtol(str, &end, 0);
 
     if (end == str) {
-        errorf("Expected a numeric value for %s; got '%s' instead.", name, str);
+        ctrl = hidpp_keymap_from_name(str);
+
+        if (ctrl == 0) {
+            pf_argparser_error(p, "Unknown control name '%s'", str);
+            return HIDPP_EINVAL;
+        }
+    }
+
+    if (ctrl < 0 || ctrl > UINT16_MAX) {
+        pf_argparser_error(
+            p,
+            "Control codes must be between 0 and %u; got %ld",
+            UINT16_MAX,
+            ctrl
+        );
         return HIDPP_EINVAL;
     }
 
+    *out = ctrl;
     return HIDPP_OK;
 }
 
-static int parse_string_args(void) {
-    long timeout = 0;
-    long interface = 0;
-    long swid = 0;
+static int parse_diversion_keys(
+    pf_argparser_t *p, struct hidppctl_opt *o, char *str, int i
+) {
+    char *start = str;
+    char *end;
+    int count = -1;
 
-    if (parse_string_num(options.timeoutStr, "timeout", &timeout))
-        return HIDPP_EINVAL;
-    if (parse_string_num(options.interfaceStr, "the interface", &interface))
-        return HIDPP_EINVAL;
-    if (parse_string_num(options.swidStr, "software id", &swid))
-        return HIDPP_EINVAL;
+    do {
+        if (count > HIDPP_MAX_MODS) {
+            pf_argparser_error(p, "Too many modifiers!");
+            return HIDPP_ENOMEM;
+        }
 
-    options.timeout = timeout;
-    options.interface = interface;
+        end = find_next_chr(start, '+');
+        int key = hidpp_input_key(start);
 
-    if (options.swidStr) {
-        if (swid < 0 || swid > 15) {
-            errorf("Software id must be between 0 and 15 (inclusive).");
+        if (key < 0) {
+            pf_argparser_error(p, "Unknown key code '%s'.", start);
             return HIDPP_EINVAL;
         }
 
-        options.swid = swid;
-    }
+        if (count == -1)
+            o->divert.items[i].key = key;
+        else
+            o->divert.items[i].mods[count] = key;
 
-    if (options.device && parse_device_index(options.device, &options.devId)) {
-        errorf("Invalid device index; must be 255 or between 1 and 6.");
-        return HIDPP_EIO;
-    }
+        count++;
+        start = end + 1;
+    } while (end);
+
+    o->divert.items[i].count = count;
+    return HIDPP_OK;
+}
+
+static int parse_diversion(
+    pf_argparser_t *p, struct hidppctl_opt *o, char *arg, int i
+) {
+    char *ctrlEnd = find_next_chr(arg, '=');
+
+    if (parse_diversion_ctrl(p, arg, &o->divert.items[i].ctrl))
+        return HIDPP_EINVAL;
+
+    if (ctrlEnd && parse_diversion_keys(p, o, &ctrlEnd[1], i))
+        return HIDPP_EINVAL;
 
     return HIDPP_OK;
 }
 
-int parse_args(int argc, char *argv[]) {
-    static const char errorInfo[] = "Run `hidppctl --help' for more "
-                                    "information\n";
-    static const char epilog[] = "\nFor more information, run `man "
-                                 "hidppctl.1'.\n";
+static int parse_poll_event_name(pf_argparser_t *p, const char *arg) {
+    for (int i = 1; i < HIDPP__EVENT_MAX; i++)
+        if (0 == strcmp(arg, eventNames[i]))
+            return i;
 
-    static struct pf_option_info mainInfo[] = {
-        { "-?, --help", "Shows this information." },
-        { "-r, --receiver", "Specifies which HID++ receiver to use." },
-        { "-d, --device", "Specifies which HID++ device index to use." },
-        { "--interface", "Specifies the interface number of the receiver" },
-        { "--timeout", "Sets the timeout for IO operations in milliseconds." },
-        { "--swid", "Sets the software ID to use for HID++ requests." },
-        { 0 },
-    };
-
-    static struct pf_option mainDef[] = {
-        { "help", '?', PF_OPT_BOOL, &options.help },
-        { "timeout", 0, PF_OPT_STR, &options.timeout },
-        { "swid", 0, PF_OPT_STR, &options.swid },
-        { "interface", 0, PF_OPT_STR, &options.interfaceStr },
-        { "receiver", 'r', PF_OPT_STR, &options.receiver },
-        { "device", 'd', PF_OPT_STR, &options.device },
-        { 0 },
-    };
-
-    static struct pf_argparser mainParser = {
-        .name = "hidppctl",
-        .description = "\nConfigure HID++ compatible devices.\n\nOptions:\n",
-        .usage = "usage: hidppctl [OPTIONS]... <command>\n",
-        .errorInfo = errorInfo,
-        .epilog
-        = "\nSubcommands:\n"
-          "  info            shows information about HID++ devices.\n"
-          "  poll            polls specified devices for incoming events.\n"
-          "  divert          diverts events of reprogrammable buttons.\n"
-          "  remap           remaps device's control to a different one.\n"
-          "\nFor more information, run `man hidppctl.1'.\n",
-        .infos = mainInfo,
-        .options = mainDef,
-        .stopAtFirst = PF_ARGPARSE_TRUE,
-    };
-
-    static struct pf_option_info basicInfo[] = {
-        { "-?, --help", "Shows this information." },
-        { 0 },
-    };
-
-    static struct pf_option basicDef[] = {
-        { "help", '?', PF_OPT_BOOL, &options.help },
-        { 0 },
-    };
-
-    static struct pf_argparser infoParser = {
-        .name = "hidppctl info",
-        .description = "\nShows information about HID++ devices.\n\nOptions:\n",
-        .usage = "usage: hidppctl [OPTIONS]... info\n",
-        .errorInfo = errorInfo,
-        .epilog = epilog,
-        .infos = basicInfo,
-        .options = basicDef,
-        .parent = &mainParser
-    };
-
-    static struct pf_argparser divertParser = {
-        .name = "hidppctl divert",
-        .description
-        = "\nDiverts specified device's buttons and prints associated events."
-          "\nYou can also rebind device's buttons using an argument like this:"
-          "\n    '<button code>=<key code>[+<modifier>]' "
-          "\nFor example: '0x0104=home+lshift'."
-          "\n\nOptions:\n",
-        .usage = "usage: hidppctl [OPTIONS]... divert [buttons]...\n",
-        .errorInfo = errorInfo,
-        .epilog = epilog,
-        .infos = basicInfo,
-        .options = basicDef,
-        .parent = &mainParser
-    };
-
-    static struct pf_argparser pollParser = {
-        .name = "hidppctl poll",
-        .description = "\nPolls specified device for incoming events."
-                       "\n\nOptions:\n",
-        .usage = "usage: hidppctl [OPTIONS]... poll\n",
-        .errorInfo = errorInfo,
-        .epilog = epilog,
-        .infos = basicInfo,
-        .options = basicDef,
-        .parent = &mainParser
-    };
-
-    static struct pf_argparser remapParser = {
-        .name = "hidppctl remap",
-        .description = "\nRemaps device's specified control to a different one."
-                       "\n\nOptions:\n",
-        .usage = "usage: hidppctl [OPTIONS]... remap <control-id> <remap-id>\n",
-        .errorInfo = errorInfo,
-        .epilog = epilog,
-        .infos = basicInfo,
-        .options = basicDef,
-        .parent = &mainParser
-    };
-
-    if (pf_argparse(&mainParser, argc, argv) < 0)
-        return HIDPP_EINVAL;
-
-    options.parser = &mainParser;
-
-    if (mainParser.argc == 0) {
-        options.help = PF_ARGPARSE_TRUE;
-        return HIDPP_OK;
-    }
-
-    options.command = mainParser.argv[0];
-    const char *cmd = options.command;
-
-    if (0 == strcmp(cmd, "info"))
-        options.parser = &infoParser;
-    if (0 == strcmp(cmd, "divert"))
-        options.parser = &divertParser;
-    if (0 == strcmp(cmd, "poll"))
-        options.parser = &pollParser;
-    if (0 == strcmp(cmd, "remap"))
-        options.parser = &remapParser;
-
-    if (options.parser == &mainParser) {
-        errorf("Unknown subcommand '%s'!", cmd);
-        fprintf(stderr, "%s", mainParser.errorInfo);
-        return HIDPP_EINVAL;
-    }
-
-    if (pf_argparse(options.parser, mainParser.argc, &argv[1]) < 0)
-        return HIDPP_EINVAL;
-
-    options.argc = options.parser->argc;
-    options.argv = options.parser->argv;
-    return parse_string_args();
+    pf_argparser_error(p, "Unknown event name '%s'.", arg);
+    return 0;
 }
 
-hidpp_receiver_t *open_receiver(const char *name) {
+static int parse_remap_param(
+    pf_argparser_t *p, const char *arg, uint16_t *out
+) {
+    char *end;
+    long value = strtol(arg, &end, 0);
+
+    if (end == arg) {
+        pf_argparser_error(p, "Expected a number; got '%s' instead.", arg);
+        return HIDPP_EINVAL;
+    }
+
+    if (value < 0 || value > UINT16_MAX) {
+        pf_argparser_error(
+            p,
+            "Control id must be between 0 and %u; got %ld instead.",
+            UINT16_MAX,
+            value
+        );
+        return HIDPP_EINVAL;
+    }
+
+    *out = value;
+    return HIDPP_OK;
+}
+
+static int parse_args_start(struct pf_argparser *p, struct hidppctl_opt *o) {
+    memset(o, 0, sizeof(*o));
+    return HIDPP_OK;
+}
+
+static void parse_args_remap(struct pf_argparser *p, struct hidppctl_opt *opt) {
+    if (p->paramc > 2) {
+        pf_argparser_error(p, "Too many arguments for 'divert' subcommand.");
+        return;
+    }
+
+    parse_remap_param(p, opt->paramv[0], &opt->remap.ctrlId);
+    parse_remap_param(p, opt->paramv[1], &opt->remap.remapId);
+}
+
+static void parse_args_divert(
+    struct pf_argparser *p, struct hidppctl_opt *opt
+) { }
+
+static void parse_args_other(struct pf_argparser *p, struct hidppctl_opt *opt) {
+    if (pf_is_param(p, -1)) {
+        pf_argparser_error(
+            p, "subcommand '%s' takes no arguments.", p->paramv[0]
+        );
+    }
+}
+
+static void parse_args_none(struct pf_argparser *p, struct hidppctl_opt *opt) {
+    if (pf_is_param(p, 0)) {
+        if (!pf_match_enum(p->item.param, hidppctl_command_enum, &opt->command))
+            pf_argparser_error(p, "unknown subcommand '%s'", p->item.param);
+    }
+}
+
+static int parse_args_cb(struct pf_argparser *p, void *user) {
+    struct hidppctl_opt *opt = user;
+    int swid, dev;
+
+    if (pf_option_toggle(p, "help", '?', &opt->help))
+        p->help = opt->help;
+    if (pf_option_toggle(p, "verbose", 0, &opt->verbose))
+        p->verbose = opt->verbose;
+    if (pf_option_toggle(p, "quiet", 0, &opt->quiet))
+        p->silent = opt->quiet;
+
+    if (pf_option_int(p, "interface", 0, &opt->interface))
+        opt->setInterface = HIDPP_TRUE;
+    if (pf_option_int(p, "timeout", 0, &opt->timeout))
+        opt->setTimeout = HIDPP_TRUE;
+
+    if (pf_option_string(p, "receiver", 0, &opt->receiver)) {
+        if (opt->subject == HIDPPCTL_ALL)
+            opt->subject = HIDPPCTL_RECEIVER;
+    }
+
+    if (pf_option_int(p, "device", 0, &dev)) {
+        if (dev < 1 || (dev > 6 && dev != 0xFF))
+            pf_argparser_error(p, "Invalid device index %d.", dev);
+        else
+            opt->device = dev;
+
+        opt->subject = HIDPPCTL_DEVICE;
+    }
+
+    if (pf_option_int(p, "swid", 0, &swid)) {
+        if (swid < 0 || swid > 15) {
+            pf_argparser_error(
+                p,
+                "Software id must be between 0 and 15 (inclusive), got %d.",
+                swid
+            );
+        } else {
+            opt->swid = swid;
+            opt->setSwid = HIDPP_TRUE;
+        }
+    }
+
+    switch (opt->command) {
+        /* clang-format off */
+    case HIDPPCTL_DIVERT: parse_args_divert(p, opt); break;
+    case HIDPPCTL_REMAP:  parse_args_remap(p, opt);  break;
+    case HIDPPCTL_NONE:   parse_args_none(p, opt);   break;
+    case HIDPPCTL_POLL:   break;
+    case HIDPPCTL_INFO:
+    default:              parse_args_other(p, opt);  break;
+        /* clang-format on */
+    }
+
+    p->help = opt->help;
+
+    return p->failed ? PF_ARGPARSE_EINTR : PF_ARGPARSE_OK;
+}
+
+static int parse_args_end(
+    hidppctl_t *ctl, struct pf_argparser *p, struct hidppctl_opt *opt
+) {
+    opt->paramc = p->paramc;
+    opt->paramv = p->paramv;
+    ctl->cli->silent = opt->quiet;
+
+    if (opt->paramc == 0)
+        opt->help = PF_TRUE;
+
+    if (opt->help)
+        return HIDPP_OK;
+
+    if (opt->subject == HIDPPCTL_DEVICE && !opt->receiver) {
+        pf_argparser_error(
+            p, "Selecting a device requires specifying the receiver."
+        );
+    }
+
+    if (opt->command == HIDPPCTL_REMAP && p->paramc != 2) {
+        pf_argparser_error(
+            p,
+            "Subcommand 'remap' requires exactly 2 arguments; got %d instead",
+            p->paramc
+        );
+    }
+
+    if (opt->command == HIDPPCTL_POLL) {
+        if (opt->paramc == 0) {
+            for (int i = 0; i < HIDPP__EVENT_MAX; i++)
+                opt->poll.masks[i] = HIDPP_TRUE;
+        } else {
+            for (int j, i = 0; i < opt->paramc; i++) {
+                if (0 == (j = parse_poll_event_name(p, opt->paramv[i])))
+                    return HIDPP_EINVAL;
+                opt->poll.masks[j] = HIDPP_TRUE;
+            }
+        }
+    }
+
+    if (opt->command == HIDPPCTL_DIVERT) {
+        if (p->paramc == 0) {
+            pf_argparser_error(
+                p, "Subcommand 'divert' requires at least 1 argument."
+            );
+        }
+
+        if (p->paramc > HIDPP_MAX_DIVERT) {
+            pf_argparser_error(
+                p,
+                "Too many diversions specified; maximum is %d, got %d.",
+                HIDPP_MAX_DIVERT,
+                p->paramc
+            );
+        }
+
+        if (opt->subject != HIDPPCTL_DEVICE) {
+            pf_argparser_error(
+                p, "A device must be specified for 'divert' subcommand!"
+            );
+        }
+
+        opt->requiresInput = HIDPP_FALSE;
+
+        for (int i = 0; i < opt->paramc; i++) {
+            parse_diversion(p, opt, opt->paramv[i], i);
+            if (opt->divert.items[i].key)
+                opt->requiresInput = HIDPP_TRUE;
+        }
+    }
+
+    return p->failed ? HIDPP_EINVAL : HIDPP_OK;
+}
+
+static int parse_args(hidppctl_t *ctl) {
+    return parse_args_start(ctl->argparser, ctl->options)
+        || pf_argparser_run(ctl->argparser, parse_args_cb, ctl->options)
+        || parse_args_end(ctl, ctl->argparser, ctl->options);
+}
+
+hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
+    struct hidppctl_opt *opt = ctl->options;
+
     if (!name) {
-        errorf("The HID++ receiver must be specified!");
+        pf_cli_errorf(ctl->cli, "The HID++ receiver must be specified!");
         return NULL;
     }
 
@@ -284,13 +482,17 @@ hidpp_receiver_t *open_receiver(const char *name) {
     long pid = strtol(colon + 1, &end, 16);
 
     if (vid < 0 || pid < 0 || vid > UINT16_MAX || pid > UINT16_MAX) {
-        errorf("Vendor and product ids must be between 0 and %u.", UINT16_MAX);
+        pf_cli_errorf(
+            ctl->cli,
+            "Vendor and product ids must be between 0 and %u.",
+            UINT16_MAX
+        );
         return NULL;
     }
 
     if (*colon == ':' && (*end == ':' || *end == '\0')) {
-        if (options.interfaceStr)
-            rcv = hidpp_open_interface(vid, pid, options.interface);
+        if (opt->setInterface)
+            rcv = hidpp_open_interface(vid, pid, opt->interface);
         else
             rcv = hidpp_open(vid, pid, NULL);
     } else {
@@ -298,53 +500,60 @@ hidpp_receiver_t *open_receiver(const char *name) {
     }
 
     if (rcv == NULL)
-        errorf("Unable to open receiver '%s'.", name);
+        pf_cli_errorf(ctl->cli, "Unable to open receiver '%s'.", name);
 
-    if (options.timeoutStr)
-        hidpp_set_timeout(rcv, options.timeout);
-    if (options.swidStr)
-        hidpp_set_swid(rcv, options.swid);
+    if (opt->setTimeout)
+        hidpp_set_timeout(rcv, opt->timeout);
+    if (opt->setSwid)
+        hidpp_set_swid(rcv, opt->swid);
     return rcv;
 }
 
-static hidpp_device_t *open_device(hidpp_receiver_t *rcv, uint8_t index) {
+static hidpp_device_t *open_device(
+    hidppctl_t *ctl, hidpp_receiver_t *rcv, uint8_t index
+) {
     hidpp_device_t *dev;
 
     if (index == 0) {
-        errorf("The HID++ device must be specified!");
+        pf_cli_errorf(ctl->cli, "The HID++ device must be specified!");
         return NULL;
     }
 
     if (!(dev = hidpp_device_open(rcv, index)))
-        errorf("Unable to open device: %ls", hidpp_error(rcv));
+        pf_cli_errorf(ctl->cli, "Unable to open device: %ls", hidpp_error(rcv));
     return dev;
 }
 
-int cmd_info_all(void) {
+int cmd_info_all(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+
     struct hidpp_receiver_info *info, all[32];
     size_t len = hidpp_enumerate(0, 0, all, 32);
 
     if (len == 0) {
-        printf("No HID++ receivers found!\n");
+        pf_cli_printf(cli, "No HID++ receivers found!\n");
         return HIDPP_OK;
     }
 
     for (size_t i = 0; i < len; i++) {
         info = &all[i];
 
-        printf(
+        pf_cli_printf(
+            cli,
             "HID++ receiver '%ls' from '%ls'\n",
             info->product,
             info->manufacturer
         );
-        printf(
+        pf_cli_printf(
+            cli,
             "  ID: %.4x:%.4x (%s)\n",
             info->vendorId,
             info->productId,
             info->path
         );
 
-        printf(
+        pf_cli_printf(
+            cli,
             "  Interface and usage: %d %u/%u\n",
             info->interfaceNumber,
             info->usage,
@@ -357,8 +566,10 @@ int cmd_info_all(void) {
     return HIDPP_OK;
 }
 
-static int cmd_info_rcv(void) {
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
+static int cmd_info_rcv(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
 
     hidpp_device_t *dev;
     struct hidpp_receiver_info info;
@@ -367,24 +578,28 @@ static int cmd_info_rcv(void) {
     if (!rcv || hidpp_receiver_info(rcv, &info))
         return HIDPP_EIO;
 
-    printf("HID++ receiver '%ls'\n", info.product);
-    printf("  ID: %.4x:%.4x (%s)\n", info.vendorId, info.productId, info.path);
-    printf("  Serial number: %ls\n", info.serial);
-    printf("  Manufacturer: %ls\n", info.manufacturer);
-    printf("  Release number %u\n", info.releaseNumber);
-    printf("  Usage and page: %u, %u\n", info.usage, info.usagePage);
-    printf("  Interface: %d\n", info.interfaceNumber);
+    pf_cli_printf(cli, "HID++ receiver '%ls'\n", info.product);
+    pf_cli_printf(
+        cli, "  ID: %.4x:%.4x (%s)\n", info.vendorId, info.productId, info.path
+    );
+    pf_cli_printf(cli, "  Serial number: %ls\n", info.serial);
+    pf_cli_printf(cli, "  Manufacturer: %ls\n", info.manufacturer);
+    pf_cli_printf(cli, "  Release number %u\n", info.releaseNumber);
+    pf_cli_printf(
+        cli, "  Usage and page: %u, %u\n", info.usage, info.usagePage
+    );
+    pf_cli_printf(cli, "  Interface: %d\n", info.interfaceNumber);
 
     for (int i = 1; i < 7; i++) {
         if (!(dev = hidpp_device_open(rcv, i))) {
-            printf("  Device %d disconnected\n", i);
+            pf_cli_printf(cli, "  Device %d disconnected\n", i);
             continue;
         }
 
         hidpp_device_info(dev, &dinfo);
-        printf("  Device %d connected '%s'\n", i, dinfo.name);
-        printf("    Version: %u.%u\n", dinfo.major, dinfo.minor);
-        printf("    Type: %u\n", dinfo.type);
+        pf_cli_printf(cli, "  Device %d connected '%s'\n", i, dinfo.name);
+        pf_cli_printf(cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor);
+        pf_cli_printf(cli, "    Type: %u\n", dinfo.type);
 
         hidpp_device_close(dev);
     }
@@ -394,50 +609,60 @@ static int cmd_info_rcv(void) {
     return HIDPP_OK;
 }
 
-static int cmd_info_dev(void) {
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+static int cmd_info_dev(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     struct hidpp_device_info info;
 
     if (!rcv || !dev)
         return HIDPP_EIO;
 
     if (hidpp_device_info(dev, &info)) {
-        errorf("Unable to read device information: %ls", hidpp_error(rcv));
+        pf_cli_errorf(
+            cli, "Unable to read device information: %ls", hidpp_error(rcv)
+        );
         hidpp_device_close(dev);
         hidpp_close(rcv);
         return HIDPP_EIO;
     }
 
-    printf("Device %d connected '%s'\n", info.index, info.name);
-    printf("  Version: %u.%u\n", info.major, info.minor);
-    printf("  Type: %u\n", info.type);
+    pf_cli_printf(cli, "Device %d connected '%s'\n", info.index, info.name);
+    pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
+    pf_cli_printf(cli, "  Type: %u\n", info.type);
 
     hidpp_device_close(dev);
     hidpp_close(rcv);
     return HIDPP_OK;
 }
 
-static int cmd_info_features(void) {
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+static int cmd_info_features(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     struct hidpp_device_info info;
 
     if (!rcv || !dev)
         return HIDPP_EIO;
 
     if (hidpp_device_info(dev, &info)) {
-        errorf("Unable to read device information: %ls", hidpp_error(rcv));
+        pf_cli_errorf(
+            cli, "Unable to read device information: %ls", hidpp_error(rcv)
+        );
         hidpp_device_close(dev);
         hidpp_close(rcv);
         return HIDPP_EIO;
     }
 
-    printf("Device supports %u HID++ features:\n", info.numFeatures);
+    pf_cli_printf(
+        cli, "Device supports %u HID++ features:\n", info.numFeatures
+    );
 
     for (int i = 0; i < info.numFeatures; i++) {
         uint16_t feat = hidpp_feature_id(dev, i);
-        printf("  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
+        pf_cli_printf(cli, "  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
     }
 
     hidpp_device_close(dev);
@@ -445,9 +670,11 @@ static int cmd_info_features(void) {
     return HIDPP_OK;
 }
 
-static int cmd_info_keymap(void) {
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+static int cmd_info_keymap(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     hidpp_keymap_t *map = hidpp_keymap(dev);
     struct hidpp_keymap_info info;
 
@@ -455,15 +682,19 @@ static int cmd_info_keymap(void) {
         return HIDPP_EIO;
 
     if (!map || hidpp_keymap_info(map, &info, 0)) {
-        printf("Selected device doesn't support keymap features!\n");
+        pf_cli_printf(
+            cli, "Selected device doesn't support keymap features!\n"
+        );
         return HIDPP_OK;
     }
 
-    printf("Device has %u remappable controls:\n", info.numControls);
+    pf_cli_printf(
+        cli, "Device has %u remappable controls:\n", info.numControls
+    );
 
     for (int i = 0; i < info.numControls; i++) {
         uint16_t ctrl = hidpp_keymap_id(map, i);
-        printf("  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
+        pf_cli_printf(cli, "  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
     }
 
     hidpp_device_close(dev);
@@ -471,24 +702,18 @@ static int cmd_info_keymap(void) {
     return HIDPP_OK;
 }
 
-static int column_count(void) {
-    const char *columns = getenv("COLUMNS");
-    size_t max = 0;
-
-    if (columns)
-        max = strtol(columns, NULL, 0);
-    return max > 0 ? max : 80;
-}
-
 extern struct {
     const char name[12];
     int code;
 } hidpp_input_table[];
 
-static int cmd_info_keycodes(void) {
-    printf("Aside from numeric values, key codes also have following aliases:");
+static int cmd_info_keycodes(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+    pf_cli_printf(
+        cli, "Aside from numeric values, key codes also have following aliases:"
+    );
 
-    size_t max = column_count();
+    size_t max = cli->out.columns;
     size_t length = max;
 
     for (size_t i = 0; hidpp_input_table[i].code; i++) {
@@ -496,21 +721,22 @@ static int cmd_info_keycodes(void) {
         length += curr;
 
         if (length >= max) {
-            printf("\n  ");
+            pf_cli_printf(cli, "\n  ");
             length = 2 + curr;
         }
 
-        printf("'%s', ", hidpp_input_table[i].name);
+        pf_cli_printf(cli, "'%s', ", hidpp_input_table[i].name);
     }
 
-    putc('\n', stdout);
+    pf_cli_printf(cli, "\n");
     return HIDPP_OK;
 }
 
-static int cmd_info_events(void) {
-    printf("Supported event types:");
+static int cmd_info_events(hidppctl_t *ctl) {
+    pf_cli_t *cli = ctl->cli;
+    pf_cli_printf(cli, "Supported event types:");
 
-    size_t max = column_count();
+    size_t max = cli->out.columns;
     size_t length = max;
 
     for (int i = 0; i < HIDPP__EVENT_MAX; i++) {
@@ -518,133 +744,71 @@ static int cmd_info_events(void) {
         length += curr;
 
         if (length >= max) {
-            printf("\n  ");
+            pf_cli_printf(cli, "\n  ");
             length = 2 + curr;
         }
 
-        printf("'%s', ", eventNames[i]);
+        pf_cli_printf(cli, "'%s', ", eventNames[i]);
     }
 
-    putc('\n', stdout);
+    pf_cli_printf(cli, "\n");
     return HIDPP_OK;
 }
 
-static int cmd_info(void) {
-    if (options.argc == 1) {
-        if (0 == strcmp(options.argv[0], "keymap"))
-            return cmd_info_keymap();
-        if (0 == strcmp(options.argv[0], "features"))
-            return cmd_info_features();
-        if (0 == strcmp(options.argv[0], "keycodes"))
-            return cmd_info_keycodes();
-        if (0 == strcmp(options.argv[0], "events"))
-            return cmd_info_events();
+static int cmd_info(hidppctl_t *ctl) {
+    struct hidppctl_opt *opt = ctl->options;
 
-        errorf(
+    if (opt->paramc == 1) {
+        if (0 == strcmp(opt->paramv[0], "keymap"))
+            return cmd_info_keymap(ctl);
+        if (0 == strcmp(opt->paramv[0], "features"))
+            return cmd_info_features(ctl);
+        if (0 == strcmp(opt->paramv[0], "keycodes"))
+            return cmd_info_keycodes(ctl);
+        if (0 == strcmp(opt->paramv[0], "events"))
+            return cmd_info_events(ctl);
+
+        pf_cli_errorf(
+            ctl->cli,
             "Unsupported argument '%s'; Valid values are:\n"
             "'keymap', 'features', 'keycodes', 'events'.",
-            options.argv[0]
+            opt->paramv[0]
         );
         return HIDPP_EINVAL;
-    } else if (options.argc > 0) {
-        errorf("Subcommand 'info' takes 1 argument; found %d", options.argc);
-        return HIDPP_EINVAL;
-    }
-
-    if (options.receiver == NULL)
-        return cmd_info_all();
-    if (options.devId != 0)
-        return cmd_info_dev();
-
-    return cmd_info_rcv();
-}
-
-static char *find_next_chr(char *str, char chr) {
-    char *out = strchr(str, chr);
-    if (out)
-        *out = '\0';
-    return out;
-}
-
-static int parse_diversion_ctrl(char *str, uint16_t *out) {
-    char *end;
-    long ctrl = strtol(str, &end, 0);
-
-    if (end == str) {
-        ctrl = hidpp_keymap_from_name(str);
-
-        if (ctrl == 0) {
-            errorf("Unknown control name '%s'", str);
-            return HIDPP_EINVAL;
-        }
-    }
-
-    if (ctrl < 0 || ctrl > UINT16_MAX) {
-        errorf(
-            "Control codes must be between 0 and %u; got %ld", UINT16_MAX, ctrl
+    } else if (opt->paramc > 0) {
+        pf_cli_errorf(
+            ctl->cli,
+            "Subcommand 'info' takes 1 argument; found %d",
+            opt->paramc
         );
         return HIDPP_EINVAL;
     }
 
-    *out = ctrl;
-    return HIDPP_OK;
+    switch (opt->subject) {
+        /* clang-format off */
+    case HIDPPCTL_RECEIVER: return cmd_info_rcv(ctl);
+    case HIDPPCTL_DEVICE:   return cmd_info_dev(ctl);
+    case HIDPPCTL_ALL:
+    default:                return cmd_info_all(ctl);
+        /* clang-format on */
+    }
 }
 
-static int parse_diversion_keys(char *str, int i) {
-    char *start = str;
-    char *end;
-    int count = -1;
+static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
+    struct diversion *diversions = ctl->options->divert.items;
 
-    do {
-        if (count > HIDPP_MAX_MODS) {
-            errorf("Too many modifiers!");
-            return HIDPP_ENOMEM;
-        }
-
-        end = find_next_chr(start, '+');
-        int key = hidpp_input_key(start);
-
-        if (key < 0) {
-            errorf("Unknown key code '%s'.", start);
-            return HIDPP_EINVAL;
-        }
-
-        if (count == -1)
-            diversions[i].key = key;
-        else
-            diversions[i].mods[count] = key;
-
-        count++;
-        start = end + 1;
-    } while (end);
-
-    diversions[i].count = count;
-    return HIDPP_OK;
-}
-
-static int parse_diversion(int i, char *arg) {
-    char *ctrlEnd = find_next_chr(arg, '=');
-
-    if (parse_diversion_ctrl(arg, &diversions[i].ctrl))
-        return HIDPP_EINVAL;
-
-    if (ctrlEnd && parse_diversion_keys(&ctrlEnd[1], i))
-        return HIDPP_EINVAL;
-
-    return HIDPP_OK;
-}
-
-static int cmd_divert_init(hidpp_keymap_t *map) {
     if (!map) {
-        errorf("Specified device doesn't support diversion!");
+        pf_cli_errorf(ctl->cli, "Specified device doesn't support diversion!");
         return HIDPP_EIO;
     }
 
-    for (int i = 0; i < options.argc; i++) {
+    for (int i = 0; i < ctl->options->paramc; i++) {
         uint16_t ctrl = diversions[i].ctrl;
 
         if (hidpp_keymap_divert(map, ctrl, HIDPP_TRUE)) {
-            errorf("Unable to divert the control with id 0x%.4x!", ctrl);
+            pf_cli_errorf(
+                ctl->cli, "Unable to divert the control with id 0x%.4x!", ctrl
+            );
             return HIDPP_EIO;
         }
     }
@@ -652,12 +816,17 @@ static int cmd_divert_init(hidpp_keymap_t *map) {
     return HIDPP_OK;
 }
 
-static int cmd_divert_term(hidpp_keymap_t *map) {
-    for (int i = 0; i < options.argc; i++) {
+static int cmd_divert_term(hidppctl_t *ctl, hidpp_keymap_t *map) {
+    struct diversion *diversions = ctl->options->divert.items;
+
+    for (int i = 0; i < ctl->options->paramc; i++) {
         uint16_t ctrl = diversions[i].ctrl;
 
-        if (hidpp_keymap_divert(map, ctrl, HIDPP_FALSE))
-            errorf("Unable to undivert the control with id 0x%.4x!", ctrl);
+        if (hidpp_keymap_divert(map, ctrl, HIDPP_FALSE)) {
+            pf_cli_errorf(
+                ctl->cli, "Unable to undivert the control with id 0x%.4x!", ctrl
+            );
+        }
     }
 
     return HIDPP_OK;
@@ -672,8 +841,9 @@ static void cmd_divert_set(struct diversion *div, int input, int value) {
 }
 
 static int cmd_divert_poll(
-    hidpp_device_t *dev, hidpp_keymap_t *map, int input
+    hidppctl_t *ctl, hidpp_device_t *dev, hidpp_keymap_t *map, int input
 ) {
+    struct diversion *diversions = ctl->options->divert.items;
     struct hidpp_event e;
 
     if (hidpp_device_poll(dev, &e))
@@ -682,7 +852,7 @@ static int cmd_divert_poll(
     if (e.type != HIDPP_EVENT_BUTTON)
         return HIDPP_ENOSYS;
 
-    for (int i = 0; i < options.argc; i++) {
+    for (int i = 0; i < ctl->options->paramc; i++) {
         struct diversion *div = &diversions[i];
         int value = 0;
 
@@ -697,64 +867,32 @@ static int cmd_divert_poll(
     return HIDPP_OK;
 }
 
-static int cmd_divert_loop(int needsInput) {
-    int input = -1;
-
-    if (needsInput && -1 == (input = hidpp_input_open())) {
-        errorf("Unable to simulate input!");
-        return HIDPP_EIO;
-    }
-
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+static int cmd_divert(hidppctl_t *ctl) {
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     hidpp_keymap_t *map = hidpp_keymap(dev);
 
-    if (!dev || !rcv || cmd_divert_init(map))
+    if (!dev || !rcv || cmd_divert_init(ctl, map))
         return HIDPP_EIO;
 
     signal(SIGTERM, signal_handler);
-    printf("Type Ctrl+C to stop the program.\n");
+    pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
 
     while (!terminate)
-        cmd_divert_poll(dev, map, input);
+        cmd_divert_poll(ctl, dev, map, ctl->inputFd);
 
-    cmd_divert_term(map);
+    cmd_divert_term(ctl, map);
     hidpp_device_close(dev);
     hidpp_close(rcv);
 
-    if (needsInput)
-        hidpp_input_close(input);
     return HIDPP_OK;
 }
 
-static int cmd_divert(void) {
-    if (options.argc == 0)
-        return HIDPP_EINVAL;
-
-    if (options.argc > HIDPP_MAX_DIVERT) {
-        errorf("Too many diversions specified!");
-        return HIDPP_ENOMEM;
-    }
-
-    if (!options.receiver || options.devId == 0) {
-        errorf("Subcommand requires both a receiver and a device specified!");
-        return HIDPP_EINVAL;
-    }
-
-    int hasInput = HIDPP_FALSE;
-
-    for (int i = 0; i < options.argc; i++) {
-        if (parse_diversion(i, options.argv[i]))
-            return HIDPP_EINVAL;
-        if (diversions[i].key)
-            hasInput = HIDPP_TRUE;
-    }
-
-    return cmd_divert_loop(hasInput);
-}
-
-static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
-    printf("%s ", eventNames[e->type]);
+static int cmd_poll_handle(
+    hidppctl_t *ctl, hidpp_device_t *dev, struct hidpp_event *e
+) {
+    pf_cli_t *cli = ctl->cli;
+    pf_cli_cprintf(cli, PF_CLI_BOLD, "%s ", eventNames[e->type]);
 
     switch (e->type) {
     case HIDPP_EVENT_UNKNOWN: {
@@ -771,21 +909,22 @@ static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
             return HIDPP_EINVAL;
 
         for (size_t i = 0; i < length; i++)
-            printf("%.2x", ((uint8_t *)pkt)[i]);
+            pf_cli_printf(cli, "%.2x", ((uint8_t *)pkt)[i]);
         break;
     }
 
     case HIDPP_EVENT_BUTTON:
         for (int i = 0; i < 4; i++)
-            printf(" 0x%.4x", e->as.buttons[i]);
+            pf_cli_printf(cli, " 0x%.4x", e->as.buttons[i]);
         break;
 
     case HIDPP_EVENT_MOUSE:
-        printf("%u %u", e->as.mouse[0], e->as.mouse[1]);
+        pf_cli_printf(cli, "%u %u", e->as.mouse[0], e->as.mouse[1]);
         break;
 
     case HIDPP_EVENT_BATTERY:
-        printf(
+        pf_cli_printf(
+            cli,
             "%u %u %u %u",
             e->as.battery.chargeState,
             e->as.battery.batteryLevel,
@@ -795,23 +934,24 @@ static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
         break;
 
     case HIDPP_EVENT_WHEEL:
-        printf("%.2x %d", e->as.wheel.flags, e->as.wheel.delta);
+        pf_cli_printf(cli, "%.2x %d", e->as.wheel.flags, e->as.wheel.delta);
         break;
 
     case HIDPP_EVENT_RATCHET:
-        printf("%d %d", e->as.ratchet.deltaV, e->as.ratchet.deltaH);
+        pf_cli_printf(cli, "%d %d", e->as.ratchet.deltaV, e->as.ratchet.deltaH);
         break;
 
     case HIDPP_EVENT_RATCHET_SWITCH:
-        printf("%u", e->as.rachetSwitch);
+        pf_cli_printf(cli, "%u", e->as.ratchetSwitch);
         break;
 
     case HIDPP_EVENT_TOUCH_PAD_POINTS:
-        printf("%u ", e->as.touchPadPoints.timestamp);
+        pf_cli_printf(cli, "%u ", e->as.touchPadPoints.timestamp);
 
         for (int i = 0; i < 4; i++) {
             struct hidpp_touch_pad_point *p = &e->as.touchPadPoints.data[i];
-            printf(
+            pf_cli_printf(
+                cli,
                 "{%u,%u,%u,%u,%u,%u,%.2x,%u}",
                 p->type,
                 p->status,
@@ -829,13 +969,14 @@ static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
     case HIDPP_EVENT_TOUCH_MOUSE_POINTS:
         for (int i = 0; i < 4; i++) {
             struct hidpp_touch_mouse_point *p = &e->as.touchMousePoints[i];
-            printf("{%u,%u,%u,%u}", p->x, p->y, p->wx, p->wy);
+            pf_cli_printf(cli, "{%u,%u,%u,%u}", p->x, p->y, p->wx, p->wy);
         }
 
         break;
 
     case HIDPP_EVENT_TOUCH_MOUSE_STATUS:
-        printf(
+        pf_cli_printf(
+            cli,
             "%u %u %u",
             e->as.touchMouseStatus.flags,
             e->as.touchMouseStatus.mouseLifted,
@@ -848,54 +989,34 @@ static int cmd_poll_handle(hidpp_device_t *dev, struct hidpp_event *e) {
         break;
     }
 
-    fputc('\n', stdout);
+    pf_cli_printf(cli, "\n");
     return HIDPP_OK;
 }
 
-static int cmd_poll_parse(const char *arg) {
-    for (int i = 1; i < HIDPP__EVENT_MAX; i++)
-        if (0 == strcmp(arg, eventNames[i]))
-            return i;
+static int cmd_poll(hidppctl_t *ctl) {
+    char *masks = ctl->options->poll.masks;
 
-    errorf("Unknown event name '%s'.", arg);
-    return 0;
-}
-
-static int cmd_poll(void) {
-    char masks[HIDPP__EVENT_MAX] = { 0 };
-
-    if (options.argc == 0) {
-        for (int i = 0; i < HIDPP__EVENT_MAX; i++)
-            masks[i] = HIDPP_TRUE;
-    } else {
-        for (int j, i = 0; i < options.argc; i++) {
-            if (0 == (j = cmd_poll_parse(options.argv[i])))
-                return HIDPP_EINVAL;
-            masks[j] = HIDPP_TRUE;
-        }
-    }
-
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     struct hidpp_event e;
 
     if (!dev || !rcv)
         return HIDPP_EIO;
 
     signal(SIGTERM, signal_handler);
-    printf("Type Ctrl+C to stop the program.\n");
+    pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
 
     while (!terminate) {
         if (HIDPP_OK != hidpp_device_poll(dev, &e))
             continue;
 
         if (e.type > HIDPP__EVENT_MAX || e.type < HIDPP_EVENT_NONE) {
-            printf("ERROR Invalid event type!");
+            pf_cli_cprintf(ctl->cli, PF_FG_RED, "ERROR Invalid event type!");
             break;
         }
 
         if (masks[e.type] == HIDPP_TRUE)
-            cmd_poll_handle(dev, &e);
+            cmd_poll_handle(ctl, dev, &e);
     }
 
     hidpp_device_close(dev);
@@ -903,56 +1024,28 @@ static int cmd_poll(void) {
     return HIDPP_OK;
 }
 
-static int cmd_remap_parse(const char *arg, uint16_t *out) {
-    char *end;
-    long value = strtol(arg, &end, 0);
+static int cmd_remap(hidppctl_t *ctl) {
+    uint16_t ctrl = ctl->options->remap.ctrlId;
+    uint16_t remap = ctl->options->remap.remapId;
 
-    if (end == arg) {
-        errorf("Expected a number; got '%s' instead.", arg);
-        return HIDPP_EINVAL;
-    }
-
-    if (value < 0 || value > UINT16_MAX) {
-        errorf(
-            "Control id must be between 0 and %u; got %ld instead.",
-            UINT16_MAX,
-            value
-        );
-        return HIDPP_EINVAL;
-    }
-
-    *out = value;
-    return HIDPP_OK;
-}
-
-static int cmd_remap(void) {
-    if (options.argc != 2) {
-        errorf(
-            "Subcommand 'remap' requires exactly 2 arguments; got %d instead",
-            options.argc
-        );
-        return HIDPP_EINVAL;
-    }
-
-    uint16_t ctrl, remap;
-    if (cmd_remap_parse(options.argv[0], &ctrl)
-        || cmd_remap_parse(options.argv[1], &remap))
-        return HIDPP_EINVAL;
-
-    hidpp_receiver_t *rcv = open_receiver(options.receiver);
-    hidpp_device_t *dev = open_device(rcv, options.devId);
+    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
+    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     hidpp_keymap_t *map;
 
     if (!dev || !rcv)
         return HIDPP_EIO;
 
     if (!(map = hidpp_keymap(dev))) {
-        errorf("Specified device doesn't support control remapping.");
+        pf_cli_errorf(
+            ctl->cli, "Specified device doesn't support control remapping."
+        );
         return HIDPP_EIO;
     }
 
     if (hidpp_keymap_remap(map, ctrl, remap)) {
-        errorf("Unable to remap control: %ls", hidpp_error(rcv));
+        pf_cli_errorf(
+            ctl->cli, "Unable to remap control: %ls", hidpp_error(rcv)
+        );
         return HIDPP_EIO;
     }
 
@@ -961,31 +1054,72 @@ static int cmd_remap(void) {
     return HIDPP_OK;
 }
 
-int main(int argc, char *argv[]) {
-    if (parse_args(argc, argv))
-        return HIDPP_EINVAL;
-
-    if (options.help) {
-        pf_arghelp(options.parser, NULL);
-        return HIDPP_OK;
-    }
-
+static int hidppctl_init(hidppctl_t *ctl) {
     if (hidpp_init(NULL)) {
-        errorf("Unable to initialize the hidpp library!");
+        pf_cli_errorf(ctl->cli, "Unable to initialize the hidpp library!");
         return HIDPP_EIO;
     }
 
+    if (ctl->options->requiresInput) {
+        if (-1 == (ctl->inputFd = hidpp_input_open())) {
+            pf_cli_errorf(ctl->cli, "Unable to simulate input!");
+            hidpp_exit();
+            return HIDPP_EIO;
+        }
+    }
+
+    return HIDPP_OK;
+}
+
+static void hidppctl_free(hidppctl_t *ctl) {
+    if (ctl->options->requiresInput)
+        hidpp_input_close(ctl->inputFd);
+    hidpp_exit();
+}
+
+static int hidppctl_run(hidppctl_t *ctl) {
+    int rc;
+
+    if ((rc = parse_args(ctl)))
+        return rc;
+
+    if (ctl->options->help)
+        return print_help(ctl);
+
+    if (hidppctl_init(ctl))
+        return HIDPP_EIO;
+
     int result = HIDPP_ENOSYS;
 
-    if (0 == strcmp(options.command, "info"))
-        result = cmd_info();
-    else if (0 == strcmp(options.command, "divert"))
-        result = cmd_divert();
-    else if (0 == strcmp(options.command, "poll"))
-        result = cmd_poll();
-    else if (0 == strcmp(options.command, "remap"))
-        result = cmd_remap();
+    switch (ctl->options->command) {
+        /* clang-format off */
+    case HIDPPCTL_INFO:   result = cmd_info(ctl);   break;
+    case HIDPPCTL_DIVERT: result = cmd_divert(ctl); break;
+    case HIDPPCTL_POLL:   result = cmd_poll(ctl);   break;
+    case HIDPPCTL_REMAP:  result = cmd_remap(ctl);  break;
+    default:              result = HIDPP_ENOSYS;    break;
+    /* clang-format off */
+    }
 
-    hidpp_exit();
+    hidppctl_free(ctl);
     return result;
+}
+
+int main(int argc, char *argv[]) {
+    struct hidppctl_opt options;
+    pf_argparser_t argparser;
+    pf_cli_t cli;
+
+    hidppctl_t state;
+    state.options = &options;
+    state.argparser = &argparser;
+    state.cli = &cli;
+
+    pf_cli_init(state.cli, NULL);
+    pf_argparser_init(state.argparser, argc, argv);
+
+    int rc = hidppctl_run(&state);
+
+    pf_argparser_free(state.argparser);
+    return rc;
 }
