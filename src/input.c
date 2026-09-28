@@ -9,11 +9,18 @@
 
 #include <hidpp.h>
 
+#include <allocator.h>
+#include <allocator_std.h>
+
 #include <assert.h>
 #include <pf_ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+struct hidpp_input_t {
+    int fd; /* unused on Windows */
+};
 
 #ifdef _WIN32
 
@@ -185,14 +192,24 @@ int hidpp_input_key(const char *name) {
     return HIDPP_ENOENT;
 }
 
-int hidpp_input_open(void) {
+hidpp_input_t *hidpp_input_new(allocator_t *allocator) {
+    if (!allocator)
+        allocator = &standard_allocator;
+
+    hidpp_input_t *input = allocate(allocator, sizeof(*input));
+
+    if (!input)
+        return NULL;
+
 #ifdef _WIN32
-    return 0;
+    input->fd = 0;
 #else
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 
-    if (fd < 0)
-        return -1;
+    if (fd < 0) {
+        deallocate(allocator, input, sizeof(*input));
+        return NULL;
+    }
 
     ioctl(fd, UI_SET_EVBIT, EV_KEY);
     ioctl(fd, UI_SET_EVBIT, EV_SYN);
@@ -216,19 +233,28 @@ int hidpp_input_open(void) {
     ioctl(fd, UI_DEV_CREATE);
     sleep(1);
 
-    return fd;
+    input->fd = fd;
 #endif
+
+    return input;
 }
 
-void hidpp_input_close(int fd) {
+void hidpp_input_close(hidpp_input_t *input) {
+    if (!input)
+        return;
+
 #ifndef _WIN32
-    ioctl(fd, UI_DEV_DESTROY);
-    close(fd);
+    ioctl(input->fd, UI_DEV_DESTROY);
+    close(input->fd);
+#else
+    (void)input;
 #endif
 }
 
-int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
-    if (fd < 0 || (!mods && count > 0))
+int hidpp_input_set(
+    hidpp_input_t *input, int key, int *mods, size_t count, int value
+) {
+    if (!input || (!mods && count > 0))
         return HIDPP_EINVAL;
 
 #ifdef _WIN32
@@ -253,29 +279,30 @@ int hidpp_input_set(int fd, int key, int *mods, size_t count, int value) {
 
     return HIDPP_OK;
 #else
-
     for (size_t i = 0; i < count; i++)
-        uinput_emit(fd, EV_KEY, mods[i], value ? 1 : 0);
+        uinput_emit(input->fd, EV_KEY, mods[i], value ? 1 : 0);
     if (count > 0)
-        uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+        uinput_emit(input->fd, EV_SYN, SYN_REPORT, 0);
 
-    uinput_emit(fd, EV_KEY, key, value ? 1 : 0);
-    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+    uinput_emit(input->fd, EV_KEY, key, value ? 1 : 0);
+    uinput_emit(input->fd, EV_SYN, SYN_REPORT, 0);
 
     return HIDPP_OK;
 #endif
 }
 
-int hidpp_input_press(int fd, int key, int *mods, size_t count) {
-    return hidpp_input_set(fd, key, mods, count, 1);
+int hidpp_input_press(hidpp_input_t *input, int key, int *mods, size_t count) {
+    return hidpp_input_set(input, key, mods, count, 1);
 }
 
-int hidpp_input_release(int fd, int key, int *mods, size_t count) {
-    return hidpp_input_set(fd, key, mods, count, 0);
+int hidpp_input_release(
+    hidpp_input_t *input, int key, int *mods, size_t count
+) {
+    return hidpp_input_set(input, key, mods, count, 0);
 }
 
-int hidpp_input_move(int fd, int dx, int dy) {
-    if (fd < 0)
+int hidpp_input_move(hidpp_input_t *input, int dx, int dy) {
+    if (!input)
         return HIDPP_EINVAL;
 
 #ifdef _WIN32
@@ -291,17 +318,17 @@ int hidpp_input_move(int fd, int dx, int dy) {
     return HIDPP_OK;
 #else
     if (dx)
-        uinput_emit(fd, EV_REL, REL_X, dx);
+        uinput_emit(input->fd, EV_REL, REL_X, dx);
     if (dy)
-        uinput_emit(fd, EV_REL, REL_Y, dy);
-    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+        uinput_emit(input->fd, EV_REL, REL_Y, dy);
+    uinput_emit(input->fd, EV_SYN, SYN_REPORT, 0);
 
     return HIDPP_OK;
 #endif
 }
 
-int hidpp_input_button(int fd, int button, int value) {
-    if (fd < 0)
+int hidpp_input_button(hidpp_input_t *input, int button, int value) {
+    if (!input)
         return HIDPP_EINVAL;
 
 #ifdef _WIN32
@@ -361,15 +388,15 @@ int hidpp_input_button(int fd, int button, int value) {
         return HIDPP_EINVAL;
     }
 
-    uinput_emit(fd, EV_KEY, code, value ? 1 : 0);
-    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+    uinput_emit(input->fd, EV_KEY, code, value ? 1 : 0);
+    uinput_emit(input->fd, EV_SYN, SYN_REPORT, 0);
 
     return HIDPP_OK;
 #endif
 }
 
-int hidpp_input_scroll(int fd, int dx, int dy) {
-    if (fd < 0)
+int hidpp_input_scroll(hidpp_input_t *input, int dx, int dy) {
+    if (!input)
         return HIDPP_EINVAL;
 
 #ifdef _WIN32
@@ -401,10 +428,10 @@ int hidpp_input_scroll(int fd, int dx, int dy) {
        public API; uinput's convention already matches that, so no
        sign flip is needed here. */
     if (dy)
-        uinput_emit(fd, EV_REL, REL_WHEEL, dy);
+        uinput_emit(input->fd, EV_REL, REL_WHEEL, dy);
     if (dx)
-        uinput_emit(fd, EV_REL, REL_HWHEEL, dx);
-    uinput_emit(fd, EV_SYN, SYN_REPORT, 0);
+        uinput_emit(input->fd, EV_REL, REL_HWHEEL, dx);
+    uinput_emit(input->fd, EV_SYN, SYN_REPORT, 0);
 
     return HIDPP_OK;
 #endif
@@ -444,8 +471,8 @@ static const struct {
     /* clang-format on */
 };
 
-int hidpp_input_type(int fd, const char *text) {
-    if (fd < 0 || !text)
+int hidpp_input_type(hidpp_input_t *input, const char *text) {
+    if (!input || !text)
         return HIDPP_EINVAL;
 
     int shiftKey = hidpp_input_key("shift");
@@ -495,11 +522,11 @@ int hidpp_input_type(int fd, const char *text) {
             modCount = 1;
         }
 
-        int ret = hidpp_input_press(fd, key, mods, modCount);
+        int ret = hidpp_input_press(input, key, mods, modCount);
         if (ret < 0)
             return ret;
 
-        ret = hidpp_input_release(fd, key, mods, modCount);
+        ret = hidpp_input_release(input, key, mods, modCount);
         if (ret < 0)
             return ret;
     }

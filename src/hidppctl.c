@@ -35,7 +35,7 @@ typedef struct hidppctl_t {
     struct hidppctl_opt *options;
     pf_argparser_t *argparser;
     pf_cli_t *cli;
-    int inputFd;
+    hidpp_input_t *input;
 } hidppctl_t;
 
 struct hidppctl_opt {
@@ -839,7 +839,9 @@ static int cmd_divert_term(hidppctl_t *ctl, hidpp_keymap_t *map) {
     return HIDPP_OK;
 }
 
-static void cmd_divert_set(struct diversion *div, int input, int value) {
+static void cmd_divert_set(
+    struct diversion *div, hidpp_input_t *input, int value
+) {
     if (div->state == value)
         return;
 
@@ -848,7 +850,7 @@ static void cmd_divert_set(struct diversion *div, int input, int value) {
 }
 
 static int cmd_divert_poll(
-    hidppctl_t *ctl, hidpp_device_t *dev, hidpp_keymap_t *map, int input
+    hidppctl_t *ctl, hidpp_device_t *dev, hidpp_keymap_t *map
 ) {
     struct diversion *diversions = ctl->options->divert.items;
     struct hidpp_event e;
@@ -868,7 +870,7 @@ static int cmd_divert_poll(
                 value = 1;
 
         if (value != div->state)
-            cmd_divert_set(div, input, value);
+            cmd_divert_set(div, ctl->input, value);
     }
 
     return HIDPP_OK;
@@ -886,7 +888,7 @@ static int cmd_divert(hidppctl_t *ctl) {
     pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
 
     while (!terminate)
-        cmd_divert_poll(ctl, dev, map, ctl->inputFd);
+        cmd_divert_poll(ctl, dev, map);
 
     cmd_divert_term(ctl, map);
     hidpp_device_close(dev);
@@ -1068,7 +1070,7 @@ static int hidppctl_init(hidppctl_t *ctl) {
     }
 
     if (ctl->options->requiresInput) {
-        if (-1 == (ctl->inputFd = hidpp_input_open())) {
+        if (!(ctl->input = hidpp_input_new(NULL))) {
             pf_cli_errorf(ctl->cli, "Unable to simulate input!");
             hidpp_exit();
             return HIDPP_EIO;
@@ -1080,7 +1082,7 @@ static int hidppctl_init(hidppctl_t *ctl) {
 
 static void hidppctl_free(hidppctl_t *ctl) {
     if (ctl->options->requiresInput)
-        hidpp_input_close(ctl->inputFd);
+        hidpp_input_free(ctl->input);
     hidpp_exit();
 }
 
