@@ -186,6 +186,9 @@ int hidpp_receiver_info(
 }
 
 int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
+    if (!rcv || !pkt)
+        return HIDPP_EINVAL;
+
     unsigned char buf[HIDPP_LEN_XLONG];
     size_t len = packet_length(pkt->kind);
 
@@ -202,7 +205,6 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
 
     if (hid_write(rcv->handle, buf, len) < 0) {
         set_error(rcv, L"tried to write %lu bytes.", len);
-        // propagate_error(rcv);
         return HIDPP_EIO;
     }
 
@@ -210,6 +212,9 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
 }
 
 int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
+    if (!rcv || !out)
+        return HIDPP_EINVAL;
+
     unsigned char buf[HIDPP_LEN_XLONG];
 
     int ret = rcv->nonblocking
@@ -309,7 +314,7 @@ int hidpp_request(
 
     set_error(rcv, L"No response after %d reads", MAX_RETRY);
     rcv->nonblocking = wasNonblocking;
-    return -1;
+    return HIDPP_ENODATA;
 }
 
 int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout) {

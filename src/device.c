@@ -131,14 +131,12 @@ hidpp_device_t *hidpp_device_open(hidpp_receiver_t *rcv, uint8_t device) {
     return dev;
 }
 
-int hidpp_device_close(hidpp_device_t *dev) {
+void hidpp_device_close(hidpp_device_t *dev) {
     if (!dev)
-        return HIDPP_EINVAL;
+        return;
 
     free_features(dev);
     deallocate(hidpp_allocator, dev->allocBuffer, dev->allocSize);
-
-    return HIDPP_OK;
 }
 
 int hidpp_device_info(hidpp_device_t *dev, struct hidpp_device_info *out) {
