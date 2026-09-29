@@ -604,10 +604,8 @@ static int cmd_info_rcv(hidppctl_t *ctl) {
         }
 
         hidpp_device_info(dev, &dinfo);
-        pf_cli_printf(cli, "  Device %d connected '%s'\n", i, dinfo.name);
+        pf_cli_printf(cli, "  Device %d connected\n", i);
         pf_cli_printf(cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor);
-        pf_cli_printf(cli, "    Type: %u\n", dinfo.type);
-
         hidpp_device_close(dev);
     }
 
@@ -635,9 +633,8 @@ static int cmd_info_dev(hidppctl_t *ctl) {
         return HIDPP_EIO;
     }
 
-    pf_cli_printf(cli, "Device %d connected '%s'\n", info.index, info.name);
+    pf_cli_printf(cli, "Device %d connected '%s'\n", info.index);
     pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
-    pf_cli_printf(cli, "  Type: %u\n", info.type);
 
     hidpp_device_close(dev);
     hidpp_close(rcv);
@@ -663,11 +660,12 @@ static int cmd_info_features(hidppctl_t *ctl) {
         return HIDPP_EIO;
     }
 
-    pf_cli_printf(
-        cli, "Device supports %u HID++ features:\n", info.numFeatures
-    );
+    uint16_t features[256];
+    size_t featCount = hidpp_feature_list(dev, features, 256);
 
-    for (int i = 0; i < info.numFeatures; i++) {
+    pf_cli_printf(cli, "Device supports %u HID++ features:\n", featCount);
+
+    for (int i = 0; i < featCount; i++) {
         uint16_t feat = hidpp_feature_id(dev, i);
         pf_cli_printf(cli, "  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
     }
@@ -683,23 +681,23 @@ static int cmd_info_keymap(hidppctl_t *ctl) {
     hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
     hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
     hidpp_keymap_t *map = hidpp_keymap(dev);
-    struct hidpp_keymap_info info;
 
     if (!rcv || !dev)
         return HIDPP_EIO;
 
-    if (!map || hidpp_keymap_info(map, &info, 0)) {
+    if (!map) {
         pf_cli_printf(
             cli, "Selected device doesn't support keymap features!\n"
         );
         return HIDPP_OK;
     }
 
-    pf_cli_printf(
-        cli, "Device has %u remappable controls:\n", info.numControls
-    );
+    uint16_t controls[256];
+    size_t ctrlCount = hidpp_keymap_list(map, controls, 256);
 
-    for (int i = 0; i < info.numControls; i++) {
+    pf_cli_printf(cli, "Device has %u remappable controls:\n", ctrlCount);
+
+    for (int i = 0; i < ctrlCount; i++) {
         uint16_t ctrl = hidpp_keymap_id(map, i);
         pf_cli_printf(cli, "  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
     }
