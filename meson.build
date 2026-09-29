@@ -12,21 +12,46 @@ allocator_dep = dependency('allocator_t', required: true)
 cpolyfill_dep = dependency('cpolyfill', required: true)
 hidapi_dep = dependency('hidapi', required: true)
 
+python = find_program('python3')
+
+table_files = files(
+  'data/controls.txt',
+  'data/features.txt',
+)
+
+generated_tables = custom_target(
+  'constant_tables',
+  input: table_files,
+  output: 'constant_tables_generated.c',
+  command: [
+    python,
+    files('data/embed.py'),
+    '--output', '@OUTPUT@',
+    '--input', '@INPUT@',
+  ],
+  build_by_default: true,
+)
+
 inc = include_directories('include')
+
+src = [
+    'src/features/keymap.c',
+    'src/features/root.c',
+    'src/device.c',
+    'src/input.c',
+    'src/names.c',
+    'src/poll.c',
+    'src/receiver.c',
+    'src/util.c',
+    generated_tables,
+]
 
 lib = library(
     'hidpp',
     dependencies: [hidapi_dep, allocator_dep],
     install: true,
     include_directories: inc,
-    sources: [
-        'src/device.c',
-        'src/input.c',
-        'src/names.c',
-        'src/poll.c',
-        'src/receiver.c',
-        'src/util.c',
-    ]
+    sources: src
 )
 
 hidpp_dep = declare_dependency(

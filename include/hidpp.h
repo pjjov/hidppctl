@@ -247,6 +247,19 @@ struct hidpp_event {
     } as;
 };
 
+struct hidpp_constant {
+    uint16_t code;
+    const char *name;
+};
+
+/** Feature name and code pairs. */
+extern const struct hidpp_constant hidpp_constant_features[];
+extern const size_t hidpp_constant_features_count;
+
+/** Keymap control name and code pairs. */
+extern const struct hidpp_constant hidpp_constant_controls[];
+extern const size_t hidpp_constant_controls_count;
+
 /** Returns the library's runtime version string (see HIDPP_VERSION_STRING).
     Useful for shared-library consumers to detect a mismatch against the
     header they compiled with.

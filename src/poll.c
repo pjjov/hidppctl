@@ -7,7 +7,7 @@
     Look at the COPYING file for more information.
 */
 
-#include "common.h"
+#include "common.h" /* IWYU pragma: keep */
 
 static int parse_event(
     hidpp_device_t *dev, struct hidpp_event *e, hidpp_packet_t *pkt
