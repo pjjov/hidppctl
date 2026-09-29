@@ -20,9 +20,12 @@ lib = library(
     install: true,
     include_directories: inc,
     sources: [
-        'src/hidpp.c',
-        'src/names.c',
+        'src/device.c',
         'src/input.c',
+        'src/names.c',
+        'src/poll.c',
+        'src/receiver.c',
+        'src/util.c',
     ]
 )
 

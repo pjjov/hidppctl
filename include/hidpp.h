@@ -10,10 +10,6 @@
 #ifndef HIDPP_H
 #define HIDPP_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef HIDPP_INLINE
     #define HIDPP_INLINE static inline
 #endif
@@ -25,6 +21,10 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 #include <wchar.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** ## NAME
 
@@ -48,14 +48,6 @@ extern "C" {
 
 **/
 
-#define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
-#define HIDPP_KIND_LONG 0x11 /* Long report  (20 bytes payload) */
-#define HIDPP_KIND_XLONG 0x12 /* Very-long report (64 bytes payload) */
-
-#define HIDPP_LEN_SHORT 7
-#define HIDPP_LEN_LONG 20
-#define HIDPP_LEN_XLONG 64
-
 /* Library version. HIDPP_VERSION is suitable for numeric
    feature-detection (e.g. #if HIDPP_VERSION >= HIDPP_MAKE_VERSION(1,0,0)). */
 #define HIDPP_VERSION_MAJOR 0
@@ -71,6 +63,22 @@ extern "C" {
     )
 
 #define HIDPP_VERSION_STRING "0.1.0"
+
+#define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
+#define HIDPP_KIND_LONG 0x11  /* Long report  (20 bytes payload) */
+#define HIDPP_KIND_XLONG 0x12 /* Very-long report (64 bytes payload) */
+
+#define HIDPP_LEN_SHORT 7
+#define HIDPP_LEN_LONG 20
+#define HIDPP_LEN_XLONG 64
+
+#define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
+#define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xFF))
+#define HIDPP_LSB(word) ((uint8_t)((word) & 0xFF))
+
+#define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
+#define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
+#define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
 
 enum hidpp_error {
     HIDPP_OK = 0,
@@ -112,6 +120,8 @@ enum hidpp_mouse_button {
     HIDPP_BTN_EXTRA = 5,
 };
 
+typedef char hidpp_bool_t;
+
 typedef struct allocator_t allocator_t;
 typedef struct hidpp_receiver_t hidpp_receiver_t;
 typedef struct hidpp_device_t hidpp_device_t;
@@ -130,9 +140,6 @@ struct hidpp_device_info {
     uint8_t minor;
 
     uint8_t index;
-    uint8_t type;
-    uint8_t numFeatures;
-    const char *name;
 };
 
 struct hidpp_receiver_info {
@@ -150,22 +157,6 @@ struct hidpp_receiver_info {
     int busType;
 
     void *_enumerate;
-};
-
-struct hidpp_keymap_info {
-    uint8_t numControls;
-
-    uint8_t controlIndex;
-    uint16_t controlId;
-    uint16_t taskId;
-    uint8_t flags;
-    uint8_t position;
-    uint8_t group;
-    uint8_t groupMask;
-    uint8_t rawXY;
-
-    uint8_t reportFlags;
-    uint16_t remapId;
 };
 
 enum hidpp_event_type {
@@ -340,11 +331,49 @@ HIDPP_API hidpp_device_t *hidpp_device_open(
     hidpp_receiver_t *rcv, uint8_t device
 );
 
+/** Send `pkt` to HID++ receiver. **/
+HIDPP_API int hidpp_device_send(hidpp_device_t *dev, hidpp_packet_t *pkt);
+
+/** Read one HID++ report, blocking for up to `timeout`. **/
+HIDPP_API int hidpp_device_receive(hidpp_device_t *dev, hidpp_packet_t *out);
+
+/** Send a packet and receive the matching response. Automatically
+    retries on unrelated incoming packets (e.g. HID input reports).
+**/
+HIDPP_API int hidpp_device_request(
+    hidpp_device_t *dev, hidpp_packet_t *request, hidpp_packet_t *response
+);
+
+/** Clears cached device information. This includes:
+
+    - Feature information (ids, indexes, flags...)
+    - Keymap information (controls, states, flags...)
+
+    Use this function periodically for long running programs or if connecting
+    and disconnecting devices.
+**/
+HIDPP_API void hidpp_clear_cache(hidpp_device_t *dev);
+
 /** Closes the `device` from the receiver. **/
 HIDPP_API int hidpp_device_close(hidpp_device_t *dev);
 
 /** Polls the device for available events. **/
 HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
+
+/** Reads receiver information to `out`. **/
+HIDPP_API int hidpp_receiver_info(
+    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+);
+
+HIDPP_API void hidpp_free_info(struct hidpp_receiver_info *info);
+
+/** Reads device information to `out`. **/
+HIDPP_API int hidpp_device_info(
+    hidpp_device_t *dev, struct hidpp_device_info *out
+);
+
+/** Pings the device with `data`. **/
+HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
 
 /** Resolve a feature ID to its index on the device. **/
 HIDPP_API int hidpp_feature_index(hidpp_device_t *dev, uint16_t feature);
@@ -362,31 +391,28 @@ hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max);
 /** Returns the name of the feature with the passed ID. **/
 HIDPP_API const char *hidpp_feature_name(uint16_t feature);
 
-/** Reads receiver information to `out`. **/
-HIDPP_API int hidpp_receiver_info(
-    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+/* HID++ 2.0 feature information. */
+struct hidpp_feature_info {
+    const char *name;
+    uint16_t id;
+    uint8_t index;
+    uint8_t version;
+    uint8_t flags;
+    hidpp_bool_t isObsolete;
+    hidpp_bool_t isHidden;
+    hidpp_bool_t initialized;
+};
+
+/** Returns information about the feature with given `id`. */
+HIDPP_API struct hidpp_feature_info *hidpp_feature_info(
+    hidpp_device_t *dev, uint16_t featId
 );
-
-HIDPP_API void hidpp_free_info(struct hidpp_receiver_info *info);
-
-/** Reads device information to `out`. **/
-HIDPP_API int hidpp_device_info(
-    hidpp_device_t *dev, struct hidpp_device_info *out
-);
-
-/** Pings the device with `data`. **/
-HIDPP_API int hidpp_ping(hidpp_device_t *dev, uint8_t data);
 
 /** Inverts the Fn button behaviour on keyboards. **/
 HIDPP_API int hidpp_invert_fn(hidpp_device_t *dev, int value);
 
 /** Returns the object for configuring device's keybindings. **/
 HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);
-
-/** Reads device's keymap information to `out`. **/
-HIDPP_API int hidpp_keymap_info(
-    hidpp_keymap_t *map, struct hidpp_keymap_info *out, uint16_t id
-);
 
 /** Resolve a control ID to its index on the device. **/
 HIDPP_API int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control);
