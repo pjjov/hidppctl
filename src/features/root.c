@@ -101,7 +101,7 @@ static int ensure_init(struct hidpp_feat_root **out, hidpp_device_t *dev) {
     if (!out || !dev)
         return HIDPP_EINVAL;
 
-    root = dev->features[HIDPP_FEAT_ROOT].buffer;
+    root = dev->features[HIDPP_FEAT_ROOT];
     *out = root;
 
     if (root->initialized)

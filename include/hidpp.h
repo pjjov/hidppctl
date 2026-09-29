@@ -126,6 +126,7 @@ typedef struct allocator_t allocator_t;
 typedef struct hidpp_receiver_t hidpp_receiver_t;
 typedef struct hidpp_device_t hidpp_device_t;
 typedef struct hidpp_keymap_t hidpp_keymap_t;
+typedef struct hidpp_input_t hidpp_input_t;
 
 typedef struct hidpp_packet_t {
     uint8_t kind;
@@ -426,12 +427,65 @@ HIDPP_API int hidpp_keymap_from_name(const char *name);
 /** Returns the name of the control with the passed ID. **/
 HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
 
+/** Copies up to `max` of the keymap's control IDs into `out`.
+    Returns the number of entries written.
+*/
+HIDPP_API size_t
+hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max);
+
 /** Diverts a control to be handled by the event handler. **/
 HIDPP_API int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value);
 
 /** Remaps control's behaviour to another one's. **/
 HIDPP_API int hidpp_keymap_remap(
     hidpp_keymap_t *map, uint16_t id, uint16_t remap
+);
+
+/** Information about an individual control (button or key). */
+struct hidpp_keymap_info {
+    uint16_t id;
+    uint8_t index;
+    uint16_t taskId;
+    uint8_t flags;
+    uint8_t position;
+    uint8_t group;
+    uint8_t groupMask;
+    uint8_t rawXY;
+
+    uint8_t reportFlags;
+    uint16_t remapId;
+
+    hidpp_bool_t isVirtual;
+    hidpp_bool_t isPersistable;
+    hidpp_bool_t isDivertable;
+    hidpp_bool_t isReprogrammable;
+    hidpp_bool_t isFnTogglable;
+    hidpp_bool_t isHotkey;
+    hidpp_bool_t isFunctionKey;
+    hidpp_bool_t isMouseButton;
+
+    hidpp_bool_t initialized;
+    const char *name;
+    const char *remapName;
+};
+
+/** Reads device's keymap information about the given control `id`. **/
+HIDPP_API struct hidpp_keymap_info *hidpp_keymap_info(
+    hidpp_keymap_t *map, uint16_t id
+);
+
+/** Information about control's current state. */
+struct hidpp_keymap_state {
+    uint16_t remapId;
+    uint8_t flags;
+    hidpp_bool_t rawXY;
+    hidpp_bool_t isPersistent;
+    hidpp_bool_t isDiverted;
+};
+
+/** Reads current state of the control with `id`. **/
+HIDPP_API int hidpp_keymap_state(
+    hidpp_keymap_t *map, uint16_t id, struct hidpp_keymap_state *out
 );
 
 /** Returns the last error message of `rcv` or it's devices. **/
@@ -451,30 +505,28 @@ HIDPP_API size_t hidpp_enumerate(
     size_t max
 );
 
-/** Opens a handle for simulating keyboard/mouse input. On POSIX this is a
-    real uinput file descriptor (>= 0) to pass to the other hidpp_input_*
-    functions, or a negative hidpp_error on failure. On Windows there is no
-    such handle -- input is injected directly via SendInput() -- so this
-    always returns 0 on success; treat any negative return as failure on
-    both platforms, but do not otherwise interpret the value on Windows.
-**/
-HIDPP_API int hidpp_input_open(void);
+/** Creates a handle for simulating keyboard/mouse input. **/
+HIDPP_API hidpp_input_t *hidpp_input_new(allocator_t *allocator);
 
-/** Closes the file descriptor for simulating keyboard input. **/
-HIDPP_API void hidpp_input_close(int fd);
+/** Frees the input object for simulating keyboard input. **/
+HIDPP_API void hidpp_input_free(hidpp_input_t *input);
 
 /** Returns a platform-specific key code for a given `name`. **/
 HIDPP_API int hidpp_input_key(const char *name);
 
 /** Simulates key press using specified modifiers. **/
-HIDPP_API int hidpp_input_press(int fd, int key, int *mods, size_t count);
+HIDPP_API int hidpp_input_press(
+    hidpp_input_t *input, int key, int *mods, size_t count
+);
 
 /** Simulates key release using specified modifiers. **/
-HIDPP_API int hidpp_input_release(int fd, int key, int *mods, size_t count);
+HIDPP_API int hidpp_input_release(
+    hidpp_input_t *input, int key, int *mods, size_t count
+);
 
 /** Simulates key press or release using specified modifiers. **/
 HIDPP_API int hidpp_input_set(
-    int fd, int key, int *mods, size_t count, int value
+    hidpp_input_t *input, int key, int *mods, size_t count, int value
 );
 
 /** Types out `text` as a sequence of key presses/releases, applying
@@ -483,20 +535,20 @@ HIDPP_API int hidpp_input_set(
     unmappable characters are skipped. Returns HIDPP_OK, or a negative
     hidpp_error if `fd` is invalid.
 **/
-HIDPP_API int hidpp_input_type(int fd, const char *text);
+HIDPP_API int hidpp_input_type(hidpp_input_t *input, const char *text);
 
 /** Simulates a relative mouse movement of (`dx`, `dy`) pixels/counts. **/
-HIDPP_API int hidpp_input_move(int fd, int dx, int dy);
+HIDPP_API int hidpp_input_move(hidpp_input_t *input, int dx, int dy);
 
 /** Simulates a press (`value` != 0) or release (`value` == 0) of a
     mouse button (see enum hidpp_mouse_button).
 **/
-HIDPP_API int hidpp_input_button(int fd, int button, int value);
+HIDPP_API int hidpp_input_button(hidpp_input_t *input, int button, int value);
 
 /** Simulates scroll wheel movement. `dy` is vertical scroll (positive is
     up), `dx` is horizontal scroll (positive is right); either may be 0.
 **/
-HIDPP_API int hidpp_input_scroll(int fd, int dx, int dy);
+HIDPP_API int hidpp_input_scroll(hidpp_input_t *input, int dx, int dy);
 
 #ifdef __cplusplus
 }
