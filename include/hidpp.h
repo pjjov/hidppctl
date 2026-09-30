@@ -67,9 +67,12 @@ extern "C" {
 #define HIDPP_LEN_LONG 20
 #define HIDPP_LEN_XLONG 64
 
-#define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
 #define HIDPP_MSB(word) ((uint8_t)(((word) >> 8) & 0xFF))
 #define HIDPP_LSB(word) ((uint8_t)((word) & 0xFF))
+#define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
+#define HIDPP_DWORD(a, b, c, d)                                           \
+    (((uint32_t)(c) << 24) | ((uint32_t)(c) << 16) | ((uint32_t)(c) << 8) \
+     | (uint32_t)(d))
 
 #define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
 #define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
@@ -371,6 +374,15 @@ HIDPP_API int hidpp_device_request(
 /** Polls the device for available events. */
 HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
 
+/** Returns a 64-bit id number that can be used to uniquely identify a device
+    for caching purposes. This function circumvents all other caching mechanisms
+    by directly requesting necessary data to build a cache id.
+
+    > A cache id is built by concatenating a list of bytes that
+    > represent firmware's prefix, version and build number.
+*/
+HIDPP_API uint64_t hidpp_cache_id(hidpp_device_t *dev);
+
 /** Clears cached device information. This includes:
 
     - Feature information (ids, indexes, flags...)
@@ -439,8 +451,31 @@ HIDPP_API struct hidpp_feature_info *hidpp_feature_info(
     hidpp_device_t *dev, uint16_t featId
 );
 
-/** Inverts the Fn button behaviour on keyboards. */
-HIDPP_API int hidpp_invert_fn(hidpp_device_t *dev, int value);
+/* Firmware entity type. */
+enum hidpp_firmware_type {
+    HIDPP_FIRMWARE_MAIN_APP = 0,
+    HIDPP_FIRMWARE_BOOT_LOADER = 1,
+    HIDPP_FIRMWARE_HARDWARE = 2,
+};
+
+/* Firmware entity information. */
+struct hidpp_firmware_entity {
+    uint8_t id;
+    uint8_t type;
+    uint32_t prefix;
+    uint16_t version;
+    uint16_t buildNumber;
+    uint8_t reserved;
+    uint8_t specificInfo[9];
+
+    const char *typeName;
+    hidpp_bool_t initialized;
+};
+
+/** Queries the device for firmware information for given entity id. */
+HIDPP_API struct hidpp_firmware_entity *hidpp_firmware_entity(
+    hidpp_device_t *dev, uint8_t id, uint8_t *count
+);
 
 /** Returns the object for configuring device's keybindings. */
 HIDPP_API hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev);

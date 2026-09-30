@@ -7,7 +7,7 @@
     Look at the COPYING file for more information.
 */
 
-#include "common.h"
+#include "common.h" /* IWYU pragma: keep */
 
 #include <hidapi.h>
 

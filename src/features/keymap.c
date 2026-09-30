@@ -110,8 +110,8 @@ static int query_control_info(
 }
 
 static int ensure_init(hidpp_keymap_t *map) {
-    if (map->initialized && !map->unsupported)
-        return HIDPP_OK;
+    if (map->initialized)
+        return map->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 
     memset(map, 0, sizeof(*map));
 

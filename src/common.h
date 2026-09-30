@@ -29,6 +29,7 @@ extern allocator_t *hidpp_allocator;
 enum {
     HIDPP_FEAT_ROOT,
     HIDPP_FEAT_KEYMAP,
+    HIDPP_FEAT_FIRMWARE_INFO,
     HIDPP__FEAT_MAX,
 };
 

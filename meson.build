@@ -35,6 +35,7 @@ generated_tables = custom_target(
 inc = include_directories('include')
 
 src = [
+    'src/features/firmware_info.c',
     'src/features/keymap.c',
     'src/features/root.c',
     'src/device.c',

@@ -17,10 +17,12 @@
 
 extern struct hidpp_feat_vt hidpp_feat_root_vt;
 extern struct hidpp_feat_vt hidpp_feat_keymap_vt;
+extern struct hidpp_feat_vt hidpp_feat_firmware_info_vt;
 
 static const struct hidpp_feat_vt *vtables[] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
+    [HIDPP_FEAT_FIRMWARE_INFO] = &hidpp_feat_firmware_info_vt,
 };
 
 static_assert(
@@ -47,16 +49,15 @@ static int protocol_version(hidpp_device_t *dev) {
 }
 
 static hidpp_device_t *alloc_device() {
-    struct joined_allocation_t blocks[] = {
-        { .size = sizeof(hidpp_device_t), .align = _Alignof(hidpp_device_t) },
-        { 0 },
-        { 0 },
-    };
+    struct joined_allocation_t blocks[HIDPP__FEAT_MAX + 1];
 
-    static_assert(
-        PF_COUNTOF(blocks) - 1 == HIDPP__FEAT_MAX,
-        "Number of allocations blocks must match the number of features."
-    );
+    blocks[0].size = sizeof(hidpp_device_t);
+    blocks[0].align = _Alignof(hidpp_device_t);
+
+    for (size_t i = 0; i < HIDPP__FEAT_MAX; i++) {
+        blocks[i + 1].size = vtables[i]->size;
+        blocks[i + 1].align = vtables[i]->alignment;
+    }
 
     size_t size;
     void *buffer = allocate_joined(
