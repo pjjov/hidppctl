@@ -35,6 +35,7 @@ generated_tables = custom_target(
 inc = include_directories('include')
 
 cli_src = [
+    'cli/args.c',
     'cli/main.c',
 ]
 
