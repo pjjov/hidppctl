@@ -11,6 +11,71 @@
 
 #include <string.h>
 
+/** Section: HID++ feature documentation
+
+    Remappable controls (id: 0x1b04, 0x1b00)
+    Big endian integers are exchanged.
+
+    -----------------------
+    Fn 0 - get count
+    -----------------------
+    request:
+    response:
+        uint8_t ctrlCount
+
+    ----------------------
+    Fn 1 - get control info
+    -----------------------
+    request:
+        uint8_t ctrlIndex
+    response:
+        uint16_t ctrlId
+        uint16_t taskId
+        uint8_t flags
+        - bit 7 - virtual
+        - bit 6 - persist
+        - bit 5 - divert
+        - bit 4 - reprog
+        - bit 3 - fntog
+        - bit 2 - hotkey
+        - bit 1 - fkey
+        - bit 0 - mouse
+        uint8_t position
+        uint8_t group
+        uint8_t groupMask
+        uint8_t rawXYflags
+        - bit 0 - rawXY
+
+    ----------------------
+    Fn 2 - get control reporting
+    -----------------------
+    request:
+        uint16_t ctrlId
+    response:
+        uint16_t ctrlId
+        uint8_t flags
+        - bit 4 - rawXY
+        - bit 2 - persist
+        - bit 0 - divert
+        uint16_t remapId
+
+    ----------------------
+    Fn 3 - set control reporting
+    -----------------------
+    request:
+        uint16_t ctrlId
+        uint8_t flags
+        - bit 5 - rvalid
+        - bit 4 - rawXY
+        - bit 3 - pvalid
+        - bit 2 - persist
+        - bit 1 - dvalid
+        - bit 0 - divert
+        uint16_t remapId
+    response:
+        (echoes request packet)
+*/
+
 #define MAX_CONTROLS UINT8_MAX
 
 /* clang-format off */

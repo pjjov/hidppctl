@@ -10,6 +10,32 @@
 #include "../common.h"
 #include "hidpp.h"
 
+/** Section: HID++ feature documentation
+
+    Firmware info (id: 0x0003)
+    Big endian integers are exchanged.
+
+    -----------------------
+    Fn 0 - get entity count
+    -----------------------
+    request:
+    response:
+        uint8_t entityCount
+
+    -----------------------
+    Fn 1 - get entity info
+    -----------------------
+    request:
+        uint8_t entityId
+    response:
+        uint8_t type (lower nibble)
+        uint24_t prefix
+        uint16_t version
+        uint16_t buildNumber
+        uint8_t unknown
+        uint8_t[7] specificInfo
+*/
+
 #define MAX_ENTITY_COUNT 256
 
 struct hidpp_feat_firmware_info {

@@ -9,6 +9,59 @@
 
 #include "../common.h"
 
+/** Section: HID++ feature documentation
+
+    Root feature (id: 0x0000)
+    Big endian integers are exchanged.
+
+    -----------------------
+    Fn 0 - get feature index
+    -----------------------
+    request:
+        uint16_t featureId
+    response:
+        uint8_t featureIndex
+        uint8_t featureType
+        - bit 7 - isObsolete
+        - bit 6 - isHidden
+        - bit 5 - reserved
+        uint8_t version
+
+    ----------------------
+    Fn 1 - ping
+    -----------------------
+    request:
+        uint16_t allZeros
+        uint8_t pingData
+    response:
+        uint8_t protocolVersionMajor
+        uint8_t protocolVersionMinor
+        uint8_t pingData (echoed)
+
+    Feature set information (id: 0x0001)
+    Big endian integers are exchanged.
+
+    -----------------------
+    Fn 0 - get feature count
+    -----------------------
+    request:
+    response:
+        uint8_t count
+
+    -----------------------
+    Fn 1 - get feature id
+    -----------------------
+    request:
+        uint8_t featureIndex
+    response:
+        uint16_t featureId
+        uint8_t featureType
+        - bit 7 - isObsolete
+        - bit 6 - isHidden
+        - bit 5 - reserved
+        uint8_t version
+*/
+
 #define FEATURE_SET_ID 0x0001
 #define MAX_FEAT_COUNT 256
 
