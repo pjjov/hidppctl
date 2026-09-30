@@ -10,6 +10,7 @@
 #ifndef HIDPPCTL_COMMON_H
 #define HIDPPCTL_COMMON_H
 
+#include <assert.h>
 #include <hidpp.h>
 #include <pf_cli.h>
 
@@ -20,14 +21,27 @@ extern "C" {
 #define HIDPP_MAX_DIVERT 32
 #define HIDPP_MAX_MODS 8
 
+#define HIDPP_ENUM_GUARD(name, previousSentinel)          \
+    static_assert(                                        \
+        name##_sentinel == (previousSentinel),            \
+        "Enum has been changed; update the guarded code." \
+    );
+
 typedef struct pf_argparser pf_argparser_t;
 
 enum hidppctl_command {
     HIDPPCTL_NONE = 0,
-    HIDPPCTL_INFO,
-    HIDPPCTL_POLL,
     HIDPPCTL_DIVERT,
+    HIDPPCTL_LIST_EVENTS,
+    HIDPPCTL_LIST_KEYCODES,
+    HIDPPCTL_POLL,
     HIDPPCTL_REMAP,
+    HIDPPCTL_SHOW_FEATURES,
+    HIDPPCTL_SHOW_KEYMAP,
+    HIDPPCTL_STATUS,
+
+    hidppctl_command_max,
+    hidppctl_command_sentinel = 0,
 };
 
 enum hidppctl_subject {
@@ -48,7 +62,10 @@ typedef struct hidppctl_t {
     struct hidppctl_opt *options;
     pf_argparser_t *argparser;
     pf_cli_t *cli;
+
     hidpp_input_t *input;
+    hidpp_receiver_t *receiver;
+    hidpp_device_t *device;
 } hidppctl_t;
 
 struct hidppctl_opt {
@@ -86,6 +103,8 @@ struct hidppctl_opt {
     } divert;
 
     pf_bool requiresInput;
+    pf_bool requiresDevice;
+    pf_bool requiresReceiver;
 };
 
 extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];

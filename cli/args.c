@@ -11,11 +11,17 @@
 
 #include <pf_argparse.h>
 
+HIDPP_ENUM_GUARD(hidppctl_command, 0);
 static pf_option_enum_t hidppctl_command_enum[] = {
-    { "info", HIDPPCTL_INFO },
-    { "poll", HIDPPCTL_POLL },
+    { "none", HIDPPCTL_NONE },
     { "divert", HIDPPCTL_DIVERT },
+    { "list-events", HIDPPCTL_LIST_EVENTS },
+    { "list-keycodes", HIDPPCTL_LIST_KEYCODES },
+    { "poll", HIDPPCTL_POLL },
     { "remap", HIDPPCTL_REMAP },
+    { "show-features", HIDPPCTL_SHOW_FEATURES },
+    { "show-keymap", HIDPPCTL_SHOW_KEYMAP },
+    { "status", HIDPPCTL_STATUS },
     { 0 },
 };
 
@@ -26,24 +32,34 @@ struct definition {
 
 static const char *help_epilog = "For more information, run `man hidppctl.1'.";
 
+HIDPP_ENUM_GUARD(hidppctl_command, 0);
 static const char *help_usage_list[] = {
     [HIDPPCTL_NONE] = "hidppctl [OPTIONS]... <command>",
-    [HIDPPCTL_INFO] = "hidppctl [OPTIONS]... info",
-    [HIDPPCTL_POLL] = "hidppctl [OPTIONS]... poll",
     [HIDPPCTL_DIVERT] = "hidppctl [OPTIONS]... divert [buttons...]",
+    [HIDPPCTL_LIST_EVENTS] = "hidppctl [OPTIONS]... list-events",
+    [HIDPPCTL_LIST_KEYCODES] = "hidppctl [OPTIONS]... list-keycodes",
+    [HIDPPCTL_POLL] = "hidppctl [OPTIONS]... poll",
     [HIDPPCTL_REMAP] = "hidppctl [OPTIONS]... remap <control-id> <remap-id>",
+    [HIDPPCTL_SHOW_FEATURES] = "hidppctl [OPTIONS]... show-features",
+    [HIDPPCTL_SHOW_KEYMAP] = "hidppctl [OPTIONS]... show-keymap",
+    [HIDPPCTL_STATUS] = "hidppctl [OPTIONS]... status",
 };
 
+HIDPP_ENUM_GUARD(hidppctl_command, 0);
 static const char *help_desc_list[] = {
     [HIDPPCTL_NONE] = "Configure HID++ compatible devices.",
-    [HIDPPCTL_INFO] = "Shows information about HID++ devices.",
-    [HIDPPCTL_POLL] = "Polls specified device for incoming events.",
-    [HIDPPCTL_REMAP] = "Remaps device's specified control to a different one.",
     [HIDPPCTL_DIVERT]
     = "Diverts specified device's buttons and prints associated events."
       "\nYou can also rebind device's buttons using an argument like this:"
       "\n    '<button code>=<key code>[+<modifier>]'"
       "\nFor example: '0x0104=home+lshift'.",
+    [HIDPPCTL_LIST_EVENTS] = "Lists supported events and their identifiers.",
+    [HIDPPCTL_LIST_KEYCODES] = "Lists supported OS key identifiers.",
+    [HIDPPCTL_POLL] = "Polls specified device for incoming events.",
+    [HIDPPCTL_REMAP] = "Remaps device's specified control to a different one.",
+    [HIDPPCTL_SHOW_FEATURES] = "Shows supported features for specified device.",
+    [HIDPPCTL_SHOW_KEYMAP] = "Shows keymap information for specified device.",
+    [HIDPPCTL_STATUS] = "Shows status information about HID++ devices.",
 };
 
 static struct definition help_options[] = {
@@ -58,11 +74,17 @@ static struct definition help_options[] = {
     { 0 },
 };
 
+HIDPP_ENUM_GUARD(hidppctl_command, 0);
 static struct definition help_subcommands[] = {
-    { "info", "shows information about HID++ devices." },
-    { "poll", "polls specified devices for incoming events." },
+    { "none", "" },
     { "divert", "diverts events of reprogrammable buttons." },
+    { "list-events", "lists event identifiers" },
+    { "list-keycodes", "lists program's supported keycodes" },
+    { "poll", "polls specified devices for incoming events." },
     { "remap", "remaps device's control to a different one." },
+    { "show-features", "shows supported features for specified device" },
+    { "show-keymap", "shows keymap information for specified device" },
+    { "status", "shows status information about HID++ devices." },
     { 0 },
 };
 
@@ -286,11 +308,11 @@ static int parse_args_cb(struct pf_argparser *p, void *user) {
 
     switch (opt->command) {
         /* clang-format off */
+        HIDPP_ENUM_GUARD(hidppctl_command, 0);
     case HIDPPCTL_DIVERT: parse_args_divert(p, opt); break;
     case HIDPPCTL_REMAP:  parse_args_remap(p, opt);  break;
     case HIDPPCTL_NONE:   parse_args_none(p, opt);   break;
     case HIDPPCTL_POLL:   break;
-    case HIDPPCTL_INFO:
     default:              parse_args_other(p, opt);  break;
         /* clang-format on */
     }
@@ -312,6 +334,11 @@ static int parse_args_end(
 
     if (opt->help)
         return HIDPP_OK;
+
+    if (opt->subject == HIDPPCTL_DEVICE)
+        opt->requiresDevice = HIDPP_TRUE;
+    if (opt->subject == HIDPPCTL_DEVICE || opt->subject == HIDPPCTL_RECEIVER)
+        opt->requiresReceiver = HIDPP_TRUE;
 
     if (opt->subject == HIDPPCTL_DEVICE && !opt->receiver) {
         pf_argparser_error(

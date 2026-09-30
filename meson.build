@@ -35,6 +35,14 @@ generated_tables = custom_target(
 inc = include_directories('include')
 
 cli_src = [
+    'cli/commands/divert.c',
+    'cli/commands/list_events.c',
+    'cli/commands/list_keycodes.c',
+    'cli/commands/poll.c',
+    'cli/commands/remap.c',
+    'cli/commands/show-features.c',
+    'cli/commands/show-keymap.c',
+    'cli/commands/status.c',
     'cli/args.c',
     'cli/main.c',
 ]

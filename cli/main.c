@@ -11,28 +11,14 @@
 
 #include <pf_argparse.h>
 
-#include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-const char *hidppctl_event_names[HIDPP__EVENT_MAX] = {
-    "NONE",
-    "UNKNOWN",
-    "BUTTON",
-    "MOUSE",
-    "BATTERY",
-    "WHEEL",
-    "RATCHET",
-    "RATCHET_SWITCH",
-    "TOUCH_PAD_POINTS",
-    "TOUCH_MOUSE_POINTS",
-    "TOUCH_MOUSE_STATUS",
-};
-
-static volatile sig_atomic_t terminate = 0;
-
-static void signal_handler(int sig) { terminate = 1; }
+extern int cmd_divert(hidppctl_t *ctl);
+extern int cmd_list_events(hidppctl_t *ctl);
+extern int cmd_list_keycodes(hidppctl_t *ctl);
+extern int cmd_poll(hidppctl_t *ctl);
+extern int cmd_remap(hidppctl_t *ctl);
+extern int cmd_show_features(hidppctl_t *ctl);
+extern int cmd_show_keymap(hidppctl_t *ctl);
+extern int cmd_status(hidppctl_t *ctl);
 
 hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     struct hidppctl_opt *opt = ctl->options;
@@ -91,534 +77,14 @@ static hidpp_device_t *open_device(
     return dev;
 }
 
-int cmd_info_all(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-
-    struct hidpp_receiver_info *info, all[32];
-    size_t len = hidpp_enumerate(0, 0, all, 32);
-
-    if (len == 0) {
-        pf_cli_printf(cli, "No HID++ receivers found!\n");
-        return HIDPP_OK;
-    }
-
-    for (size_t i = 0; i < len; i++) {
-        info = &all[i];
-
-        pf_cli_printf(
-            cli,
-            "HID++ receiver '%ls' from '%ls'\n",
-            info->product,
-            info->manufacturer
-        );
-        pf_cli_printf(
-            cli,
-            "  ID: %.4x:%.4x (%s)\n",
-            info->vendorId,
-            info->productId,
-            info->path
-        );
-
-        pf_cli_printf(
-            cli,
-            "  Interface and usage: %d %u/%u\n",
-            info->interfaceNumber,
-            info->usage,
-            info->usagePage
-        );
-
-        hidpp_free_info(info);
-    }
-
-    return HIDPP_OK;
-}
-
-static int cmd_info_rcv(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-
-    hidpp_device_t *dev;
-    struct hidpp_receiver_info info;
-    struct hidpp_device_info dinfo;
-
-    if (!rcv || hidpp_receiver_info(rcv, &info))
-        return HIDPP_EIO;
-
-    pf_cli_printf(cli, "HID++ receiver '%ls'\n", info.product);
-    pf_cli_printf(
-        cli, "  ID: %.4x:%.4x (%s)\n", info.vendorId, info.productId, info.path
-    );
-    pf_cli_printf(cli, "  Serial number: %ls\n", info.serial);
-    pf_cli_printf(cli, "  Manufacturer: %ls\n", info.manufacturer);
-    pf_cli_printf(cli, "  Release number %u\n", info.releaseNumber);
-    pf_cli_printf(
-        cli, "  Usage and page: %u, %u\n", info.usage, info.usagePage
-    );
-    pf_cli_printf(cli, "  Interface: %d\n", info.interfaceNumber);
-
-    for (int i = 1; i < 7; i++) {
-        if (!(dev = hidpp_device_open(rcv, i))) {
-            pf_cli_printf(cli, "  Device %d disconnected\n", i);
-            continue;
-        }
-
-        hidpp_device_info(dev, &dinfo);
-        pf_cli_printf(cli, "  Device %d connected\n", i);
-        pf_cli_printf(cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor);
-        hidpp_device_close(dev);
-    }
-
-    hidpp_free_info(&info);
-    hidpp_close(rcv);
-    return HIDPP_OK;
-}
-
-static int cmd_info_dev(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    struct hidpp_device_info info;
-
-    if (!rcv || !dev)
-        return HIDPP_EIO;
-
-    if (hidpp_device_info(dev, &info)) {
-        pf_cli_errorf(
-            cli, "Unable to read device information: %ls", hidpp_error(rcv)
-        );
-        hidpp_device_close(dev);
-        hidpp_close(rcv);
-        return HIDPP_EIO;
-    }
-
-    pf_cli_printf(cli, "Device %d connected '%s'\n", info.index);
-    pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
-
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-    return HIDPP_OK;
-}
-
-static int cmd_info_features(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    struct hidpp_device_info info;
-
-    if (!rcv || !dev)
-        return HIDPP_EIO;
-
-    if (hidpp_device_info(dev, &info)) {
-        pf_cli_errorf(
-            cli, "Unable to read device information: %ls", hidpp_error(rcv)
-        );
-        hidpp_device_close(dev);
-        hidpp_close(rcv);
-        return HIDPP_EIO;
-    }
-
-    uint16_t features[256];
-    size_t featCount = hidpp_feature_list(dev, features, 256);
-
-    pf_cli_printf(cli, "Device supports %u HID++ features:\n", featCount);
-
-    for (int i = 0; i < featCount; i++) {
-        uint16_t feat = hidpp_feature_id(dev, i);
-        pf_cli_printf(cli, "  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
-    }
-
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-    return HIDPP_OK;
-}
-
-static int cmd_info_keymap(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    hidpp_keymap_t *map = hidpp_keymap(dev);
-
-    if (!rcv || !dev)
-        return HIDPP_EIO;
-
-    if (!map) {
-        pf_cli_printf(
-            cli, "Selected device doesn't support keymap features!\n"
-        );
-        return HIDPP_OK;
-    }
-
-    uint16_t controls[256];
-    size_t ctrlCount = hidpp_keymap_list(map, controls, 256);
-
-    pf_cli_printf(cli, "Device has %u remappable controls:\n", ctrlCount);
-
-    for (int i = 0; i < ctrlCount; i++) {
-        uint16_t ctrl = hidpp_keymap_id(map, i);
-        pf_cli_printf(cli, "  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
-    }
-
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-    return HIDPP_OK;
-}
-
-extern struct {
-    const char name[12];
-    int code;
-} hidpp_input_table[];
-
-static int cmd_info_keycodes(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-    pf_cli_printf(
-        cli, "Aside from numeric values, key codes also have following aliases:"
-    );
-
-    size_t max = cli->out.columns;
-    size_t length = max;
-
-    for (size_t i = 0; hidpp_input_table[i].code; i++) {
-        size_t curr = strlen(hidpp_input_table[i].name) + 4;
-        length += curr;
-
-        if (length >= max) {
-            pf_cli_printf(cli, "\n  ");
-            length = 2 + curr;
-        }
-
-        pf_cli_printf(cli, "'%s', ", hidpp_input_table[i].name);
-    }
-
-    pf_cli_printf(cli, "\n");
-    return HIDPP_OK;
-}
-
-static int cmd_info_events(hidppctl_t *ctl) {
-    pf_cli_t *cli = ctl->cli;
-    pf_cli_printf(cli, "Supported event types:");
-
-    size_t max = cli->out.columns;
-    size_t length = max;
-
-    for (int i = 0; i < HIDPP__EVENT_MAX; i++) {
-        size_t curr = strlen(hidppctl_event_names[i]) + 4;
-        length += curr;
-
-        if (length >= max) {
-            pf_cli_printf(cli, "\n  ");
-            length = 2 + curr;
-        }
-
-        pf_cli_printf(cli, "'%s', ", hidppctl_event_names[i]);
-    }
-
-    pf_cli_printf(cli, "\n");
-    return HIDPP_OK;
-}
-
-static int cmd_info(hidppctl_t *ctl) {
-    struct hidppctl_opt *opt = ctl->options;
-
-    if (opt->paramc == 1) {
-        if (0 == strcmp(opt->paramv[0], "keymap"))
-            return cmd_info_keymap(ctl);
-        if (0 == strcmp(opt->paramv[0], "features"))
-            return cmd_info_features(ctl);
-        if (0 == strcmp(opt->paramv[0], "keycodes"))
-            return cmd_info_keycodes(ctl);
-        if (0 == strcmp(opt->paramv[0], "events"))
-            return cmd_info_events(ctl);
-
-        pf_cli_errorf(
-            ctl->cli,
-            "Unsupported argument '%s'; Valid values are:\n"
-            "'keymap', 'features', 'keycodes', 'events'.",
-            opt->paramv[0]
-        );
-        return HIDPP_EINVAL;
-    } else if (opt->paramc > 0) {
-        pf_cli_errorf(
-            ctl->cli,
-            "Subcommand 'info' takes 1 argument; found %d",
-            opt->paramc
-        );
-        return HIDPP_EINVAL;
-    }
-
-    switch (opt->subject) {
-        /* clang-format off */
-    case HIDPPCTL_RECEIVER: return cmd_info_rcv(ctl);
-    case HIDPPCTL_DEVICE:   return cmd_info_dev(ctl);
-    case HIDPPCTL_ALL:
-    default:                return cmd_info_all(ctl);
-        /* clang-format on */
-    }
-}
-
-static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
-    struct diversion *diversions = ctl->options->divert.items;
-
-    if (!map) {
-        pf_cli_errorf(ctl->cli, "Specified device doesn't support diversion!");
-        return HIDPP_EIO;
-    }
-
-    for (int i = 0; i < ctl->options->paramc; i++) {
-        uint16_t ctrl = diversions[i].ctrl;
-
-        if (hidpp_keymap_divert(map, ctrl, HIDPP_TRUE)) {
-            pf_cli_errorf(
-                ctl->cli, "Unable to divert the control with id 0x%.4x!", ctrl
-            );
-            return HIDPP_EIO;
-        }
-    }
-
-    return HIDPP_OK;
-}
-
-static int cmd_divert_term(hidppctl_t *ctl, hidpp_keymap_t *map) {
-    struct diversion *diversions = ctl->options->divert.items;
-
-    for (int i = 0; i < ctl->options->paramc; i++) {
-        uint16_t ctrl = diversions[i].ctrl;
-
-        if (hidpp_keymap_divert(map, ctrl, HIDPP_FALSE)) {
-            pf_cli_errorf(
-                ctl->cli, "Unable to undivert the control with id 0x%.4x!", ctrl
-            );
-        }
-    }
-
-    return HIDPP_OK;
-}
-
-static void cmd_divert_set(
-    struct diversion *div, hidpp_input_t *input, int value
-) {
-    if (div->state == value)
-        return;
-
-    hidpp_input_set(input, div->key, div->mods, div->count, value);
-    div->state = value;
-}
-
-static int cmd_divert_poll(
-    hidppctl_t *ctl, hidpp_device_t *dev, hidpp_keymap_t *map
-) {
-    struct diversion *diversions = ctl->options->divert.items;
-    struct hidpp_event e;
-
-    if (hidpp_device_poll(dev, &e))
-        return HIDPP_EIO;
-
-    if (e.type != HIDPP_EVENT_BUTTON)
-        return HIDPP_ENOSYS;
-
-    for (int i = 0; i < ctl->options->paramc; i++) {
-        struct diversion *div = &diversions[i];
-        int value = 0;
-
-        for (int i = 0; i < 4; i++)
-            if (e.as.buttons[i] == div->ctrl)
-                value = 1;
-
-        if (value != div->state)
-            cmd_divert_set(div, ctl->input, value);
-    }
-
-    return HIDPP_OK;
-}
-
-static int cmd_divert(hidppctl_t *ctl) {
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    hidpp_keymap_t *map = hidpp_keymap(dev);
-
-    if (!dev || !rcv || cmd_divert_init(ctl, map))
-        return HIDPP_EIO;
-
-    signal(SIGTERM, signal_handler);
-    pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
-
-    while (!terminate)
-        cmd_divert_poll(ctl, dev, map);
-
-    cmd_divert_term(ctl, map);
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-
-    return HIDPP_OK;
-}
-
-static int cmd_poll_handle(
-    hidppctl_t *ctl, hidpp_device_t *dev, struct hidpp_event *e
-) {
-    pf_cli_t *cli = ctl->cli;
-    pf_cli_cprintf(cli, PF_CLI_BOLD, "%s ", hidppctl_event_names[e->type]);
-
-    switch (e->type) {
-    case HIDPP_EVENT_UNKNOWN: {
-        hidpp_packet_t *pkt = &e->as.unknown;
-        size_t length;
-
-        if (pkt->kind <= HIDPP_KIND_SHORT)
-            length = HIDPP_LEN_SHORT;
-        else if (pkt->kind <= HIDPP_KIND_LONG)
-            length = HIDPP_LEN_LONG;
-        else if (pkt->kind <= HIDPP_KIND_XLONG)
-            length = HIDPP_LEN_XLONG;
-        else
-            return HIDPP_EINVAL;
-
-        for (size_t i = 0; i < length; i++)
-            pf_cli_printf(cli, "%.2x", ((uint8_t *)pkt)[i]);
-        break;
-    }
-
-    case HIDPP_EVENT_BUTTON:
-        for (int i = 0; i < 4; i++)
-            pf_cli_printf(cli, " 0x%.4x", e->as.buttons[i]);
-        break;
-
-    case HIDPP_EVENT_MOUSE:
-        pf_cli_printf(cli, "%u %u", e->as.mouse[0], e->as.mouse[1]);
-        break;
-
-    case HIDPP_EVENT_BATTERY:
-        pf_cli_printf(
-            cli,
-            "%u %u %u %u",
-            e->as.battery.chargeState,
-            e->as.battery.batteryLevel,
-            e->as.battery.chargeStatus,
-            e->as.battery.externalPower
-        );
-        break;
-
-    case HIDPP_EVENT_WHEEL:
-        pf_cli_printf(cli, "%.2x %d", e->as.wheel.flags, e->as.wheel.delta);
-        break;
-
-    case HIDPP_EVENT_RATCHET:
-        pf_cli_printf(cli, "%d %d", e->as.ratchet.deltaV, e->as.ratchet.deltaH);
-        break;
-
-    case HIDPP_EVENT_RATCHET_SWITCH:
-        pf_cli_printf(cli, "%u", e->as.ratchetSwitch);
-        break;
-
-    case HIDPP_EVENT_TOUCH_PAD_POINTS:
-        pf_cli_printf(cli, "%u ", e->as.touchPadPoints.timestamp);
-
-        for (int i = 0; i < 4; i++) {
-            struct hidpp_touch_pad_point *p = &e->as.touchPadPoints.data[i];
-            pf_cli_printf(
-                cli,
-                "{%u,%u,%u,%u,%u,%u,%.2x,%u}",
-                p->type,
-                p->status,
-                p->x,
-                p->y,
-                p->force,
-                p->area,
-                p->flags,
-                p->finger
-            );
-        }
-
-        break;
-
-    case HIDPP_EVENT_TOUCH_MOUSE_POINTS:
-        for (int i = 0; i < 4; i++) {
-            struct hidpp_touch_mouse_point *p = &e->as.touchMousePoints[i];
-            pf_cli_printf(cli, "{%u,%u,%u,%u}", p->x, p->y, p->wx, p->wy);
-        }
-
-        break;
-
-    case HIDPP_EVENT_TOUCH_MOUSE_STATUS:
-        pf_cli_printf(
-            cli,
-            "%u %u %u",
-            e->as.touchMouseStatus.flags,
-            e->as.touchMouseStatus.mouseLifted,
-            e->as.touchMouseStatus.buttonDown
-        );
-
-        break;
-
-    default:
-        break;
-    }
-
-    pf_cli_printf(cli, "\n");
-    return HIDPP_OK;
-}
-
-static int cmd_poll(hidppctl_t *ctl) {
-    char *masks = ctl->options->poll.masks;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    struct hidpp_event e;
-
-    if (!dev || !rcv)
-        return HIDPP_EIO;
-
-    signal(SIGTERM, signal_handler);
-    pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
-
-    while (!terminate) {
-        if (HIDPP_OK != hidpp_device_poll(dev, &e))
-            continue;
-
-        if (e.type > HIDPP__EVENT_MAX || e.type < HIDPP_EVENT_NONE) {
-            pf_cli_cprintf(ctl->cli, PF_FG_RED, "ERROR Invalid event type!");
-            break;
-        }
-
-        if (masks[e.type] == HIDPP_TRUE)
-            cmd_poll_handle(ctl, dev, &e);
-    }
-
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-    return HIDPP_OK;
-}
-
-static int cmd_remap(hidppctl_t *ctl) {
-    uint16_t ctrl = ctl->options->remap.ctrlId;
-    uint16_t remap = ctl->options->remap.remapId;
-
-    hidpp_receiver_t *rcv = open_receiver(ctl, ctl->options->receiver);
-    hidpp_device_t *dev = open_device(ctl, rcv, ctl->options->device);
-    hidpp_keymap_t *map;
-
-    if (!dev || !rcv)
-        return HIDPP_EIO;
-
-    if (!(map = hidpp_keymap(dev))) {
-        pf_cli_errorf(
-            ctl->cli, "Specified device doesn't support control remapping."
-        );
-        return HIDPP_EIO;
-    }
-
-    if (hidpp_keymap_remap(map, ctrl, remap)) {
-        pf_cli_errorf(
-            ctl->cli, "Unable to remap control: %ls", hidpp_error(rcv)
-        );
-        return HIDPP_EIO;
-    }
-
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
-    return HIDPP_OK;
+static void hidppctl_free(hidppctl_t *ctl) {
+    if (ctl->options->requiresInput)
+        hidpp_input_free(ctl->input);
+    if (ctl->options->requiresDevice)
+        hidpp_device_close(ctl->device);
+    if (ctl->options->requiresReceiver)
+        hidpp_close(ctl->receiver);
+    hidpp_exit();
 }
 
 static int hidppctl_init(hidppctl_t *ctl) {
@@ -630,18 +96,30 @@ static int hidppctl_init(hidppctl_t *ctl) {
     if (ctl->options->requiresInput) {
         if (!(ctl->input = hidpp_input_new(NULL))) {
             pf_cli_errorf(ctl->cli, "Unable to simulate input!");
-            hidpp_exit();
+            hidppctl_free(ctl);
+            return HIDPP_EIO;
+        }
+    }
+
+    if (ctl->options->requiresReceiver) {
+        ctl->receiver = open_receiver(ctl, ctl->options->receiver);
+
+        if (!ctl->receiver) {
+            hidppctl_free(ctl);
+            return HIDPP_EIO;
+        }
+    }
+
+    if (ctl->options->requiresDevice) {
+        ctl->device = open_device(ctl, ctl->receiver, ctl->options->device);
+
+        if (!ctl->device) {
+            hidppctl_free(ctl);
             return HIDPP_EIO;
         }
     }
 
     return HIDPP_OK;
-}
-
-static void hidppctl_free(hidppctl_t *ctl) {
-    if (ctl->options->requiresInput)
-        hidpp_input_free(ctl->input);
-    hidpp_exit();
 }
 
 static int hidppctl_run(hidppctl_t *ctl) {
@@ -653,19 +131,24 @@ static int hidppctl_run(hidppctl_t *ctl) {
     if (ctl->options->help)
         return hidppctl_print_help(ctl);
 
-    if (hidppctl_init(ctl))
-        return HIDPP_EIO;
+    if ((rc = hidppctl_init(ctl)))
+        return rc;
 
     int result = HIDPP_ENOSYS;
 
     switch (ctl->options->command) {
         /* clang-format off */
-    case HIDPPCTL_INFO:   result = cmd_info(ctl);   break;
-    case HIDPPCTL_DIVERT: result = cmd_divert(ctl); break;
-    case HIDPPCTL_POLL:   result = cmd_poll(ctl);   break;
-    case HIDPPCTL_REMAP:  result = cmd_remap(ctl);  break;
-    default:              result = HIDPP_ENOSYS;    break;
-    /* clang-format off */
+        HIDPP_ENUM_GUARD(hidppctl_command, 0);
+    case HIDPPCTL_DIVERT:        result = cmd_divert(ctl);        break;
+    case HIDPPCTL_LIST_EVENTS:   result = cmd_list_events(ctl);   break;
+    case HIDPPCTL_LIST_KEYCODES: result = cmd_list_keycodes(ctl); break;
+    case HIDPPCTL_POLL:          result = cmd_poll(ctl);          break;
+    case HIDPPCTL_REMAP:         result = cmd_remap(ctl);         break;
+    case HIDPPCTL_SHOW_FEATURES: result = cmd_show_features(ctl); break;
+    case HIDPPCTL_SHOW_KEYMAP:   result = cmd_show_keymap(ctl);   break;
+    case HIDPPCTL_STATUS:        result = cmd_status(ctl);        break;
+    default:                     result = HIDPP_ENOSYS;           break;
+        /* clang-format off */
     }
 
     hidppctl_free(ctl);
@@ -673,11 +156,11 @@ static int hidppctl_run(hidppctl_t *ctl) {
 }
 
 int main(int argc, char *argv[]) {
-    struct hidppctl_opt options;
-    pf_argparser_t argparser;
-    pf_cli_t cli;
+    struct hidppctl_opt options = {0};
+    pf_argparser_t argparser = {0};
+    pf_cli_t cli = {0};
 
-    hidppctl_t state;
+    hidppctl_t state = {0};
     state.options = &options;
     state.argparser = &argparser;
     state.cli = &cli;
