@@ -115,7 +115,7 @@ struct hidpp_constant {
 
         for array_name, entries in tables:
             f.write(
-                f"static const struct hidpp_constant "
+                f"const struct hidpp_constant "
                 f"{array_name}[] = {{\n"
             )
 
@@ -126,7 +126,7 @@ struct hidpp_constant {
 
             f.write(
                 "};\n\n"
-                f"static const size_t {array_name}_count = "
+                f"const size_t {array_name}_count = "
                 f"sizeof({array_name}) / sizeof({array_name}[0]);\n\n"
             )
 

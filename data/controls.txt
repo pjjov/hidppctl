@@ -278,4 +278,4 @@ hidpp_constant_controls
 0x0123=Standard_Key_B
 0x0124=Standard_Key_C
 0x013C=Right_Option__Start__2
-{ 0x0141, "Play_Pause" },
+0x0141=Play_Pause

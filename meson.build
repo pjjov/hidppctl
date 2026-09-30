@@ -34,16 +34,20 @@ generated_tables = custom_target(
 
 inc = include_directories('include')
 
-src = [
-    'src/features/firmware_info.c',
-    'src/features/keymap.c',
-    'src/features/root.c',
-    'src/device.c',
-    'src/input.c',
-    'src/names.c',
-    'src/poll.c',
-    'src/receiver.c',
-    'src/util.c',
+cli_src = [
+    'cli/main.c',
+]
+
+lib_src = [
+    'lib/features/firmware_info.c',
+    'lib/features/keymap.c',
+    'lib/features/root.c',
+    'lib/device.c',
+    'lib/input.c',
+    'lib/names.c',
+    'lib/poll.c',
+    'lib/receiver.c',
+    'lib/util.c',
     generated_tables,
 ]
 
@@ -52,7 +56,7 @@ lib = library(
     dependencies: [hidapi_dep, allocator_dep],
     install: true,
     include_directories: inc,
-    sources: src
+    sources: lib_src
 )
 
 hidpp_dep = declare_dependency(
@@ -66,7 +70,7 @@ executable(
     'hidppctl',
     dependencies: [hidpp_dep, cpolyfill_dep],
     install: true,
-    sources: ['src/hidppctl.c']
+    sources: cli_src
 )
 
 install_headers('include/hidpp.h')

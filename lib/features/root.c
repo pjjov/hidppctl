@@ -255,7 +255,7 @@ size_t hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max) {
     struct hidpp_feat_root *root;
 
     if (ensure_init(&root, dev))
-        return NULL;
+        return 0;
 
     size_t count = root->featCount < max ? root->featCount : max;
 

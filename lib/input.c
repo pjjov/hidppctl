@@ -239,7 +239,7 @@ hidpp_input_t *hidpp_input_new(allocator_t *allocator) {
     return input;
 }
 
-void hidpp_input_close(hidpp_input_t *input) {
+void hidpp_input_free(hidpp_input_t *input) {
     if (!input)
         return;
 
