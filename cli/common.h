@@ -45,9 +45,9 @@ enum hidppctl_command {
 };
 
 enum hidppctl_subject {
-    HIDPPCTL_DEVICE,
-    HIDPPCTL_RECEIVER,
     HIDPPCTL_ALL,
+    HIDPPCTL_RECEIVER,
+    HIDPPCTL_DEVICE,
 };
 
 struct diversion {

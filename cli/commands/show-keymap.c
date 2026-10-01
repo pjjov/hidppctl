@@ -36,7 +36,5 @@ int cmd_show_keymap(hidppctl_t *ctl) {
         pf_cli_printf(cli, "  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
     }
 
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }

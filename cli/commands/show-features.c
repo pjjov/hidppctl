@@ -20,8 +20,6 @@ int cmd_show_features(hidppctl_t *ctl) {
         pf_cli_errorf(
             cli, "Unable to read device information: %ls", hidpp_error(rcv)
         );
-        hidpp_device_close(dev);
-        hidpp_close(rcv);
         return HIDPP_EIO;
     }
 
@@ -35,7 +33,5 @@ int cmd_show_features(hidppctl_t *ctl) {
         pf_cli_printf(cli, "  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
     }
 
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }

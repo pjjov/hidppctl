@@ -87,8 +87,6 @@ static int cmd_status_rcv(hidppctl_t *ctl) {
         hidpp_device_close(dev);
     }
 
-    hidpp_free_info(&info);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }
 
@@ -103,16 +101,13 @@ static int cmd_status_dev(hidppctl_t *ctl) {
         pf_cli_errorf(
             cli, "Unable to read device information: %ls", hidpp_error(rcv)
         );
-        hidpp_device_close(dev);
-        hidpp_close(rcv);
+
         return HIDPP_EIO;
     }
 
     pf_cli_printf(cli, "Device %d connected '%s'\n", info.index);
     pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
 
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }
 

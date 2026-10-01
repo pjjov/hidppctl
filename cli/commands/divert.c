@@ -92,7 +92,6 @@ static int cmd_divert_poll(
 }
 
 int cmd_divert(hidppctl_t *ctl) {
-    hidpp_receiver_t *rcv = ctl->receiver;
     hidpp_device_t *dev = ctl->device;
     hidpp_keymap_t *map = hidpp_keymap(dev);
 
@@ -106,8 +105,6 @@ int cmd_divert(hidppctl_t *ctl) {
         cmd_divert_poll(ctl, dev, map);
 
     cmd_divert_term(ctl, map);
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
 
     return HIDPP_OK;
 }

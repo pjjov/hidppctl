@@ -124,7 +124,6 @@ static int cmd_poll_handle(
 int cmd_poll(hidppctl_t *ctl) {
     char *masks = ctl->options->poll.masks;
 
-    hidpp_receiver_t *rcv = ctl->receiver;
     hidpp_device_t *dev = ctl->device;
     struct hidpp_event e;
 
@@ -144,7 +143,5 @@ int cmd_poll(hidppctl_t *ctl) {
             cmd_poll_handle(ctl, dev, &e);
     }
 
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }

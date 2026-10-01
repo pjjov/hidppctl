@@ -32,7 +32,5 @@ int cmd_remap(hidppctl_t *ctl) {
         return HIDPP_EIO;
     }
 
-    hidpp_device_close(dev);
-    hidpp_close(rcv);
     return HIDPP_OK;
 }
