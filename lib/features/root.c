@@ -75,6 +75,11 @@ struct hidpp_feat_root {
     struct hidpp_feature_info infos[MAX_FEAT_COUNT];
 };
 
+static void unpack_flags(struct hidpp_feature_info *out) {
+    out->isObsolete = !!(out->flags & IS_OBSOLETE_FLAG);
+    out->isHidden = !!(out->flags & IS_HIDDEN_FLAG);
+}
+
 static uint8_t root_feature_index(hidpp_device_t *dev, uint16_t feat) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, 0, 0);
@@ -115,8 +120,7 @@ static int query_feature_info_by_id(
     out->flags = res.params[1];
     out->version = res.params[2];
     out->name = hidpp_feature_name(out->id);
-    out->isObsolete = !!(out->flags & IS_OBSOLETE_FLAG);
-    out->isHidden = !!(out->flags & IS_HIDDEN_FLAG);
+    unpack_flags(out);
 
     return HIDPP_OK;
 }
@@ -142,8 +146,7 @@ static int query_feature_info_by_index(
     out->flags = res.params[2];
     out->version = res.params[3];
     out->name = hidpp_feature_name(out->id);
-    out->isObsolete = !!(out->flags & IS_OBSOLETE_FLAG);
-    out->isHidden = !!(out->flags & IS_HIDDEN_FLAG);
+    unpack_flags(out);
 
     return HIDPP_OK;
 }
@@ -173,9 +176,59 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     root->initialized = HIDPP_FALSE;
 }
 
+static void cache_all(hidpp_device_t *dev, void *feat) {
+    uint16_t buf[MAX_FEAT_COUNT];
+    hidpp_feature_list(dev, buf, MAX_FEAT_COUNT);
+}
+
+static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    struct hidpp_feat_root *root = feat;
+
+    SAVE_BYTE(b, root->initialized);
+    SAVE_BYTE(b, root->featSetIndex);
+    SAVE_BYTE(b, root->featCount);
+
+    for (size_t i = 0; i < MAX_FEAT_COUNT; i++) {
+        struct hidpp_feature_info *info = &root->infos[i];
+        SAVE_BYTE(b, info->initialized);
+        SAVE_WORD(b, info->id);
+        SAVE_BYTE(b, info->index);
+        SAVE_BYTE(b, info->version);
+        SAVE_BYTE(b, info->flags);
+    }
+}
+
+static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    struct hidpp_feat_root *root = feat;
+
+    root->initialized = LOAD_BYTE(b);
+    root->featSetIndex = LOAD_BYTE(b);
+    root->featCount = LOAD_BYTE(b);
+
+    for (size_t i = 0; i < MAX_FEAT_COUNT; i++) {
+        struct hidpp_feature_info *info = &root->infos[i];
+        info->initialized = LOAD_BYTE(b);
+        info->id = LOAD_WORD(b);
+        info->index = LOAD_BYTE(b);
+        info->version = LOAD_BYTE(b);
+        info->flags = LOAD_BYTE(b);
+
+        if (info->initialized) {
+            unpack_flags(info);
+            info->name = hidpp_feature_name(info->id);
+        } else {
+            info->name = NULL;
+        }
+    }
+}
+
 const struct hidpp_feat_vt hidpp_feat_root_vt = {
     .size = sizeof(struct hidpp_feat_root),
+    .cacheSize = sizeof(struct hidpp_feat_root),
     .alignment = _Alignof(struct hidpp_feat_root),
+    .cacheAll = cache_all,
+    .saveCache = save_cache,
+    .loadCache = load_cache,
     .clearCache = clear_cache,
 };
 

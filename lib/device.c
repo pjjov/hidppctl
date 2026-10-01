@@ -19,16 +19,12 @@ extern struct hidpp_feat_vt hidpp_feat_root_vt;
 extern struct hidpp_feat_vt hidpp_feat_keymap_vt;
 extern struct hidpp_feat_vt hidpp_feat_firmware_info_vt;
 
-static const struct hidpp_feat_vt *vtables[] = {
+HIDPP_ENUM_GUARD(hidpp_feat, 0)
+const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
     [HIDPP_FEAT_FIRMWARE_INFO] = &hidpp_feat_firmware_info_vt,
 };
-
-static_assert(
-    HIDPP__FEAT_MAX == PF_COUNTOF(vtables),
-    "Number of features and their vtables must match."
-);
 
 static int protocol_version(hidpp_device_t *dev) {
     hidpp_receiver_t *rcv = dev->receiver;
@@ -49,14 +45,14 @@ static int protocol_version(hidpp_device_t *dev) {
 }
 
 static hidpp_device_t *alloc_device() {
-    struct joined_allocation_t blocks[HIDPP__FEAT_MAX + 1];
+    struct joined_allocation_t blocks[hidpp_feat_max + 1];
 
     blocks[0].size = sizeof(hidpp_device_t);
     blocks[0].align = _Alignof(hidpp_device_t);
 
-    for (size_t i = 0; i < HIDPP__FEAT_MAX; i++) {
-        blocks[i + 1].size = vtables[i]->size;
-        blocks[i + 1].align = vtables[i]->alignment;
+    for (size_t i = 0; i < hidpp_feat_max; i++) {
+        blocks[i + 1].size = hidpp_feat_vtables[i]->size;
+        blocks[i + 1].align = hidpp_feat_vtables[i]->alignment;
     }
 
     size_t size;
@@ -72,7 +68,7 @@ static hidpp_device_t *alloc_device() {
     dev->allocBuffer = buffer;
     dev->allocSize = size;
 
-    for (int i = 0; i < HIDPP__FEAT_MAX; i++) {
+    for (int i = 0; i < hidpp_feat_max; i++) {
         memset(blocks[i + 1].buffer, 0, blocks[i + 1].size);
         dev->features[i] = blocks[i + 1].buffer;
     }
@@ -83,26 +79,17 @@ static hidpp_device_t *alloc_device() {
 static int init_features(hidpp_device_t *dev) {
     int rc = HIDPP_OK;
 
-    for (size_t i = 0; !rc && i < HIDPP__FEAT_MAX; i++)
-        if (vtables[i]->init)
-            rc = vtables[i]->init(dev, dev->features[i]);
+    for (size_t i = 0; !rc && i < hidpp_feat_max; i++)
+        if (hidpp_feat_vtables[i]->init)
+            rc = hidpp_feat_vtables[i]->init(dev, dev->features[i]);
 
     return rc;
 }
 
 static void free_features(hidpp_device_t *dev) {
-    for (size_t i = 0; i < HIDPP__FEAT_MAX; i++)
-        if (vtables[i]->free)
-            vtables[i]->free(dev, dev->features[i]);
-}
-
-void hidpp_clear_cache(hidpp_device_t *dev) {
-    if (!dev)
-        return;
-
-    for (size_t i = 0; i < HIDPP__FEAT_MAX; i++)
-        if (vtables[i]->clearCache)
-            vtables[i]->clearCache(dev, dev->features[i]);
+    for (size_t i = 0; i < hidpp_feat_max; i++)
+        if (hidpp_feat_vtables[i]->free)
+            hidpp_feat_vtables[i]->free(dev, dev->features[i]);
 }
 
 hidpp_device_t *hidpp_device_open(hidpp_receiver_t *rcv, uint8_t device) {

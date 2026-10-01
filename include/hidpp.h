@@ -71,7 +71,7 @@ extern "C" {
 #define HIDPP_LSB(word) ((uint8_t)((word) & 0xFF))
 #define HIDPP_WORD(msb, lsb) (((uint16_t)(msb) << 8) | (uint16_t)(lsb))
 #define HIDPP_DWORD(a, b, c, d)                                           \
-    (((uint32_t)(c) << 24) | ((uint32_t)(c) << 16) | ((uint32_t)(c) << 8) \
+    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) \
      | (uint32_t)(d))
 
 #define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
@@ -383,6 +383,22 @@ HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
 */
 HIDPP_API uint64_t hidpp_cache_id(hidpp_device_t *dev);
 
+/** Attempts to cache data for all features of the given device. */
+HIDPP_API void hidpp_cache_all(hidpp_device_t *dev);
+
+/** Saves current cache content into the given buffer and reports it's size.
+    Parameter 'size' should contain the maximum buffer size at call time.
+    Errors: EINVAL, ENOMEM.
+*/
+HIDPP_API int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size);
+
+/** Loads previously saved cache buffer for given device.
+    Errors: EINVAL, ENOMEM, ENOSYS.
+*/
+HIDPP_API int hidpp_cache_load(
+    hidpp_device_t *dev, const void *buffer, size_t size
+);
+
 /** Clears cached device information. This includes:
 
     - Feature information (ids, indexes, flags...)
@@ -391,7 +407,7 @@ HIDPP_API uint64_t hidpp_cache_id(hidpp_device_t *dev);
     Use this function periodically for long running programs or if connecting
     and disconnecting devices.
 */
-HIDPP_API void hidpp_clear_cache(hidpp_device_t *dev);
+HIDPP_API void hidpp_cache_clear(hidpp_device_t *dev);
 
 /** Closes the `device` from the receiver. */
 HIDPP_API void hidpp_device_close(hidpp_device_t *dev);
@@ -516,9 +532,6 @@ struct hidpp_keymap_info {
     uint8_t group;
     uint8_t groupMask;
     uint8_t rawXY;
-
-    uint8_t reportFlags;
-    uint16_t remapId;
 
     hidpp_bool_t isVirtual;
     hidpp_bool_t isPersistable;

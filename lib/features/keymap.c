@@ -76,7 +76,7 @@
         (echoes request packet)
 */
 
-#define MAX_CONTROLS UINT8_MAX
+#define MAX_CONTROLS 256
 
 /* clang-format off */
 
@@ -106,6 +106,17 @@ struct hidpp_keymap_t {
     uint8_t ctrlCount;
     struct hidpp_keymap_info controls[MAX_CONTROLS];
 };
+
+static void unpack_flags(struct hidpp_keymap_info *out) {
+    out->isVirtual = !!(out->flags & IS_VIRTUAL_FLAG);
+    out->isPersistable = !!(out->flags & IS_PERSISTABLE_FLAG);
+    out->isDivertable = !!(out->flags & IS_DIVERTABLE_FLAG);
+    out->isReprogrammable = !!(out->flags & IS_REPROGRAMMABLE_FLAG);
+    out->isFnTogglable = !!(out->flags & IS_FN_TOGGLABLE_FLAG);
+    out->isHotkey = !!(out->flags & IS_HOTKEY_FLAG);
+    out->isFunctionKey = !!(out->flags & IS_FUNCTION_KEY_FLAG);
+    out->isMouseButton = !!(out->flags & IS_MOUSE_BUTTON_FLAG);
+}
 
 static int query_keymap_version(hidpp_keymap_t *map) {
     int version, result;
@@ -158,14 +169,7 @@ static int query_control_info(
     out->groupMask = res.params[7];
     out->rawXY = res.params[8];
 
-    out->isVirtual = !!(out->flags & IS_VIRTUAL_FLAG);
-    out->isPersistable = !!(out->flags & IS_PERSISTABLE_FLAG);
-    out->isDivertable = !!(out->flags & IS_DIVERTABLE_FLAG);
-    out->isReprogrammable = !!(out->flags & IS_REPROGRAMMABLE_FLAG);
-    out->isFnTogglable = !!(out->flags & IS_FN_TOGGLABLE_FLAG);
-    out->isHotkey = !!(out->flags & IS_HOTKEY_FLAG);
-    out->isFunctionKey = !!(out->flags & IS_FUNCTION_KEY_FLAG);
-    out->isMouseButton = !!(out->flags & IS_MOUSE_BUTTON_FLAG);
+    unpack_flags(out);
 
     out->initialized = HIDPP_TRUE;
     out->name = hidpp_keymap_name(out->id);
@@ -196,9 +200,73 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     map->initialized = HIDPP_FALSE;
 }
 
+static void cache_all(hidpp_device_t *dev, void *feat) {
+    (void)dev;
+    ensure_init(feat);
+}
+
+static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    hidpp_keymap_t *map = feat;
+
+    SAVE_BYTE(b, map->initialized);
+    SAVE_BYTE(b, map->unsupported);
+    SAVE_BYTE(b, map->featIndex);
+    SAVE_BYTE(b, map->featVersion);
+    SAVE_BYTE(b, map->ctrlCount);
+
+    for (size_t i = 0; i < MAX_CONTROLS; i++) {
+        struct hidpp_keymap_info *info = &map->controls[i];
+        SAVE_BYTE(b, info->initialized);
+        SAVE_WORD(b, info->id);
+        SAVE_BYTE(b, info->index);
+        SAVE_WORD(b, info->taskId);
+        SAVE_BYTE(b, info->flags);
+        SAVE_BYTE(b, info->position);
+        SAVE_BYTE(b, info->group);
+        SAVE_BYTE(b, info->groupMask);
+        SAVE_BYTE(b, info->rawXY);
+    }
+}
+
+static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    hidpp_keymap_t *map = feat;
+
+    map->initialized = LOAD_BYTE(b);
+    map->unsupported = LOAD_BYTE(b);
+    map->featIndex = LOAD_BYTE(b);
+    map->featVersion = LOAD_BYTE(b);
+    map->ctrlCount = LOAD_BYTE(b);
+
+    for (size_t i = 0; i < MAX_CONTROLS; i++) {
+        struct hidpp_keymap_info *info = &map->controls[i];
+        info->initialized = LOAD_BYTE(b);
+        info->id = LOAD_WORD(b);
+        info->index = LOAD_BYTE(b);
+        info->taskId = LOAD_WORD(b);
+        info->flags = LOAD_BYTE(b);
+        info->position = LOAD_BYTE(b);
+        info->group = LOAD_BYTE(b);
+        info->groupMask = LOAD_BYTE(b);
+        info->rawXY = LOAD_BYTE(b);
+
+        if (map->initialized && !map->unsupported && info->initialized) {
+            unpack_flags(info);
+            info->name = hidpp_keymap_name(info->id);
+            info->remapName = NULL;
+        } else {
+            info->name = NULL;
+            info->remapName = NULL;
+        }
+    }
+}
+
 const struct hidpp_feat_vt hidpp_feat_keymap_vt = {
     .size = sizeof(hidpp_keymap_t),
+    .cacheSize = sizeof(hidpp_keymap_t),
     .alignment = _Alignof(hidpp_keymap_t),
+    .cacheAll = cache_all,
+    .saveCache = save_cache,
+    .loadCache = load_cache,
     .clearCache = clear_cache,
 };
 

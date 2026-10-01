@@ -8,7 +8,6 @@
 */
 
 #include "../common.h"
-#include "hidpp.h"
 
 /** Section: HID++ feature documentation
 
@@ -46,13 +45,6 @@ struct hidpp_feat_firmware_info {
 
     struct hidpp_firmware_entity entities[MAX_ENTITY_COUNT];
 };
-
-static inline uint64_t build_uint64_t(uint8_t *a, size_t count) {
-    uint64_t out = 0;
-    for (size_t i = 0; i < count; i++)
-        out = (out << 8) | (uint64_t)a[i];
-    return out;
-}
 
 static const char *get_type_name(int type) {
     switch (type) {
@@ -137,9 +129,67 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     fw->initialized = HIDPP_FALSE;
 }
 
+static void cache_all(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_firmware_info *fw;
+    (void)feat;
+    ensure_init(&fw, dev);
+}
+
+static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    struct hidpp_feat_firmware_info *fw = feat;
+
+    SAVE_BYTE(b, fw->initialized);
+    SAVE_BYTE(b, fw->unsupported);
+    SAVE_BYTE(b, fw->featIndex);
+    SAVE_BYTE(b, fw->entityCount);
+
+    for (size_t i = 0; i < MAX_ENTITY_COUNT; i++) {
+        struct hidpp_firmware_entity *info = &fw->entities[i];
+        SAVE_BYTE(b, info->initialized);
+        SAVE_BYTE(b, info->id);
+        SAVE_BYTE(b, info->type);
+        SAVE_DWORD(b, info->prefix);
+        SAVE_WORD(b, info->version);
+        SAVE_WORD(b, info->buildNumber);
+        SAVE_BYTE(b, info->reserved);
+        SAVE_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
+    }
+}
+
+static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+    struct hidpp_feat_firmware_info *fw = feat;
+
+    fw->initialized = LOAD_BYTE(b);
+    fw->unsupported = LOAD_BYTE(b);
+    fw->featIndex = LOAD_BYTE(b);
+    fw->entityCount = LOAD_BYTE(b);
+
+    for (size_t i = 0; i < MAX_ENTITY_COUNT; i++) {
+        struct hidpp_firmware_entity *info = &fw->entities[i];
+        info->initialized = LOAD_BYTE(b);
+        info->id = LOAD_BYTE(b);
+        info->type = LOAD_BYTE(b);
+        info->prefix = LOAD_DWORD(b);
+        info->version = LOAD_WORD(b);
+        info->buildNumber = LOAD_WORD(b);
+        info->reserved = LOAD_BYTE(b);
+        LOAD_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
+
+        if (fw->initialized && !fw->unsupported && info->initialized) {
+            info->typeName = get_type_name(info->type);
+        } else {
+            info->typeName = NULL;
+        }
+    }
+}
+
 const struct hidpp_feat_vt hidpp_feat_firmware_info_vt = {
     .size = sizeof(struct hidpp_feat_firmware_info),
+    .cacheSize = sizeof(struct hidpp_feat_firmware_info),
     .alignment = _Alignof(struct hidpp_feat_firmware_info),
+    .cacheAll = cache_all,
+    .saveCache = save_cache,
+    .loadCache = load_cache,
     .clearCache = clear_cache,
 };
 
@@ -161,30 +211,4 @@ struct hidpp_firmware_entity *hidpp_firmware_entity(
         *count = fw->entityCount;
 
     return info;
-}
-
-uint64_t hidpp_cache_id(hidpp_device_t *dev) {
-    if (!dev)
-        return 0;
-
-    hidpp_packet_t req, res;
-
-    /* Cached feature index is avoided */
-    make_packet(&req, dev, 0, 0);
-    req.params[0] = HIDPP_MSB(0x0003);
-    req.params[1] = HIDPP_LSB(0x0003);
-
-    if (hidpp_device_request(dev, &req, &res))
-        return 0;
-
-    uint8_t featIndex = res.params[0];
-    make_packet(&req, dev, featIndex, 1);
-    req.params[0] = 0;
-
-    if (hidpp_device_request(dev, &req, &res))
-        return 0;
-
-    /* 0x00 + Prefix + Version + Build number */
-    uint64_t cacheId = build_uint64_t(&res.params[1], 7);
-    return cacheId;
 }
