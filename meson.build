@@ -48,6 +48,7 @@ cli_src = [
 ]
 
 lib_src = [
+    'lib/features/battery.c',
     'lib/features/device_name.c',
     'lib/features/firmware_info.c',
     'lib/features/keymap.c',

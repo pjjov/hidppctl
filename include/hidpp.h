@@ -168,18 +168,15 @@ enum hidpp_event_type {
     HIDPP__EVENT_MAX,
 };
 
-enum hidpp_battery_level {
-    HIDPP_BATTERY_CRITICAL = 1,
-    HIDPP_BATTERY_LOW = 2,
-    HIDPP_BATTERY_GOOD = 4,
-    HIDPP_BATTERY_FULL = 8,
-};
-
 enum hidpp_battery_charge {
     HIDPP_BATTERY_DISCHARGING = 0,
-    HIDPP_BATTERY_CHARGING = 1,
-    HIDPP_BATTERY_CHARGE_COMPLETE = 2,
-    HIDPP_BATTERY_CHARGE_ERROR = 3,
+    HIDPP_BATTERY_RECHARGING = 1,
+    HIDPP_BATTERY_CHARGE_FINAL = 2,
+    HIDPP_BATTERY_CHARGE_COMPLETE = 3,
+    HIDPP_BATTERY_SUBOPTIMAL_RECHARGING = 4,
+    HIDPP_BATTERY_INVALID_TYPE = 5,
+    HIDPP_BATTERY_THREMAL_ERROR = 6,
+    HIDPP_BATTERY_CHARGE_ERROR = 7,
 };
 
 struct hidpp_event {
@@ -594,6 +591,37 @@ struct hidpp_keymap_state {
 /** Reads current state of the control with `id`. */
 HIDPP_API int hidpp_keymap_state(
     hidpp_keymap_t *map, uint16_t id, struct hidpp_keymap_state *out
+);
+
+/** HID++ Battery capabilities. */
+struct hidpp_battery_info {
+    uint8_t levelCount;
+    uint8_t flags;
+    uint16_t nominalLife;
+    uint8_t criticalLevel;
+
+    hidpp_bool_t disabledOSD;
+    hidpp_bool_t enabledMileage;
+    hidpp_bool_t isRechargable;
+    hidpp_bool_t initialized;
+};
+
+/** Battery discharge status. */
+struct hidpp_battery_status {
+    uint8_t dischargeLevel;
+    uint8_t dischargeNextLevel;
+    uint8_t status;
+
+    const char *statusName;
+    const char *levelName;
+};
+
+/** Returns device's battery capabilities. */
+HIDPP_API struct hidpp_battery_info *hidpp_battery_info(hidpp_device_t *dev);
+
+/** Queries the device for it's current discharge level. */
+HIDPP_API struct hidpp_battery_status *hidpp_battery_status(
+    hidpp_device_t *dev
 );
 
 /** Returns the last error message of `rcv` or it's devices. */
