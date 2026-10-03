@@ -76,10 +76,14 @@ struct hidpp_device_t {
 
 struct hidpp_receiver_t {
     hid_device *handle;
+    int timeout;
     uint8_t swid;
     uint8_t retries;
-    uint8_t nonblocking : 1;
-    int timeout;
+    hidpp_bool_t nonblocking;
+
+    hidpp_packet_t *currentRequest;
+    hidpp_protocol_hook_fn *hook;
+    void *hookUser;
 
     hidpp_device_t *devices[7];
     wchar_t error[HIDPP_MAX_ERROR];

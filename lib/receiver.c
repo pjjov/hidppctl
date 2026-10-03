@@ -185,9 +185,26 @@ int hidpp_receiver_info(
     return HIDPP_OK;
 }
 
+hidpp_protocol_hook_fn *hidpp_set_protocol_hook(
+    hidpp_receiver_t *rcv, hidpp_protocol_hook_fn *hook, void *user
+) {
+    if (!rcv)
+        return NULL;
+
+    hidpp_protocol_hook_fn *prev = rcv->hook;
+    rcv->hook = hook;
+    rcv->hookUser = user;
+    return prev;
+}
+
 int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
     if (!rcv || !pkt)
         return HIDPP_EINVAL;
+
+    int rc;
+
+    if (rcv->hook && (rc = rcv->hook(rcv, pkt, NULL, rcv->hookUser)))
+        return rc == HIDPP_HOOK_SKIP_IO ? HIDPP_OK : rc;
 
     unsigned char buf[HIDPP_LEN_XLONG];
     size_t len = packet_length(pkt->kind);
@@ -239,6 +256,10 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
     out->feat = buf[2];
     out->func = buf[3];
     memcpy(out->params, &buf[4], HIDPP_LEN_XLONG - 4);
+
+    if (rcv->hook)
+        return rcv->hook(rcv, rcv->currentRequest, out, rcv->hookUser);
+
     return HIDPP_OK;
 }
 
@@ -281,7 +302,7 @@ int hidpp_request(
        receiver has been put into non-blocking mode for event-loop
        polling elsewhere -- save/restore that flag around the retry
        loop below. */
-    int wasNonblocking = rcv->nonblocking;
+    hidpp_bool_t wasNonblocking = rcv->nonblocking;
     rcv->nonblocking = 0;
 
     int ret = hidpp_send(rcv, request);
@@ -292,7 +313,9 @@ int hidpp_request(
     }
 
     for (int attempts = 0; attempts < rcv->retries; ++attempts) {
+        rcv->currentRequest = request;
         ret = hidpp_receive(rcv, response);
+        rcv->currentRequest = NULL;
 
         if (ret < 0) {
             rcv->nonblocking = wasNonblocking;

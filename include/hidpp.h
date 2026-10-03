@@ -322,6 +322,27 @@ HIDPP_API int hidpp_request(
     hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 );
 
+/** Prevents packet sending for hooks. */
+#define HIDPP_HOOK_SKIP_IO -192
+
+/** Callback which handles packets before they are sent and after they have been
+    received from the receiver. For bidirectional requests, both the request and
+    response packet will be provided after the exchange.
+
+    Returning `HIDPP_HOOK_SKIP_IO` from the hook will prevent the packet from
+    reaching the receiver.
+*/
+typedef int(hidpp_protocol_hook_fn)(
+    hidpp_receiver_t *rcv, hidpp_packet_t *req, hidpp_packet_t *res, void *user
+);
+
+/** Sets the protocol hook which is called on each exchange.
+    Returns: previously set protocol hook or `NULL`.
+*/
+HIDPP_API hidpp_protocol_hook_fn *hidpp_set_protocol_hook(
+    hidpp_receiver_t *rcv, hidpp_protocol_hook_fn *hook, void *user
+);
+
 /** Sets the timeout in milliseconds for IO operations.
     Errors: EINVAL.
 */
