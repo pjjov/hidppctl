@@ -48,9 +48,11 @@ cli_src = [
 ]
 
 lib_src = [
+    'lib/features/device_name.c',
     'lib/features/firmware_info.c',
     'lib/features/keymap.c',
     'lib/features/root.c',
+    'lib/cache.c',
     'lib/device.c',
     'lib/input.c',
     'lib/names.c',

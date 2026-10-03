@@ -18,12 +18,14 @@
 extern struct hidpp_feat_vt hidpp_feat_root_vt;
 extern struct hidpp_feat_vt hidpp_feat_keymap_vt;
 extern struct hidpp_feat_vt hidpp_feat_firmware_info_vt;
+extern struct hidpp_feat_vt hidpp_feat_device_name_vt;
 
-HIDPP_ENUM_GUARD(hidpp_feat, 0)
+HIDPP_ENUM_GUARD(hidpp_feat, 1)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
     [HIDPP_FEAT_FIRMWARE_INFO] = &hidpp_feat_firmware_info_vt,
+    [HIDPP_FEAT_DEVICE_NAME] = &hidpp_feat_device_name_vt,
 };
 
 static int protocol_version(hidpp_device_t *dev) {
@@ -134,6 +136,10 @@ int hidpp_device_info(hidpp_device_t *dev, struct hidpp_device_info *out) {
     out->major = HIDPP_MSB(dev->version);
     out->minor = HIDPP_LSB(dev->version);
     out->index = dev->index;
+
+    int type = hidpp_device_type(dev);
+    out->type = type >= 0 ? type : 0;
+    out->name = hidpp_device_name(dev);
     return HIDPP_OK;
 }
 

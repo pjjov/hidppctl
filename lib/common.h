@@ -46,8 +46,9 @@ enum {
     HIDPP_FEAT_ROOT,
     HIDPP_FEAT_KEYMAP,
     HIDPP_FEAT_FIRMWARE_INFO,
+    HIDPP_FEAT_DEVICE_NAME,
     hidpp_feat_max,
-    hidpp_feat_sentinel = 0,
+    hidpp_feat_sentinel = 1,
 };
 
 struct hidpp_feat_vt {
@@ -91,6 +92,19 @@ struct hidpp_receiver_t {
 
 extern allocator_t *hidpp_allocator;
 extern const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max];
+
+static inline size_t packet_length(int kind) {
+    switch (kind) {
+    case HIDPP_KIND_SHORT:
+        return HIDPP_LEN_SHORT;
+    case HIDPP_KIND_LONG:
+        return HIDPP_LEN_LONG;
+    case HIDPP_KIND_XLONG:
+        return HIDPP_LEN_XLONG;
+    default:
+        return 0;
+    }
+}
 
 static inline void make_packet(
     hidpp_packet_t *out, hidpp_device_t *dev, uint8_t feat, uint8_t func

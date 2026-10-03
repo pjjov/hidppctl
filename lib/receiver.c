@@ -48,19 +48,6 @@ static void propagate_error(hidpp_receiver_t *rcv) {
     rcv->error[255] = L'\0';
 }
 
-static size_t packet_length(int kind) {
-    switch (kind) {
-    case HIDPP_KIND_SHORT:
-        return HIDPP_LEN_SHORT;
-    case HIDPP_KIND_LONG:
-        return HIDPP_LEN_LONG;
-    case HIDPP_KIND_XLONG:
-        return HIDPP_LEN_XLONG;
-    default:
-        return 0;
-    }
-}
-
 int hidpp_init(allocator_t *alloc) {
     hidpp_allocator = alloc ? alloc : &standard_allocator;
     return hid_init();

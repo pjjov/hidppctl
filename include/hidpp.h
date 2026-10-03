@@ -136,13 +136,6 @@ typedef struct hidpp_packet_t {
     uint8_t params[HIDPP_LEN_XLONG - 4];
 } hidpp_packet_t;
 
-struct hidpp_device_info {
-    uint8_t major;
-    uint8_t minor;
-
-    uint8_t index;
-};
-
 struct hidpp_receiver_info {
     const char *path;
     const wchar_t *serial;
@@ -395,6 +388,32 @@ HIDPP_API int hidpp_device_request(
 /** Polls the device for available events. */
 HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
 
+/** Queries the device type. */
+HIDPP_API int hidpp_device_type(hidpp_device_t *dev);
+
+/** Queries the device name. */
+HIDPP_API char *hidpp_device_name(hidpp_device_t *dev);
+
+/** HID++ device information */
+struct hidpp_device_info {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t index;
+
+    uint8_t type;
+    const char *name;
+};
+
+/** Reads device information to `out`.
+    Errors: EINVAL, EIO.
+*/
+HIDPP_API int hidpp_device_info(
+    hidpp_device_t *dev, struct hidpp_device_info *out
+);
+
+/** Closes the `device` from the receiver. */
+HIDPP_API void hidpp_device_close(hidpp_device_t *dev);
+
 /** Returns a 64-bit id number that can be used to uniquely identify a device
     for caching purposes. This function circumvents all other caching mechanisms
     by directly requesting necessary data to build a cache id.
@@ -430,9 +449,6 @@ HIDPP_API int hidpp_cache_load(
 */
 HIDPP_API void hidpp_cache_clear(hidpp_device_t *dev);
 
-/** Closes the `device` from the receiver. */
-HIDPP_API void hidpp_device_close(hidpp_device_t *dev);
-
 /** Reads receiver information to `out`.
     Errors: EINVAL, EIO.
 */
@@ -442,13 +458,6 @@ HIDPP_API int hidpp_receiver_info(
 
 /** Frees `struct hidpp_receiver_info` objects. */
 HIDPP_API void hidpp_free_info(struct hidpp_receiver_info *info);
-
-/** Reads device information to `out`.
-    Errors: EINVAL, EIO.
-*/
-HIDPP_API int hidpp_device_info(
-    hidpp_device_t *dev, struct hidpp_device_info *out
-);
 
 /** Pings the device with `data`.
     Errors: EINVAL, EIO.
