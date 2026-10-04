@@ -135,33 +135,48 @@ static void collect_cache(hidpp_device_t *dev, void *feat) {
     ensure_init(&dn, dev);
 }
 
-static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_device_name *dn = feat;
+    uint8_t *start = b;
 
     SAVE_BYTE(b, dn->initialized);
     SAVE_BYTE(b, dn->unsupported);
+
+    if (!dn->initialized || dn->unsupported)
+        return b - start;
+
     SAVE_BYTE(b, dn->featIndex);
     SAVE_BYTE(b, dn->deviceType);
     SAVE_BYTE(b, dn->nameLength);
     SAVE_BYTES(b, dn->name, MAX_NAME_LEN);
+
+    return b - start;
 }
 
-static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_device_name *dn = feat;
+    uint8_t *start = b;
 
     dn->initialized = LOAD_BYTE(b);
     dn->unsupported = LOAD_BYTE(b);
+
+    if (!dn->initialized || dn->unsupported)
+        return b - start;
+
     dn->featIndex = LOAD_BYTE(b);
     dn->deviceType = LOAD_BYTE(b);
     dn->nameLength = LOAD_BYTE(b);
     LOAD_BYTES(b, dn->name, MAX_NAME_LEN);
     dn->name[MAX_NAME_LEN] = '\0';
+
+    return b - start;
 }
 
 const struct hidpp_feat_vt hidpp_feat_device_name_vt = {
     .size = sizeof(struct hidpp_feat_device_name),
-    .cacheSize = sizeof(struct hidpp_feat_device_name),
     .alignment = _Alignof(struct hidpp_feat_device_name),
+    .maxCacheSize = sizeof(struct hidpp_feat_device_name),
+    .minCacheSize = 2 * sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,

@@ -181,14 +181,19 @@ static void collect_cache(hidpp_device_t *dev, void *feat) {
     hidpp_feature_list(dev, buf, MAX_FEAT_COUNT);
 }
 
-static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_root *root = feat;
+    uint8_t *start = b;
 
     SAVE_BYTE(b, root->initialized);
+
+    if (!root->initialized)
+        return b - start;
+
     SAVE_BYTE(b, root->featSetIndex);
     SAVE_BYTE(b, root->featCount);
 
-    for (size_t i = 0; i < MAX_FEAT_COUNT; i++) {
+    for (size_t i = 0; i < root->featCount; i++) {
         struct hidpp_feature_info *info = &root->infos[i];
         SAVE_BYTE(b, info->initialized);
         SAVE_WORD(b, info->id);
@@ -196,16 +201,23 @@ static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         SAVE_BYTE(b, info->version);
         SAVE_BYTE(b, info->flags);
     }
+
+    return b - start;
 }
 
-static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_root *root = feat;
+    uint8_t *start = b;
 
     root->initialized = LOAD_BYTE(b);
+
+    if (!root->initialized)
+        return b - start;
+
     root->featSetIndex = LOAD_BYTE(b);
     root->featCount = LOAD_BYTE(b);
 
-    for (size_t i = 0; i < MAX_FEAT_COUNT; i++) {
+    for (size_t i = 0; i < root->featCount; i++) {
         struct hidpp_feature_info *info = &root->infos[i];
         info->initialized = LOAD_BYTE(b);
         info->id = LOAD_WORD(b);
@@ -220,12 +232,15 @@ static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
             info->name = NULL;
         }
     }
+
+    return b - start;
 }
 
 const struct hidpp_feat_vt hidpp_feat_root_vt = {
     .size = sizeof(struct hidpp_feat_root),
-    .cacheSize = sizeof(struct hidpp_feat_root),
     .alignment = _Alignof(struct hidpp_feat_root),
+    .maxCacheSize = sizeof(struct hidpp_feat_root),
+    .minCacheSize = sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,

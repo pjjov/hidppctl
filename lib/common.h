@@ -49,11 +49,12 @@ enum {
 struct hidpp_feat_vt {
     size_t size;
     size_t alignment;
-    size_t cacheSize;
+    size_t minCacheSize;
+    size_t maxCacheSize;
     int (*init)(hidpp_device_t *dev, void *feat);
     void (*collectCache)(hidpp_device_t *dev, void *feat);
-    void (*saveCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
-    void (*loadCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
+    size_t (*saveCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
+    size_t (*loadCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
     void (*clearCache)(hidpp_device_t *dev, void *feat);
     void (*free)(hidpp_device_t *dev, void *feat);
 };

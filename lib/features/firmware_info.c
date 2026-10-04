@@ -135,15 +135,20 @@ static void collect_cache(hidpp_device_t *dev, void *feat) {
     ensure_init(&fw, dev);
 }
 
-static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_firmware_info *fw = feat;
+    uint8_t *start = b;
 
     SAVE_BYTE(b, fw->initialized);
     SAVE_BYTE(b, fw->unsupported);
+
+    if (!fw->initialized || fw->unsupported)
+        return b - start;
+
     SAVE_BYTE(b, fw->featIndex);
     SAVE_BYTE(b, fw->entityCount);
 
-    for (size_t i = 0; i < MAX_ENTITY_COUNT; i++) {
+    for (size_t i = 0; i < fw->entityCount; i++) {
         struct hidpp_firmware_entity *info = &fw->entities[i];
         SAVE_BYTE(b, info->initialized);
         SAVE_BYTE(b, info->id);
@@ -154,17 +159,24 @@ static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         SAVE_BYTE(b, info->reserved);
         SAVE_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
     }
+
+    return b - start;
 }
 
-static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_firmware_info *fw = feat;
+    uint8_t *start = b;
 
     fw->initialized = LOAD_BYTE(b);
     fw->unsupported = LOAD_BYTE(b);
+
+    if (!fw->initialized || fw->unsupported)
+        return b - start;
+
     fw->featIndex = LOAD_BYTE(b);
     fw->entityCount = LOAD_BYTE(b);
 
-    for (size_t i = 0; i < MAX_ENTITY_COUNT; i++) {
+    for (size_t i = 0; i < fw->entityCount; i++) {
         struct hidpp_firmware_entity *info = &fw->entities[i];
         info->initialized = LOAD_BYTE(b);
         info->id = LOAD_BYTE(b);
@@ -181,12 +193,15 @@ static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
             info->typeName = NULL;
         }
     }
+
+    return b - start;
 }
 
 const struct hidpp_feat_vt hidpp_feat_firmware_info_vt = {
     .size = sizeof(struct hidpp_feat_firmware_info),
-    .cacheSize = sizeof(struct hidpp_feat_firmware_info),
     .alignment = _Alignof(struct hidpp_feat_firmware_info),
+    .maxCacheSize = sizeof(struct hidpp_feat_firmware_info),
+    .minCacheSize = 2 * sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,

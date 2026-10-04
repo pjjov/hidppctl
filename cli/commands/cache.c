@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BUFFER_SIZE 8192
+#define BUFFER_SIZE 65535
 
 static int get_cache_path(hidpp_device_t *dev, char *path) {
     uint64_t cacheId = hidpp_cache_id(dev);
@@ -28,9 +28,9 @@ static int get_cache_path(hidpp_device_t *dev, char *path) {
         path,
         PATH_MAX,
 #ifdef PF_FS_WIN32
-        "%s\\hidppctl\\%s-%llu.bin",
+        "%s\\hidppctl-%s-%llu.bin",
 #else
-        "%s/hidppctl/%s-%llu.bin",
+        "%s/hidppctl-%s-%llu.bin",
 #endif
         dir,
         HIDPP_VERSION_STRING,
@@ -48,9 +48,8 @@ static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
     size_t size = BUFFER_SIZE;
     int rc;
 
+    memset(buffer, 0, size);
     hidpp_cache_collect(ctl->device);
-
-    rc = hidpp_cache_save(ctl->device, buffer, &size);
 
     if ((rc = hidpp_cache_save(ctl->device, buffer, &size))) {
         pf_cli_errorf(ctl->cli, "Failed to retrieve the cache contents.");
@@ -64,11 +63,12 @@ static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
         return rc;
     }
 
+    pf_cli_printf(ctl->cli, "Saved cache contents to '%s'.", path);
     return HIDPP_OK;
 }
 
 static int cmd_cache_clear(hidppctl_t *ctl, const char *path) {
-    return HIDPP_ENOSYS;
+    return remove(path);
 }
 
 int cmd_cache(hidppctl_t *ctl) {

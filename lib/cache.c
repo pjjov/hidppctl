@@ -8,12 +8,14 @@
 */
 
 #include "common.h"
+#include "hidpp.h"
 
 #include <assert.h>
 #include <pf_macro.h>
 
 #define CACHE_HEADER_SIZE 32
 #define CACHE_MAGIC "hidppctl"
+#define STACK_BUFFER_SIZE 65536
 
 static inline uint64_t build_uint64_t(uint8_t *a, size_t count) {
     uint64_t out = 0;
@@ -25,7 +27,7 @@ static inline uint64_t build_uint64_t(uint8_t *a, size_t count) {
 static size_t required_cache_size(void) {
     size_t req = CACHE_HEADER_SIZE;
     for (size_t i = 0; i < hidpp_feat_max; i++)
-        req += hidpp_feat_vtables[i]->cacheSize;
+        req += hidpp_feat_vtables[i]->maxCacheSize;
     return req;
 }
 
@@ -110,11 +112,14 @@ int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size) {
 
     for (size_t i = 0; i < hidpp_feat_max; i++) {
         vt = hidpp_feat_vtables[i];
-        if (vt->saveCache)
-            vt->saveCache(dev, dev->features[i], PF_OFFSET(buffer, offset));
-        offset += vt->cacheSize;
+        if (vt->saveCache) {
+            offset += vt->saveCache(
+                dev, dev->features[i], PF_OFFSET(buffer, offset)
+            );
+        }
     }
 
+    *size = offset;
     return HIDPP_OK;
 }
 
@@ -122,8 +127,22 @@ int hidpp_cache_load(hidpp_device_t *dev, const void *buffer, size_t size) {
     if (!dev || !buffer || size == 0)
         return HIDPP_EINVAL;
 
-    if (size < required_cache_size())
-        return HIDPP_ENOMEM;
+    size_t req = required_cache_size();
+
+    if (req > STACK_BUFFER_SIZE)
+        return HIDPP_ENOSYS;
+
+    /*  This prevents loaders from reading out of bounds since they won't
+        oversteep their maximum reserved cache size. This is a hacky solution,
+        but enables very simple deserialization.
+
+        This means that corrupted cache files could load garbage data. Guarding
+        against that would require a solid serialization solution which seems
+        unnecessary as it's just simple cache files.
+    */
+    char stackBuffer[STACK_BUFFER_SIZE];
+    memcpy(stackBuffer, buffer, req > size ? size : req);
+    buffer = stackBuffer;
 
     int rc;
 
@@ -135,9 +154,11 @@ int hidpp_cache_load(hidpp_device_t *dev, const void *buffer, size_t size) {
 
     for (size_t i = 0; i < hidpp_feat_max; i++) {
         vt = hidpp_feat_vtables[i];
-        if (vt->loadCache)
-            vt->loadCache(dev, dev->features[i], PF_OFFSET(buffer, offset));
-        offset += vt->cacheSize;
+        if (vt->loadCache) {
+            offset += vt->loadCache(
+                dev, dev->features[i], PF_OFFSET(buffer, offset)
+            );
+        }
     }
 
     return HIDPP_OK;

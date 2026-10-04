@@ -64,6 +64,8 @@ static hidpp_device_t *alloc_device() {
         hidpp_allocator, blocks, PF_COUNTOF(blocks), &size
     );
 
+    memset(buffer, 0, size);
+
     if (!buffer)
         return NULL;
 

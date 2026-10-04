@@ -157,35 +157,50 @@ static void collect_cache(hidpp_device_t *dev, void *feat) {
     ensure_init(&bat, dev);
 }
 
-static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_battery *bat = feat;
+    uint8_t *start = b;
 
     SAVE_BYTE(b, bat->initialized);
     SAVE_BYTE(b, bat->unsupported);
+
+    if (!bat->initialized || bat->unsupported)
+        return b - start;
+
     SAVE_BYTE(b, bat->featIndex);
     SAVE_BYTE(b, bat->info.levelCount);
     SAVE_BYTE(b, bat->info.flags);
     SAVE_BYTE(b, bat->info.nominalLife);
     SAVE_BYTE(b, bat->info.criticalLevel);
+
+    return b - start;
 }
 
-static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_battery *bat = feat;
+    uint8_t *start = b;
 
     bat->initialized = LOAD_BYTE(b);
     bat->unsupported = LOAD_BYTE(b);
+
+    if (!bat->initialized || bat->unsupported)
+        return b - start;
+
     bat->featIndex = LOAD_BYTE(b);
     bat->info.levelCount = LOAD_BYTE(b);
     bat->info.flags = LOAD_BYTE(b);
     bat->info.nominalLife = LOAD_BYTE(b);
     bat->info.criticalLevel = LOAD_BYTE(b);
     unpack_flags(&bat->info);
+
+    return b - start;
 }
 
 const struct hidpp_feat_vt hidpp_feat_battery_vt = {
     .size = sizeof(struct hidpp_feat_battery),
-    .cacheSize = sizeof(struct hidpp_feat_battery),
     .alignment = _Alignof(struct hidpp_feat_battery),
+    .maxCacheSize = sizeof(struct hidpp_feat_battery),
+    .minCacheSize = 2 * sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,

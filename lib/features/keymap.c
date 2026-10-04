@@ -205,16 +205,21 @@ static void collect_cache(hidpp_device_t *dev, void *feat) {
     ensure_init(feat);
 }
 
-static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     hidpp_keymap_t *map = feat;
+    uint8_t *start = b;
 
     SAVE_BYTE(b, map->initialized);
     SAVE_BYTE(b, map->unsupported);
+
+    if (!map->initialized || map->unsupported)
+        return b - start;
+
     SAVE_BYTE(b, map->featIndex);
     SAVE_BYTE(b, map->featVersion);
     SAVE_BYTE(b, map->ctrlCount);
 
-    for (size_t i = 0; i < MAX_CONTROLS; i++) {
+    for (size_t i = 0; i < map->ctrlCount; i++) {
         struct hidpp_keymap_info *info = &map->controls[i];
         SAVE_BYTE(b, info->initialized);
         SAVE_WORD(b, info->id);
@@ -226,18 +231,25 @@ static void save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         SAVE_BYTE(b, info->groupMask);
         SAVE_BYTE(b, info->rawXY);
     }
+
+    return b - start;
 }
 
-static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
+static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     hidpp_keymap_t *map = feat;
+    uint8_t *start = b;
 
     map->initialized = LOAD_BYTE(b);
     map->unsupported = LOAD_BYTE(b);
+
+    if (!map->initialized || map->unsupported)
+        return b - start;
+
     map->featIndex = LOAD_BYTE(b);
     map->featVersion = LOAD_BYTE(b);
     map->ctrlCount = LOAD_BYTE(b);
 
-    for (size_t i = 0; i < MAX_CONTROLS; i++) {
+    for (size_t i = 0; i < map->ctrlCount; i++) {
         struct hidpp_keymap_info *info = &map->controls[i];
         info->initialized = LOAD_BYTE(b);
         info->id = LOAD_WORD(b);
@@ -258,12 +270,15 @@ static void load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
             info->remapName = NULL;
         }
     }
+
+    return b - start;
 }
 
 const struct hidpp_feat_vt hidpp_feat_keymap_vt = {
     .size = sizeof(hidpp_keymap_t),
-    .cacheSize = sizeof(hidpp_keymap_t),
     .alignment = _Alignof(hidpp_keymap_t),
+    .maxCacheSize = sizeof(hidpp_keymap_t),
+    .minCacheSize = 2 * sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
