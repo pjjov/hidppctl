@@ -20,12 +20,6 @@ extern "C" {
 
 #define HIDPP_MAX_ERROR 256
 
-#define HIDPP_ENUM_GUARD(name, previousSentinel)          \
-    static_assert(                                        \
-        name##_sentinel == (previousSentinel),            \
-        "Enum has been changed; update the guarded code." \
-    );
-
 #define SAVE_BYTE(b, val) *b++ = val
 #define SAVE_WORD(b, val) (save_word(b, val), b += 2)
 #define SAVE_DWORD(b, val) (save_dword(b, val), b += 4)

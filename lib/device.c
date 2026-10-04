@@ -21,7 +21,7 @@ extern struct hidpp_feat_vt hidpp_feat_firmware_info_vt;
 extern struct hidpp_feat_vt hidpp_feat_device_name_vt;
 extern struct hidpp_feat_vt hidpp_feat_battery_vt;
 
-HIDPP_ENUM_GUARD(hidpp_feat, 2)
+PF_ENUM_GUARD(hidpp_feat, 2)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,

@@ -11,6 +11,7 @@
 
 #include <pf_argparse.h>
 
+extern int cmd_cache(hidppctl_t *ctl);
 extern int cmd_divert(hidppctl_t *ctl);
 extern int cmd_list_events(hidppctl_t *ctl);
 extern int cmd_list_keycodes(hidppctl_t *ctl);
@@ -138,7 +139,8 @@ static int hidppctl_run(hidppctl_t *ctl) {
 
     switch (ctl->options->command) {
         /* clang-format off */
-        HIDPP_ENUM_GUARD(hidppctl_command, 0);
+        PF_ENUM_GUARD(hidppctl_command, 1);
+    case HIDPPCTL_CACHE:         result = cmd_cache(ctl);         break;
     case HIDPPCTL_DIVERT:        result = cmd_divert(ctl);        break;
     case HIDPPCTL_LIST_EVENTS:   result = cmd_list_events(ctl);   break;
     case HIDPPCTL_LIST_KEYCODES: result = cmd_list_keycodes(ctl); break;

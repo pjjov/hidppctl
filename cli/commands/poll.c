@@ -1,4 +1,3 @@
-
 /*  hidppctl -- Configure HID++ compatible peripherals.
 
     Copyright (C) 2026 Предраг Јовановић
