@@ -176,7 +176,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     root->initialized = HIDPP_FALSE;
 }
 
-static void cache_all(hidpp_device_t *dev, void *feat) {
+static void collect_cache(hidpp_device_t *dev, void *feat) {
     uint16_t buf[MAX_FEAT_COUNT];
     hidpp_feature_list(dev, buf, MAX_FEAT_COUNT);
 }
@@ -226,7 +226,7 @@ const struct hidpp_feat_vt hidpp_feat_root_vt = {
     .size = sizeof(struct hidpp_feat_root),
     .cacheSize = sizeof(struct hidpp_feat_root),
     .alignment = _Alignof(struct hidpp_feat_root),
-    .cacheAll = cache_all,
+    .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
     .clearCache = clear_cache,

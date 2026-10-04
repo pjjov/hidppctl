@@ -129,7 +129,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     dn->initialized = HIDPP_FALSE;
 }
 
-static void cache_all(hidpp_device_t *dev, void *feat) {
+static void collect_cache(hidpp_device_t *dev, void *feat) {
     struct hidpp_feat_device_name *dn;
     (void)feat;
     ensure_init(&dn, dev);
@@ -162,7 +162,7 @@ const struct hidpp_feat_vt hidpp_feat_device_name_vt = {
     .size = sizeof(struct hidpp_feat_device_name),
     .cacheSize = sizeof(struct hidpp_feat_device_name),
     .alignment = _Alignof(struct hidpp_feat_device_name),
-    .cacheAll = cache_all,
+    .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
     .clearCache = clear_cache,

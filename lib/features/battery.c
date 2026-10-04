@@ -151,7 +151,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     bat->initialized = HIDPP_FALSE;
 }
 
-static void cache_all(hidpp_device_t *dev, void *feat) {
+static void collect_cache(hidpp_device_t *dev, void *feat) {
     struct hidpp_feat_battery *bat;
     (void)feat;
     ensure_init(&bat, dev);
@@ -186,7 +186,7 @@ const struct hidpp_feat_vt hidpp_feat_battery_vt = {
     .size = sizeof(struct hidpp_feat_battery),
     .cacheSize = sizeof(struct hidpp_feat_battery),
     .alignment = _Alignof(struct hidpp_feat_battery),
-    .cacheAll = cache_all,
+    .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
     .clearCache = clear_cache,

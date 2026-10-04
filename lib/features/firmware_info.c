@@ -129,7 +129,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     fw->initialized = HIDPP_FALSE;
 }
 
-static void cache_all(hidpp_device_t *dev, void *feat) {
+static void collect_cache(hidpp_device_t *dev, void *feat) {
     struct hidpp_feat_firmware_info *fw;
     (void)feat;
     ensure_init(&fw, dev);
@@ -187,7 +187,7 @@ const struct hidpp_feat_vt hidpp_feat_firmware_info_vt = {
     .size = sizeof(struct hidpp_feat_firmware_info),
     .cacheSize = sizeof(struct hidpp_feat_firmware_info),
     .alignment = _Alignof(struct hidpp_feat_firmware_info),
-    .cacheAll = cache_all,
+    .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
     .clearCache = clear_cache,

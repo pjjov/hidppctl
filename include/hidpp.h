@@ -421,7 +421,7 @@ HIDPP_API void hidpp_device_close(hidpp_device_t *dev);
 HIDPP_API uint64_t hidpp_cache_id(hidpp_device_t *dev);
 
 /** Attempts to cache data for all features of the given device. */
-HIDPP_API void hidpp_cache_all(hidpp_device_t *dev);
+HIDPP_API void hidpp_cache_collect(hidpp_device_t *dev);
 
 /** Saves current cache content into the given buffer and reports it's size.
     Parameter 'size' should contain the maximum buffer size at call time.

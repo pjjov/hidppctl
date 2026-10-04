@@ -200,7 +200,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
     map->initialized = HIDPP_FALSE;
 }
 
-static void cache_all(hidpp_device_t *dev, void *feat) {
+static void collect_cache(hidpp_device_t *dev, void *feat) {
     (void)dev;
     ensure_init(feat);
 }
@@ -264,7 +264,7 @@ const struct hidpp_feat_vt hidpp_feat_keymap_vt = {
     .size = sizeof(hidpp_keymap_t),
     .cacheSize = sizeof(hidpp_keymap_t),
     .alignment = _Alignof(hidpp_keymap_t),
-    .cacheAll = cache_all,
+    .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
     .clearCache = clear_cache,

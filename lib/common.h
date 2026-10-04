@@ -51,7 +51,7 @@ struct hidpp_feat_vt {
     size_t alignment;
     size_t cacheSize;
     int (*init)(hidpp_device_t *dev, void *feat);
-    void (*cacheAll)(hidpp_device_t *dev, void *feat);
+    void (*collectCache)(hidpp_device_t *dev, void *feat);
     void (*saveCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
     void (*loadCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
     void (*clearCache)(hidpp_device_t *dev, void *feat);

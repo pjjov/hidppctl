@@ -82,13 +82,13 @@ uint64_t hidpp_cache_id(hidpp_device_t *dev) {
     return cacheId;
 }
 
-void hidpp_cache_all(hidpp_device_t *dev) {
+void hidpp_cache_collect(hidpp_device_t *dev) {
     if (!dev)
         return;
 
     for (size_t i = 0; i < hidpp_feat_max; i++)
-        if (hidpp_feat_vtables[i]->cacheAll)
-            hidpp_feat_vtables[i]->cacheAll(dev, dev->features[i]);
+        if (hidpp_feat_vtables[i]->collectCache)
+            hidpp_feat_vtables[i]->collectCache(dev, dev->features[i]);
 }
 
 int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size) {
