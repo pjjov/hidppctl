@@ -1,8 +1,8 @@
 [wrap-file]
-directory = cpolyfill-1.5
-source_url = https://github.com/pjjov/cpolyfill/archive/refs/tags/v1.5.tar.gz
-source_filename = cpolyfill-v1.5.tar.gz
-source_hash = 74892a714c238ff3ede5e9fabf80780a30b136140c9078fb39e52dcd645649bd
+directory = cpolyfill-1.7
+source_url = https://github.com/pjjov/cpolyfill/archive/refs/tags/v1.7.tar.gz
+source_filename = cpolyfill-v1.7.tar.gz
+source_hash = cc58dffbcd31cfdbc1c380c344d99bed2a2dc83773bc2008d1711b0c69738647
 
 [provide]
 dependency_names = cpolyfill
