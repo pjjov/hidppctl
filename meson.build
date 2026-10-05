@@ -37,14 +37,16 @@ inc = include_directories('include')
 cli_src = [
     'cli/commands/cache.c',
     'cli/commands/divert.c',
+    'cli/commands/keymap.c',
     'cli/commands/list_events.c',
+    'cli/commands/list_features.c',
     'cli/commands/list_keycodes.c',
     'cli/commands/poll.c',
     'cli/commands/remap.c',
-    'cli/commands/show-features.c',
-    'cli/commands/show-keymap.c',
     'cli/commands/status.c',
     'cli/args.c',
+    'cli/cache.c',
+    'cli/log.c',
     'cli/main.c',
 ]
 

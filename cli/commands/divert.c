@@ -99,6 +99,7 @@ int cmd_divert(hidppctl_t *ctl) {
 
     signal(SIGTERM, signal_handler);
     pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
+    pf_cli_color(ctl->cli, PF_CLI_RESET);
 
     while (!terminate)
         cmd_divert_poll(ctl, dev, map);

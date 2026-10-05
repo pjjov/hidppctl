@@ -20,6 +20,7 @@ static int cmd_poll_handle(
 ) {
     pf_cli_t *cli = ctl->cli;
     pf_cli_cprintf(cli, PF_CLI_BOLD, "%s ", hidppctl_event_names[e->type]);
+    pf_cli_color(cli, PF_CLI_RESET);
 
     switch (e->type) {
     case HIDPP_EVENT_UNKNOWN: {

@@ -13,13 +13,19 @@
 
 extern int cmd_cache(hidppctl_t *ctl);
 extern int cmd_divert(hidppctl_t *ctl);
+extern int cmd_keymap(hidppctl_t *ctl);
 extern int cmd_list_events(hidppctl_t *ctl);
+extern int cmd_list_features(hidppctl_t *ctl);
 extern int cmd_list_keycodes(hidppctl_t *ctl);
 extern int cmd_poll(hidppctl_t *ctl);
 extern int cmd_remap(hidppctl_t *ctl);
-extern int cmd_show_features(hidppctl_t *ctl);
-extern int cmd_show_keymap(hidppctl_t *ctl);
 extern int cmd_status(hidppctl_t *ctl);
+
+extern void hidppctl_load_cache(hidppctl_t *ctl);
+extern void hidppctl_save_cache(hidppctl_t *ctl);
+
+extern void hidppctl_open_log(hidppctl_t *ctl);
+extern void hidppctl_close_log(hidppctl_t *ctl);
 
 hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     struct hidppctl_opt *opt = ctl->options;
@@ -79,12 +85,20 @@ static hidpp_device_t *open_device(
 }
 
 static void hidppctl_free(hidppctl_t *ctl) {
+    if (ctl->options->requiresCache)
+        hidppctl_save_cache(ctl);
+    if (ctl->options->requiresLog)
+        hidppctl_close_log(ctl);
     if (ctl->options->requiresInput)
         hidpp_input_free(ctl->input);
     if (ctl->options->requiresDevice)
         hidpp_device_close(ctl->device);
     if (ctl->options->requiresReceiver)
         hidpp_close(ctl->receiver);
+    if (ctl->cachePath)
+        free(ctl->cachePath);
+    if (ctl->logPath)
+        free(ctl->logPath);
     hidpp_exit();
 }
 
@@ -120,6 +134,12 @@ static int hidppctl_init(hidppctl_t *ctl) {
         }
     }
 
+    if (ctl->options->requiresCache)
+        hidppctl_load_cache(ctl);
+
+    if (ctl->options->requiresLog)
+        hidppctl_open_log(ctl);
+
     return HIDPP_OK;
 }
 
@@ -139,15 +159,15 @@ static int hidppctl_run(hidppctl_t *ctl) {
 
     switch (ctl->options->command) {
         /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 1);
+        PF_ENUM_GUARD(hidppctl_command, 2);
     case HIDPPCTL_CACHE:         result = cmd_cache(ctl);         break;
     case HIDPPCTL_DIVERT:        result = cmd_divert(ctl);        break;
+    case HIDPPCTL_KEYMAP:   result = cmd_keymap(ctl);   break;
     case HIDPPCTL_LIST_EVENTS:   result = cmd_list_events(ctl);   break;
+    case HIDPPCTL_LIST_FEATURES: result = cmd_list_features(ctl); break;
     case HIDPPCTL_LIST_KEYCODES: result = cmd_list_keycodes(ctl); break;
     case HIDPPCTL_POLL:          result = cmd_poll(ctl);          break;
     case HIDPPCTL_REMAP:         result = cmd_remap(ctl);         break;
-    case HIDPPCTL_SHOW_FEATURES: result = cmd_show_features(ctl); break;
-    case HIDPPCTL_SHOW_KEYMAP:   result = cmd_show_keymap(ctl);   break;
     case HIDPPCTL_STATUS:        result = cmd_status(ctl);        break;
     default:                     result = HIDPP_ENOSYS;           break;
         /* clang-format off */

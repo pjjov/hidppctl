@@ -19,6 +19,7 @@
 extern "C" {
 #endif
 
+#define CACHE_BUFFER_SIZE 65535
 #define HIDPP_MAX_DIVERT 32
 #define HIDPP_MAX_MODS 8
 
@@ -28,16 +29,16 @@ enum hidppctl_command {
     HIDPPCTL_NONE = 0,
     HIDPPCTL_CACHE,
     HIDPPCTL_DIVERT,
+    HIDPPCTL_KEYMAP,
     HIDPPCTL_LIST_EVENTS,
+    HIDPPCTL_LIST_FEATURES,
     HIDPPCTL_LIST_KEYCODES,
     HIDPPCTL_POLL,
     HIDPPCTL_REMAP,
-    HIDPPCTL_SHOW_FEATURES,
-    HIDPPCTL_SHOW_KEYMAP,
     HIDPPCTL_STATUS,
 
     hidppctl_command_max,
-    hidppctl_command_sentinel = 1,
+    hidppctl_command_sentinel = 2,
 };
 
 enum hidppctl_subject {
@@ -62,6 +63,9 @@ typedef struct hidppctl_t {
     hidpp_input_t *input;
     hidpp_receiver_t *receiver;
     hidpp_device_t *device;
+    char *cachePath;
+    char *logPath;
+    FILE *log;
 } hidppctl_t;
 
 struct hidppctl_opt {
@@ -101,17 +105,28 @@ struct hidppctl_opt {
     struct {
         hidpp_bool_t clear;
         hidpp_bool_t collect;
+        pf_bool disabled;
+        char *path;
     } cache;
 
+    struct {
+        pf_bool disabled;
+        char *path;
+    } log;
+
+    /* used by main.c */
     hidpp_bool_t requiresInput;
     hidpp_bool_t requiresDevice;
     hidpp_bool_t requiresReceiver;
+    hidpp_bool_t requiresCache;
+    hidpp_bool_t requiresLog;
 };
 
 extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];
 
 int hidppctl_print_help(hidppctl_t *ctl);
 int hidppctl_parse_args(hidppctl_t *ctl);
+int hidppctl_cache_path(hidpp_device_t *dev, char *buf, size_t size);
 
 #ifdef __cplusplus
 }

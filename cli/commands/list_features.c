@@ -9,7 +9,7 @@
 
 #include "../common.h"
 
-int cmd_show_features(hidppctl_t *ctl) {
+int cmd_list_features(hidppctl_t *ctl) {
     pf_cli_t *cli = ctl->cli;
 
     hidpp_receiver_t *rcv = ctl->receiver;

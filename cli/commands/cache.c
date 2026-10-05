@@ -10,42 +10,14 @@
 #include "../common.h"
 
 #include <limits.h>
-#include <pf_filesystem.h>
+#include <linux/limits.h>
 #include <pf_io.h>
 #include <stdio.h>
 #include <string.h>
 
-#define BUFFER_SIZE 65535
-
-static int get_cache_path(hidpp_device_t *dev, char *path) {
-    uint64_t cacheId = hidpp_cache_id(dev);
-    char dir[PATH_MAX];
-
-    if (pf_cachedir(dir, PATH_MAX) < 0)
-        return HIDPP_EIO;
-
-    int res = snprintf(
-        path,
-        PATH_MAX,
-#ifdef PF_FS_WIN32
-        "%s\\hidppctl-%s-%llu.bin",
-#else
-        "%s/hidppctl-%s-%llu.bin",
-#endif
-        dir,
-        HIDPP_VERSION_STRING,
-        (unsigned long long)cacheId
-    );
-
-    if (res >= PATH_MAX || res < 0)
-        return HIDPP_ENOMEM;
-
-    return HIDPP_OK;
-}
-
 static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
-    char buffer[BUFFER_SIZE];
-    size_t size = BUFFER_SIZE;
+    char buffer[CACHE_BUFFER_SIZE];
+    size_t size = CACHE_BUFFER_SIZE;
     int rc;
 
     memset(buffer, 0, size);
@@ -75,7 +47,7 @@ int cmd_cache(hidppctl_t *ctl) {
     char path[PATH_MAX];
     int rc;
 
-    if ((rc = get_cache_path(ctl->device, path))) {
+    if ((rc = hidppctl_cache_path(ctl->device, path, PATH_MAX))) {
         pf_cli_errorf(ctl->cli, "Unable to compute the cache file path.");
         return rc;
     }

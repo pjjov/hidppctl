@@ -18,38 +18,38 @@
     (PF_COMMON_HELP | PF_COMMON_VERBOSE | PF_COMMON_QUIET | PF_COMMON_COLOR \
      | PF_COMMON_INTERACTIVE)
 
-PF_ENUM_GUARD(hidppctl_command, 1);
+PF_ENUM_GUARD(hidppctl_command, 2);
 static const pf_option_enum_t hidppctl_command_enum[] = {
     { "none", HIDPPCTL_NONE },
     { "cache", HIDPPCTL_CACHE },
     { "divert", HIDPPCTL_DIVERT },
+    { "keymap", HIDPPCTL_KEYMAP },
     { "list-events", HIDPPCTL_LIST_EVENTS },
+    { "list-features", HIDPPCTL_LIST_FEATURES },
     { "list-keycodes", HIDPPCTL_LIST_KEYCODES },
     { "poll", HIDPPCTL_POLL },
     { "remap", HIDPPCTL_REMAP },
-    { "show-features", HIDPPCTL_SHOW_FEATURES },
-    { "show-keymap", HIDPPCTL_SHOW_KEYMAP },
     { "status", HIDPPCTL_STATUS },
     { 0 },
 };
 
 static const char *help_epilog = "For more information, run `man hidppctl.1'.";
 
-PF_ENUM_GUARD(hidppctl_command, 1);
+PF_ENUM_GUARD(hidppctl_command, 2);
 static const char *help_usage_list[] = {
     [HIDPPCTL_NONE] = "hidppctl [OPTIONS]... <command>",
     [HIDPPCTL_CACHE] = "hidppctl [OPTIONS]... cache <collect|clear>",
     [HIDPPCTL_DIVERT] = "hidppctl [OPTIONS]... divert [buttons...]",
+    [HIDPPCTL_KEYMAP] = "hidppctl [OPTIONS]... show-keymap",
     [HIDPPCTL_LIST_EVENTS] = "hidppctl [OPTIONS]... list-events",
+    [HIDPPCTL_LIST_FEATURES] = "hidppctl [OPTIONS]... show-features",
     [HIDPPCTL_LIST_KEYCODES] = "hidppctl [OPTIONS]... list-keycodes",
     [HIDPPCTL_POLL] = "hidppctl [OPTIONS]... poll",
     [HIDPPCTL_REMAP] = "hidppctl [OPTIONS]... remap <control-id> <remap-id>",
-    [HIDPPCTL_SHOW_FEATURES] = "hidppctl [OPTIONS]... show-features",
-    [HIDPPCTL_SHOW_KEYMAP] = "hidppctl [OPTIONS]... show-keymap",
     [HIDPPCTL_STATUS] = "hidppctl [OPTIONS]... status",
 };
 
-PF_ENUM_GUARD(hidppctl_command, 1);
+PF_ENUM_GUARD(hidppctl_command, 2);
 static const char *help_desc_list[] = {
     /* clang-format off */
     [HIDPPCTL_NONE] = "Configure HID++ compatible devices.",
@@ -70,12 +70,12 @@ static const char *help_desc_list[] = {
 "\n    '<button code>=<key code>[+<modifier>]'"
 "\nFor example: '0x0104=home+lshift'."
     ),
+    [HIDPPCTL_KEYMAP] = "Shows keymap information for specified device.",
     [HIDPPCTL_LIST_EVENTS] = "Lists supported events and their identifiers.",
+    [HIDPPCTL_LIST_FEATURES] = "Lists supported features for specified device.",
     [HIDPPCTL_LIST_KEYCODES] = "Lists supported OS key identifiers.",
     [HIDPPCTL_POLL] = "Polls specified device for incoming events.",
     [HIDPPCTL_REMAP] = "Remaps device's specified control to a different one.",
-    [HIDPPCTL_SHOW_FEATURES] = "Shows supported features for specified device.",
-    [HIDPPCTL_SHOW_KEYMAP] = "Shows keymap information for specified device.",
     [HIDPPCTL_STATUS] = "Shows status information about HID++ devices.",
     /* clang-format on */
 };
@@ -87,20 +87,24 @@ static const pf_cli_definition_t help_options[] = {
     { "--interface", "Specifies which HID interface to use." },
     { "--timeout", "Sets the timeout for IO operations in milliseconds." },
     { "--swid", "Sets the software ID for interacting with devices." },
+    { "--cache-path", "Sets a path to use for saving the device cache." },
+    { "--no-cache", "Disables cache file saving and loading." },
+    { "--log-path", "Sets a path to use for the log file." },
+    { "--no-log", "Disables file logging." },
     { 0 },
 };
 
-PF_ENUM_GUARD(hidppctl_command, 1);
+PF_ENUM_GUARD(hidppctl_command, 2);
 static const pf_cli_definition_t help_subcommands[] = {
     { "none", "" },
     { "cache", "manipulates cache files for specified device." },
     { "divert", "diverts events of reprogrammable buttons." },
+    { "keymap", "shows keymap information for specified device" },
     { "list-events", "lists event identifiers" },
+    { "list-features", "lists supported features for specified device" },
     { "list-keycodes", "lists program's supported keycodes" },
     { "poll", "polls specified devices for incoming events." },
     { "remap", "remaps device's control to a different one." },
-    { "show-features", "shows supported features for specified device" },
-    { "show-keymap", "shows keymap information for specified device" },
     { "status", "shows status information about HID++ devices." },
     { 0 },
 };
@@ -272,6 +276,11 @@ static void parse_args_option(
         opt->swid = swid;
         opt->setSwid = HIDPP_TRUE;
     }
+
+    pf_option_string(p, "cache-path", 0, &opt->cache.path);
+    pf_option_string(p, "log-path", 0, &opt->log.path);
+    pf_option_bool(p, "no-cache", 0, &opt->cache.disabled);
+    pf_option_bool(p, "no-log", 0, &opt->log.disabled);
 }
 
 static void parse_args_param(struct pf_argparser *p, struct hidppctl_opt *opt) {
@@ -305,7 +314,7 @@ static pf_bool check_param_count(
 
     switch (opt->command) {
         /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 1);
+        PF_ENUM_GUARD(hidppctl_command, 2);
     case HIDPPCTL_CACHE:
         return pf_argparser_expect_params(p, 0, 1, "subcommand 'cache'");
     case HIDPPCTL_DIVERT:
@@ -406,6 +415,12 @@ static int parse_args_end(
     if (opt->subject == HIDPPCTL_DEVICE || opt->subject == HIDPPCTL_RECEIVER)
         opt->requiresReceiver = HIDPP_TRUE;
 
+    if (opt->requiresDevice && opt->command != HIDPPCTL_CACHE)
+        opt->requiresCache = !opt->cache.disabled;
+
+    if (opt->requiresDevice)
+        opt->requiresLog = !opt->log.disabled;
+
     if (opt->subject == HIDPPCTL_DEVICE && !opt->receiver) {
         pf_argparser_error(
             p, "Selecting a device requires specifying the receiver."
@@ -417,7 +432,7 @@ static int parse_args_end(
 
     switch (opt->command) {
         /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 1);
+        PF_ENUM_GUARD(hidppctl_command, 2);
     case HIDPPCTL_CACHE:  parse_args_cache(p, opt);  break;
     case HIDPPCTL_DIVERT: parse_args_divert(p, opt); break;
     case HIDPPCTL_REMAP:  parse_args_remap(p, opt);  break;
