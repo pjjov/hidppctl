@@ -1,0 +1,14 @@
+# hidppctl -- Configure HID++ compatible peripherals.
+#
+# Copyright (C) 2026 Предраг Јовановић
+# SPDX-FileCopyrightText: 2026 Предраг Јовановић
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Look at the COPYING file for more information.
+
+option(
+  'embed_tables',
+  type: 'boolean',
+  value: true,
+  description: 'Embed HID++ control and feature tables',
+)

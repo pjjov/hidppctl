@@ -22,6 +22,9 @@ static int compare_name(const void *l, const void *r) {
 static const char *find_constant_name(
     const struct hidpp_constant *constants, size_t count, const char *fallback
 ) {
+    if (count == 0)
+        return NULL;
+
     const char *result = bsearch(
         &index, constants, count, sizeof(struct hidpp_constant), compare_name
     );
@@ -32,7 +35,7 @@ static const char *find_constant_name(
 static int find_constant_code(
     const struct hidpp_constant *constants, size_t count, const char *name
 ) {
-    if (!name)
+    if (!name || count == 0)
         return HIDPP_EINVAL;
 
     for (size_t i = 0; i < count; i++)
