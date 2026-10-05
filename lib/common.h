@@ -37,6 +37,12 @@ typedef struct hid_device_ hid_device;
 typedef struct allocator_t allocator_t;
 
 enum {
+    RCV_HIDAPI,
+    RCV_SOCKET,
+    RCV_CUSTOM,
+};
+
+enum {
     HIDPP_FEAT_ROOT,
     HIDPP_FEAT_KEYMAP,
     HIDPP_FEAT_FIRMWARE_INFO,
@@ -72,7 +78,13 @@ struct hidpp_device_t {
 };
 
 struct hidpp_receiver_t {
+    int type;
+    int socket;
     hid_device *handle;
+    hidpp_receiver_send_fn *customSend;
+    hidpp_receiver_recv_fn *customRecv;
+    void *customUser;
+
     int timeout;
     uint8_t swid;
     uint8_t retries;

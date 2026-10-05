@@ -281,6 +281,24 @@ HIDPP_API hidpp_receiver_t *hidpp_open_interface(
     unsigned short vid, unsigned short pid, int interfaceNumber
 );
 
+/** Opens a HID++ receiver which communicates using a socket. */
+HIDPP_API hidpp_receiver_t *hidpp_open_socket(int fd);
+
+/** Callback used for a custom receiver sending mechanism. */
+typedef int(hidpp_receiver_send_fn)(
+    hidpp_receiver_t *rcv, const char *buffer, size_t size, void *user
+);
+
+/** Callback used for a custom receiver receiving mechanism. */
+typedef int(hidpp_receiver_recv_fn)(
+    hidpp_receiver_t *rcv, char *buffer, size_t size, void *user
+);
+
+/** Opens a HID++ receiver which communicates using custom callbacks. */
+HIDPP_API hidpp_receiver_t *hidpp_open_custom(
+    hidpp_receiver_send_fn *send, hidpp_receiver_recv_fn *recv, void *user
+);
+
 /** Close a HID++ receiver and free its resources. */
 HIDPP_API void hidpp_close(hidpp_receiver_t *rcv);
 

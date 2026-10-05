@@ -43,7 +43,9 @@ const wchar_t *hidpp_error(hidpp_receiver_t *rcv) {
         return hid_error(NULL);
     if (rcv->error[0] != L'\0')
         return rcv->error;
-    return hid_error(rcv->handle);
+    if (rcv->type == RCV_HIDAPI)
+        return hid_error(rcv->handle);
+    return NULL;
 }
 
 const char *hidpp_error_str(int code) {

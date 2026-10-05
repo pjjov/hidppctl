@@ -12,6 +12,7 @@
 #include <allocator.h>
 #include <allocator_std.h>
 #include <hidapi.h>
+#include <pf_socket.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -36,7 +37,7 @@ static void set_error(hidpp_receiver_t *rcv, const wchar_t *fmt, ...) {
 }
 
 static void propagate_error(hidpp_receiver_t *rcv) {
-    if (!rcv)
+    if (!rcv || rcv->type != RCV_HIDAPI)
         return;
 
     const wchar_t *e = hid_error(rcv->handle);
@@ -55,16 +56,13 @@ int hidpp_init(allocator_t *alloc) {
 
 void hidpp_exit(void) { hid_exit(); }
 
-static hidpp_receiver_t *create_receiver(hid_device *handle) {
+static hidpp_receiver_t *create_receiver(void) {
     hidpp_receiver_t *rcv;
 
-    if (!(rcv = allocate(hidpp_allocator, sizeof(*rcv)))) {
-        hid_close(handle);
+    if (!(rcv = allocate(hidpp_allocator, sizeof(*rcv))))
         return NULL;
-    }
 
     memset(rcv, 0, sizeof(*rcv));
-    rcv->handle = handle;
     rcv->retries = MAX_RETRY;
     rcv->timeout = DEFAULT_TIMEOUT;
     rcv->swid = DEFAULT_SWID;
@@ -74,13 +72,37 @@ static hidpp_receiver_t *create_receiver(hid_device *handle) {
 hidpp_receiver_t *hidpp_open(
     unsigned short vid, unsigned short pid, const wchar_t *serial
 ) {
-    hid_device *handle = hid_open(vid, pid, serial);
-    return handle ? create_receiver(handle) : NULL;
+    hidpp_receiver_t *rcv;
+    hid_device *handle;
+
+    if (!(handle = hid_open(vid, pid, serial)))
+        return NULL;
+
+    if (!(rcv = create_receiver())) {
+        hid_close(handle);
+        return NULL;
+    }
+
+    rcv->type = RCV_HIDAPI;
+    rcv->handle = handle;
+    return rcv;
 }
 
 hidpp_receiver_t *hidpp_open_path(const char *path) {
-    hid_device *handle = hid_open_path(path);
-    return handle ? create_receiver(handle) : NULL;
+    hidpp_receiver_t *rcv;
+    hid_device *handle;
+
+    if (!(handle = hid_open_path(path)))
+        return NULL;
+
+    if (!(rcv = create_receiver())) {
+        hid_close(handle);
+        return NULL;
+    }
+
+    rcv->type = RCV_HIDAPI;
+    rcv->handle = handle;
+    return rcv;
 }
 
 hidpp_receiver_t *hidpp_open_interface(
@@ -97,11 +119,44 @@ hidpp_receiver_t *hidpp_open_interface(
     return rcv;
 }
 
+hidpp_receiver_t *hidpp_open_socket(int fd) {
+    if (fd < 0)
+        return NULL;
+
+    hidpp_receiver_t *rcv;
+
+    if ((rcv = create_receiver()))
+        return NULL;
+
+    rcv->type = RCV_SOCKET;
+    rcv->socket = fd;
+    return rcv;
+}
+
+hidpp_receiver_t *hidpp_open_custom(
+    hidpp_receiver_send_fn *send, hidpp_receiver_recv_fn *recv, void *user
+) {
+    if (!send || !recv)
+        return NULL;
+
+    hidpp_receiver_t *rcv;
+
+    if ((rcv = create_receiver()))
+        return NULL;
+
+    rcv->type = RCV_CUSTOM;
+    rcv->customSend = send;
+    rcv->customRecv = recv;
+    rcv->customUser = user;
+    return rcv;
+}
+
 void hidpp_close(hidpp_receiver_t *rcv) {
     if (!rcv)
         return;
 
-    hid_close(rcv->handle);
+    if (rcv->type == RCV_HIDAPI)
+        hid_close(rcv->handle);
     deallocate(hidpp_allocator, rcv, sizeof(*rcv));
 }
 
@@ -164,6 +219,9 @@ int hidpp_receiver_info(
     if (!rcv || !out)
         return HIDPP_EINVAL;
 
+    if (rcv->type != RCV_HIDAPI)
+        return HIDPP_ENOSYS;
+
     struct hid_device_info *info;
     if (!(info = hid_get_device_info(rcv->handle)))
         return HIDPP_EIO;
@@ -182,6 +240,24 @@ hidpp_protocol_hook_fn *hidpp_set_protocol_hook(
     rcv->hook = hook;
     rcv->hookUser = user;
     return prev;
+}
+
+static int send_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
+    switch (rcv->type) {
+    case RCV_HIDAPI:
+        return hid_write(rcv->handle, buf, len) < 0;
+    case RCV_CUSTOM:
+        return rcv->customSend(rcv, (char *)buf, len, rcv->customUser);
+    case RCV_SOCKET: {
+        pf_sock_ssize_t sent = pf_sock_send(rcv->socket, buf, len, 0);
+
+        if (sent < len)
+            return HIDPP_EIO;
+        return HIDPP_OK;
+    }
+    default:
+        return HIDPP_ENOSYS;
+    }
 }
 
 int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
@@ -207,12 +283,34 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
     buf[3] = pkt->func;
     memcpy(&buf[4], pkt->params, len - 4);
 
-    if (hid_write(rcv->handle, buf, len) < 0) {
+    if (send_packet(rcv, buf, len)) {
         set_error(rcv, L"tried to write %lu bytes.", len);
         return HIDPP_EIO;
     }
 
     return HIDPP_OK;
+}
+
+static int recv_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
+    switch (rcv->type) {
+    case RCV_HIDAPI:
+        return rcv->nonblocking
+            ? hid_read(rcv->handle, buf, len)
+            : hid_read_timeout(rcv->handle, buf, len, rcv->timeout);
+    case RCV_CUSTOM:
+        return rcv->customRecv(rcv, (char *)buf, len, rcv->customUser);
+    case RCV_SOCKET: {
+        pf_sock_ssize_t received = pf_sock_recv(rcv->socket, buf, len, 0);
+
+        if (received < 0)
+            return HIDPP_EIO;
+        if (received != len)
+            return HIDPP_ENODATA;
+        return HIDPP_OK;
+    }
+    default:
+        return HIDPP_ENOSYS;
+    }
 }
 
 int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
@@ -221,9 +319,7 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
 
     unsigned char buf[HIDPP_LEN_XLONG];
 
-    int ret = rcv->nonblocking
-        ? hid_read(rcv->handle, buf, HIDPP_LEN_XLONG)
-        : hid_read_timeout(rcv->handle, buf, HIDPP_LEN_XLONG, rcv->timeout);
+    int ret = recv_packet(rcv, buf, HIDPP_LEN_XLONG);
 
     if (ret == 0) {
         if (rcv->nonblocking)
@@ -338,6 +434,9 @@ int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout) {
 int hidpp_set_nonblocking(hidpp_receiver_t *rcv, int nonblock) {
     if (!rcv)
         return HIDPP_EINVAL;
+
+    if (rcv->type != RCV_HIDAPI)
+        return HIDPP_ENOSYS;
 
     if (hid_set_nonblocking(rcv->handle, nonblock ? 1 : 0) < 0) {
         propagate_error(rcv);
