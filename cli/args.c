@@ -9,6 +9,7 @@
 
 #include "common.h"
 
+#include <errno.h>
 #include <pf_cli.h>
 
 #define PF_ARGPARSE_QUIET_SHORT 0
@@ -85,11 +86,12 @@ static const pf_cli_definition_t help_options[] = {
     { "-r, --receiver", "Specifies which HID++ receiver to use." },
     { "-d, --device", "Specifies which HID++ device index to use." },
     { "--interface", "Specifies which HID interface to use." },
+    { "--socket", "Specifies a path or a TCP port to use as a receiver." },
     { "--timeout", "Sets the timeout for IO operations in milliseconds." },
     { "--swid", "Sets the software ID for interacting with devices." },
     { "--cache-path", "Sets a path to use for saving the device cache." },
-    { "--no-cache", "Disables cache file saving and loading." },
     { "--log-path", "Sets a path to use for the log file." },
+    { "--no-cache", "Disables cache file saving and loading." },
     { "--no-log", "Disables file logging." },
     { 0 },
 };
@@ -235,6 +237,31 @@ static int parse_poll_event_name(pf_argparser_t *p, const char *arg) {
     return 0;
 }
 
+static int parse_socket_path(pf_argparser_t *p, struct hidppctl_opt *opt) {
+    char *str = opt->socket.value;
+    char *end;
+
+    errno = 0;
+    int v = strtol(opt->socket.path, &end, 0);
+
+    if (end == str || *end) {
+        opt->socket.isPort = HIDPP_FALSE;
+        opt->socket.path = str;
+        return HIDPP_OK;
+    }
+
+    if (errno == ERANGE || v < 0 || v > 65535) {
+        pf_argparser_error(
+            p, "Socket's port number must be between 0 and 65535"
+        );
+        return HIDPP_EINVAL;
+    }
+
+    opt->socket.isPort = HIDPP_TRUE;
+    opt->socket.port = v;
+    return HIDPP_OK;
+}
+
 /* ------------------------------------------------------------------------ */
 /* The callback: options and the subcommand name                             */
 /* ------------------------------------------------------------------------ */
@@ -259,8 +286,8 @@ static void parse_args_option(
         opt->setTimeout = HIDPP_TRUE;
 
     if (pf_option_string(p, "receiver", 'r', &opt->receiver)) {
-        if (opt->subject == HIDPPCTL_ALL)
-            opt->subject = HIDPPCTL_RECEIVER;
+        opt->setSocket = HIDPP_FALSE;
+        opt->setReceiver = HIDPP_TRUE;
     }
 
     if (pf_option_int(p, "device", 'd', &dev)) {
@@ -268,13 +295,18 @@ static void parse_args_option(
             pf_argparser_error(p, "Invalid device index %d.", dev);
         } else {
             opt->device = dev;
-            opt->subject = HIDPPCTL_DEVICE;
+            opt->setDevice = HIDPP_TRUE;
         }
     }
 
     if (pf_option_int_range(p, "swid", 0, 0, 15, &swid)) {
         opt->swid = swid;
         opt->setSwid = HIDPP_TRUE;
+    }
+
+    if (pf_option_string(p, "socket", 0, &opt->socket.value)) {
+        opt->setReceiver = HIDPP_FALSE;
+        opt->setSocket = HIDPP_TRUE;
     }
 
     pf_option_string(p, "cache-path", 0, &opt->cache.path);
@@ -335,6 +367,94 @@ static pf_bool check_param_count(
     }
 }
 
+static pf_bool check_device_selection(
+    hidppctl_t *ctl, struct pf_argparser *p, struct hidppctl_opt *opt
+) {
+    if (opt->setSocket && opt->setInterface) {
+        pf_argparser_error(
+            p, "Option '--interface' has no effect when '--socket' is used\n"
+        );
+
+        return PF_FALSE;
+    }
+
+    if (!opt->setReceiver && opt->setInterface) {
+        pf_argparser_error(
+            p,
+            "Option '--interface' cannot be used without a corresponding '-r' "
+            "option.\n"
+        );
+
+        return PF_FALSE;
+    }
+
+    if (opt->setDevice && !opt->setReceiver && !opt->setSocket) {
+        pf_argparser_error(
+            p,
+            "No receiver specified for wanted device.\n"
+            "Use '-r' or '--socket' option for selecting a receiver.\n"
+        );
+
+        return PF_FALSE;
+    }
+
+    if (opt->setSocket && parse_socket_path(p, opt))
+        return PF_FALSE;
+
+    return PF_TRUE;
+}
+
+static int check_command_requirements(
+    hidppctl_t *ctl, struct pf_argparser *p, struct hidppctl_opt *opt
+) {
+    hidpp_bool_t cmdRequiresDevice;
+    hidpp_bool_t cmdRequiresReceiver;
+
+    switch (opt->command) {
+        PF_ENUM_GUARD(hidppctl_command, 2);
+    case HIDPPCTL_POLL:
+        cmdRequiresReceiver = HIDPP_TRUE;
+        cmdRequiresDevice = opt->setDevice;
+        break;
+    case HIDPPCTL_STATUS:
+        cmdRequiresReceiver = opt->setReceiver || opt->setSocket;
+        cmdRequiresDevice = opt->setDevice;
+        break;
+    case HIDPPCTL_CACHE:
+    case HIDPPCTL_DIVERT:
+    case HIDPPCTL_KEYMAP:
+    case HIDPPCTL_LIST_FEATURES:
+    case HIDPPCTL_REMAP:
+        cmdRequiresDevice = HIDPP_TRUE;
+        cmdRequiresReceiver = HIDPP_TRUE;
+        break;
+    case HIDPPCTL_LIST_EVENTS:
+    case HIDPPCTL_LIST_KEYCODES:
+    default:
+        cmdRequiresDevice = HIDPP_FALSE;
+        cmdRequiresReceiver = HIDPP_FALSE;
+        break;
+    }
+
+    if (cmdRequiresDevice && !opt->setDevice) {
+        pf_argparser_error(
+            p, "A device must be specified for this subcommand."
+        );
+
+        return PF_FALSE;
+    }
+
+    if (cmdRequiresReceiver && !opt->setReceiver && !opt->setSocket) {
+        pf_argparser_error(
+            p, "A receiver must be specified for this subcommand."
+        );
+
+        return PF_FALSE;
+    }
+
+    return PF_TRUE;
+}
+
 static void parse_args_cache(struct pf_argparser *p, struct hidppctl_opt *opt) {
     if (p->paramc == 0)
         return;
@@ -377,20 +497,42 @@ static void parse_args_poll(struct pf_argparser *p, struct hidppctl_opt *opt) {
 static void parse_args_divert(
     struct pf_argparser *p, struct hidppctl_opt *opt
 ) {
-    if (opt->subject != HIDPPCTL_DEVICE) {
+    if (opt->setDevice) {
         pf_argparser_error(
             p, "A device must be specified for 'divert' subcommand!"
         );
     }
 
-    opt->requiresInput = HIDPP_FALSE;
+    opt->divert.needsInput = HIDPP_FALSE;
 
     /* The count was checked by check_param_count(), so this fits. */
     for (int i = 0; i < p->paramc; i++) {
         parse_diversion(p, opt, p->paramv[i], i);
         if (opt->divert.items[i].key)
-            opt->requiresInput = HIDPP_TRUE;
+            opt->divert.needsInput = HIDPP_TRUE;
     }
+}
+
+static void propagate_requirements(
+    hidppctl_t *ctl, struct pf_argparser *p, struct hidppctl_opt *opt
+) {
+    if (opt->command == HIDPPCTL_DIVERT)
+        ctl->requiresInput = opt->divert.needsInput;
+
+    if (opt->setDevice)
+        ctl->requiresDevice = HIDPP_TRUE;
+
+    if (opt->setReceiver)
+        ctl->requiresReceiver = HIDPP_TRUE;
+
+    if (opt->setSocket)
+        ctl->requiresSocket = HIDPP_TRUE;
+
+    if (ctl->requiresDevice && opt->command != HIDPPCTL_CACHE)
+        ctl->requiresCache = !opt->cache.disabled;
+
+    if (ctl->requiresDevice)
+        ctl->requiresLog = !opt->log.disabled;
 }
 
 static int parse_args_end(
@@ -410,24 +552,13 @@ static int parse_args_end(
     if (opt->help)
         return HIDPP_OK;
 
-    if (opt->subject == HIDPPCTL_DEVICE)
-        opt->requiresDevice = HIDPP_TRUE;
-    if (opt->subject == HIDPPCTL_DEVICE || opt->subject == HIDPPCTL_RECEIVER)
-        opt->requiresReceiver = HIDPP_TRUE;
-
-    if (opt->requiresDevice && opt->command != HIDPPCTL_CACHE)
-        opt->requiresCache = !opt->cache.disabled;
-
-    if (opt->requiresDevice)
-        opt->requiresLog = !opt->log.disabled;
-
-    if (opt->subject == HIDPPCTL_DEVICE && !opt->receiver) {
-        pf_argparser_error(
-            p, "Selecting a device requires specifying the receiver."
-        );
-    }
-
     if (!check_param_count(p, opt))
+        return HIDPP_EINVAL;
+
+    if (!check_command_requirements(ctl, p, opt))
+        return HIDPP_EINVAL;
+
+    if (!check_device_selection(ctl, p, opt))
         return HIDPP_EINVAL;
 
     switch (opt->command) {
@@ -440,6 +571,8 @@ static int parse_args_end(
     default:                                         break;
         /* clang-format on */
     }
+
+    propagate_requirements(ctl, p, opt);
 
     return p->failed ? HIDPP_EINVAL : HIDPP_OK;
 }

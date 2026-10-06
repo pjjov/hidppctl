@@ -10,6 +10,38 @@
 #include "common.h"
 
 #include <pf_argparse.h>
+#include <pf_socket.h>
+
+#ifndef _WIN32
+
+    #include <sys/un.h>
+
+int open_domain_socket(const char *path) {
+    pf_sock_t sock = pf_sock_open(AF_UNIX, SOCK_STREAM, 0);
+
+    if (sock < 0)
+        return HIDPP_EIO;
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+
+    if (strlen(path) >= sizeof(addr.sun_path)) {
+        close(sock);
+        return HIDPP_ENOMEM;
+    }
+
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(sock);
+        return HIDPP_EIO;
+    }
+
+    return sock;
+}
+
+#endif
 
 extern int cmd_cache(hidppctl_t *ctl);
 extern int cmd_divert(hidppctl_t *ctl);
@@ -69,6 +101,28 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     return rcv;
 }
 
+hidpp_receiver_t *open_socket(hidppctl_t *ctl, struct hidppctl_opt *opt) {
+    pf_sock_t sock = PF_INVALID_SOCKET;
+    hidpp_receiver_t *rcv;
+
+#ifndef _WIN32
+    sock = open_domain_socket(opt->socket.path);
+#endif
+
+    if (sock == PF_INVALID_SOCKET) {
+        pf_cli_errorf(ctl->cli, "Unable to open a socket.\n");
+        return NULL;
+    }
+
+    if (!(rcv = hidpp_open_socket((int)sock))) {
+        pf_cli_errorf(ctl->cli, "Unable to open a receiver using a socket.\n");
+        pf_sock_close(sock);
+        return NULL;
+    }
+
+    return rcv;
+}
+
 static hidpp_device_t *open_device(
     hidppctl_t *ctl, hidpp_receiver_t *rcv, uint8_t index
 ) {
@@ -89,15 +143,17 @@ static hidpp_device_t *open_device(
 }
 
 static void hidppctl_free(hidppctl_t *ctl) {
-    if (ctl->options->requiresCache)
+    if (ctl->requiresCache)
         hidppctl_save_cache(ctl);
-    if (ctl->options->requiresLog)
+    if (ctl->requiresLog)
         hidppctl_close_log(ctl);
-    if (ctl->options->requiresInput)
+    if (ctl->requiresInput)
         hidpp_input_free(ctl->input);
-    if (ctl->options->requiresDevice)
+    if (ctl->requiresDevice || ctl->requiresSocket)
         hidpp_device_close(ctl->device);
-    if (ctl->options->requiresReceiver)
+    if (ctl->requiresSocket)
+        pf_sock_close((pf_sock_t)ctl->socket);
+    if (ctl->requiresReceiver)
         hidpp_close(ctl->receiver);
     if (ctl->cachePath)
         free(ctl->cachePath);
@@ -112,7 +168,7 @@ static int hidppctl_init(hidppctl_t *ctl) {
         return HIDPP_EIO;
     }
 
-    if (ctl->options->requiresInput) {
+    if (ctl->requiresInput) {
         if (!(ctl->input = hidpp_input_new(NULL))) {
             pf_cli_errorf(ctl->cli, "Unable to simulate input!\n");
             hidppctl_free(ctl);
@@ -120,7 +176,7 @@ static int hidppctl_init(hidppctl_t *ctl) {
         }
     }
 
-    if (ctl->options->requiresReceiver) {
+    if (ctl->requiresReceiver) {
         ctl->receiver = open_receiver(ctl, ctl->options->receiver);
 
         if (!ctl->receiver) {
@@ -129,7 +185,16 @@ static int hidppctl_init(hidppctl_t *ctl) {
         }
     }
 
-    if (ctl->options->requiresDevice) {
+    if (ctl->requiresReceiver) {
+        ctl->receiver = open_socket(ctl, ctl->options);
+
+        if (!ctl->receiver) {
+            hidppctl_free(ctl);
+            return HIDPP_EIO;
+        }
+    }
+
+    if (ctl->requiresDevice) {
         ctl->device = open_device(ctl, ctl->receiver, ctl->options->device);
 
         if (!ctl->device) {
@@ -138,10 +203,10 @@ static int hidppctl_init(hidppctl_t *ctl) {
         }
     }
 
-    if (ctl->options->requiresCache)
+    if (ctl->requiresCache)
         hidppctl_load_cache(ctl);
 
-    if (ctl->options->requiresLog)
+    if (ctl->requiresLog)
         hidppctl_open_log(ctl);
 
     return HIDPP_OK;

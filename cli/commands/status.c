@@ -112,14 +112,9 @@ static int cmd_status_dev(hidppctl_t *ctl) {
 }
 
 int cmd_status(hidppctl_t *ctl) {
-    struct hidppctl_opt *opt = ctl->options;
-
-    switch (opt->subject) {
-        /* clang-format off */
-    case HIDPPCTL_RECEIVER: return cmd_status_rcv(ctl);
-    case HIDPPCTL_DEVICE:   return cmd_status_dev(ctl);
-    case HIDPPCTL_ALL:
-    default:                return cmd_status_all(ctl);
-        /* clang-format on */
-    }
+    if (ctl->device)
+        return cmd_status_dev(ctl);
+    if (ctl->receiver)
+        return cmd_status_rcv(ctl);
+    return cmd_status_all(ctl);
 }

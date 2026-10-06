@@ -43,12 +43,6 @@ enum hidppctl_command {
     hidppctl_command_sentinel = 2,
 };
 
-enum hidppctl_subject {
-    HIDPPCTL_ALL,
-    HIDPPCTL_RECEIVER,
-    HIDPPCTL_DEVICE,
-};
-
 struct diversion {
     uint16_t ctrl;
     char state;
@@ -62,12 +56,20 @@ typedef struct hidppctl_t {
     pf_argparser_t *argparser;
     pf_cli_t *cli;
 
+    hidpp_bool_t requiresInput;
+    hidpp_bool_t requiresDevice;
+    hidpp_bool_t requiresReceiver;
+    hidpp_bool_t requiresSocket;
+    hidpp_bool_t requiresCache;
+    hidpp_bool_t requiresLog;
+
     hidpp_input_t *input;
     hidpp_receiver_t *receiver;
     hidpp_device_t *device;
     char *cachePath;
     char *logPath;
     FILE *log;
+    int socket;
 } hidppctl_t;
 
 struct hidppctl_opt {
@@ -76,12 +78,11 @@ struct hidppctl_opt {
     pf_bool verbose;
 
     int command;
-    int subject;
 
     char **paramv;
     int paramc;
-    char *receiver;
 
+    char *receiver;
     uint8_t device;
     uint8_t swid;
     int timeout;
@@ -90,6 +91,16 @@ struct hidppctl_opt {
     hidpp_bool_t setSwid;
     hidpp_bool_t setTimeout;
     hidpp_bool_t setInterface;
+    hidpp_bool_t setReceiver;
+    hidpp_bool_t setDevice;
+    hidpp_bool_t setSocket;
+
+    struct {
+        hidpp_bool_t isPort;
+        int port;
+        char *path;
+        char *value;
+    } socket;
 
     struct {
         uint16_t ctrlId;
@@ -101,6 +112,7 @@ struct hidppctl_opt {
     } poll;
 
     struct {
+        hidpp_bool_t needsInput;
         struct diversion items[HIDPP_MAX_DIVERT];
     } divert;
 
@@ -115,13 +127,6 @@ struct hidppctl_opt {
         pf_bool disabled;
         char *path;
     } log;
-
-    /* used by main.c */
-    hidpp_bool_t requiresInput;
-    hidpp_bool_t requiresDevice;
-    hidpp_bool_t requiresReceiver;
-    hidpp_bool_t requiresCache;
-    hidpp_bool_t requiresLog;
 };
 
 extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];
