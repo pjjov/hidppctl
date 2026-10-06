@@ -19,7 +19,9 @@ static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
     struct diversion *diversions = ctl->options->divert.items;
 
     if (!map) {
-        pf_cli_errorf(ctl->cli, "Specified device doesn't support diversion!");
+        pf_cli_errorf(
+            ctl->cli, "Specified device doesn't support diversion!\n"
+        );
         return HIDPP_EIO;
     }
 
@@ -28,7 +30,7 @@ static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
 
         if (hidpp_keymap_divert(map, ctrl, HIDPP_TRUE)) {
             pf_cli_errorf(
-                ctl->cli, "Unable to divert the control with id 0x%.4x!", ctrl
+                ctl->cli, "Unable to divert the control with id 0x%.4x!\n", ctrl
             );
             return HIDPP_EIO;
         }
@@ -45,7 +47,9 @@ static int cmd_divert_term(hidppctl_t *ctl, hidpp_keymap_t *map) {
 
         if (hidpp_keymap_divert(map, ctrl, HIDPP_FALSE)) {
             pf_cli_errorf(
-                ctl->cli, "Unable to undivert the control with id 0x%.4x!", ctrl
+                ctl->cli,
+                "Unable to undivert the control with id 0x%.4x!\n",
+                ctrl
             );
         }
     }

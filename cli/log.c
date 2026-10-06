@@ -96,11 +96,22 @@ static int log_hook(
 }
 
 void hidppctl_open_log(hidppctl_t *ctl) {
-    if (build_log_path(ctl))
+    if (build_log_path(ctl)) {
+        pf_cli_verbosef(
+            ctl->cli, 2, "Skipping file logging; cannot build file path.\n"
+        );
         return;
+    }
 
-    if (!(ctl->log = fopen(ctl->logPath, "wb")))
+    if (!(ctl->log = fopen(ctl->logPath, "wb"))) {
+        pf_cli_verbosef(
+            ctl->cli,
+            1,
+            "Skipping file logging; cannot open file '%s'.\n",
+            ctl->logPath
+        );
         return;
+    }
 
     hidpp_set_protocol_hook(ctl->receiver, log_hook, ctl);
     fputs(
@@ -119,5 +130,6 @@ void hidppctl_close_log(hidppctl_t *ctl) {
         fclose(ctl->log);
         ctl->log = NULL;
         hidpp_set_protocol_hook(ctl->receiver, NULL, NULL);
+        pf_cli_verbosef(ctl->cli, 2, "Closed log file at '%s'.", ctl->logPath);
     }
 }

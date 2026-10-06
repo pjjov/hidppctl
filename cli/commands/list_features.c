@@ -18,7 +18,7 @@ int cmd_list_features(hidppctl_t *ctl) {
 
     if (hidpp_device_info(dev, &info)) {
         pf_cli_errorf(
-            cli, "Unable to read device information: %ls", hidpp_error(rcv)
+            cli, "Unable to read device information: %ls\n", hidpp_error(rcv)
         );
         return HIDPP_EIO;
     }

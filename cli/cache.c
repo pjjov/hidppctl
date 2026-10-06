@@ -61,17 +61,33 @@ static int build_cache_path(hidppctl_t *ctl) {
 }
 
 void hidppctl_load_cache(hidppctl_t *ctl) {
-    if (build_cache_path(ctl))
+    if (build_cache_path(ctl)) {
+        pf_cli_verbosef(
+            ctl->cli, 2, "Skipping cache loading; cannot build path.\n"
+        );
         return;
+    }
 
     void *buffer;
     size_t size;
 
-    if (pf_readall(ctl->cachePath, &buffer, &size))
+    if (pf_readall(ctl->cachePath, &buffer, &size)) {
+        pf_cli_verbosef(
+            ctl->cli,
+            2,
+            "Skipping cache loading; cannot read file '%s'.\n",
+            ctl->cachePath
+        );
         return;
+    }
 
-    hidpp_cache_load(ctl->device, buffer, size);
+    int rc = hidpp_cache_load(ctl->device, buffer, size);
     free(buffer);
+
+    if (rc) {
+        pf_cli_verbosef(ctl->cli, 2, "Unable to load device's cache.");
+        return;
+    }
 
     pf_cli_verbosef(ctl->cli, 1, "Loaded cache from '%s'\n", ctl->cachePath);
 }
@@ -82,10 +98,20 @@ void hidppctl_save_cache(hidppctl_t *ctl) {
 
     memset(buffer, 0, size);
 
-    if (hidpp_cache_save(ctl->device, buffer, &size))
+    if (hidpp_cache_save(ctl->device, buffer, &size)) {
+        pf_cli_verbosef(ctl->cli, 2, "Unable to save device's cache.\n");
         return;
+    }
 
-    pf_writeall(ctl->cachePath, buffer, size);
+    if (pf_writeall(ctl->cachePath, buffer, size)) {
+        pf_cli_verbosef(
+            ctl->cli,
+            2,
+            "Unable to write the cache file to '%s'\n",
+            ctl->cachePath
+        );
+        return;
+    }
 
     pf_cli_verbosef(ctl->cli, 1, "Saved cache to '%s'\n", ctl->cachePath);
 }

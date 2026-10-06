@@ -31,7 +31,7 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     struct hidppctl_opt *opt = ctl->options;
 
     if (!name) {
-        pf_cli_errorf(ctl->cli, "The HID++ receiver must be specified!");
+        pf_cli_errorf(ctl->cli, "The HID++ receiver must be specified!\n");
         return NULL;
     }
 
@@ -44,7 +44,7 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     if (vid < 0 || pid < 0 || vid > UINT16_MAX || pid > UINT16_MAX) {
         pf_cli_errorf(
             ctl->cli,
-            "Vendor and product ids must be between 0 and %u.",
+            "Vendor and product ids must be between 0 and %u.\n",
             UINT16_MAX
         );
         return NULL;
@@ -60,7 +60,7 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
     }
 
     if (rcv == NULL)
-        pf_cli_errorf(ctl->cli, "Unable to open receiver '%s'.", name);
+        pf_cli_errorf(ctl->cli, "Unable to open receiver '%s'.\n", name);
 
     if (opt->setTimeout)
         hidpp_set_timeout(rcv, opt->timeout);
@@ -75,12 +75,16 @@ static hidpp_device_t *open_device(
     hidpp_device_t *dev;
 
     if (index == 0) {
-        pf_cli_errorf(ctl->cli, "The HID++ device must be specified!");
+        pf_cli_errorf(ctl->cli, "The HID++ device must be specified!\n");
         return NULL;
     }
 
-    if (!(dev = hidpp_device_open(rcv, index)))
-        pf_cli_errorf(ctl->cli, "Unable to open device: %ls", hidpp_error(rcv));
+    if (!(dev = hidpp_device_open(rcv, index))) {
+        pf_cli_errorf(
+            ctl->cli, "Unable to open device: %ls\n", hidpp_error(rcv)
+        );
+    }
+
     return dev;
 }
 
@@ -104,13 +108,13 @@ static void hidppctl_free(hidppctl_t *ctl) {
 
 static int hidppctl_init(hidppctl_t *ctl) {
     if (hidpp_init(NULL)) {
-        pf_cli_errorf(ctl->cli, "Unable to initialize the hidpp library!");
+        pf_cli_errorf(ctl->cli, "Unable to initialize the hidpp library!\n");
         return HIDPP_EIO;
     }
 
     if (ctl->options->requiresInput) {
         if (!(ctl->input = hidpp_input_new(NULL))) {
-            pf_cli_errorf(ctl->cli, "Unable to simulate input!");
+            pf_cli_errorf(ctl->cli, "Unable to simulate input!\n");
             hidppctl_free(ctl);
             return HIDPP_EIO;
         }

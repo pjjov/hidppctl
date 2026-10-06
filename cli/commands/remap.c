@@ -19,14 +19,14 @@ int cmd_remap(hidppctl_t *ctl) {
 
     if (!(map = hidpp_keymap(dev))) {
         pf_cli_errorf(
-            ctl->cli, "Specified device doesn't support control remapping."
+            ctl->cli, "Specified device doesn't support control remapping.\n"
         );
         return HIDPP_EIO;
     }
 
     if (hidpp_keymap_remap(map, ctrl, remap)) {
         pf_cli_errorf(
-            ctl->cli, "Unable to remap control: %ls", hidpp_error(rcv)
+            ctl->cli, "Unable to remap control: %ls\n", hidpp_error(rcv)
         );
         return HIDPP_EIO;
     }

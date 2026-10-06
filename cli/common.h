@@ -14,6 +14,8 @@
 #include <hidpp.h>
 #include <pf_cli.h>
 #include <pf_macro.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,6 +129,27 @@ extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];
 int hidppctl_print_help(hidppctl_t *ctl);
 int hidppctl_parse_args(hidppctl_t *ctl);
 int hidppctl_cache_path(hidpp_device_t *dev, char *buf, size_t size);
+
+#if defined(_WIN32) || defined(_MSC_VER)
+    /* Windows environment fallback to the secure CRT name */
+    #define strdup _strdup
+#else
+    /* Check if the system is running a POSIX compliant environment */
+    #if !defined(_POSIX_C_SOURCE) && !defined(_XOPEN_SOURCE)
+/* Pure fallback for systems without built-in strdup */
+static inline char *fallback_strdup(const char *s) {
+    if (s == NULL)
+        return NULL;
+    size_t len = strlen(s) + 1;
+    char *p = (char *)malloc(len);
+    if (p != NULL) {
+        memcpy(p, s, len);
+    }
+    return p;
+}
+        #define strdup fallback_strdup
+    #endif
+#endif
 
 #ifdef __cplusplus
 }

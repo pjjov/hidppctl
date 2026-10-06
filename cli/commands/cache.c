@@ -24,18 +24,18 @@ static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
     hidpp_cache_collect(ctl->device);
 
     if ((rc = hidpp_cache_save(ctl->device, buffer, &size))) {
-        pf_cli_errorf(ctl->cli, "Failed to retrieve the cache contents.");
+        pf_cli_errorf(ctl->cli, "Failed to retrieve the cache contents.\n");
         return rc;
     }
 
     if ((rc = pf_writeall(path, buffer, size))) {
         pf_cli_errorf(
-            ctl->cli, "Failed to write the cache contents to '%s'.", path
+            ctl->cli, "Failed to write the cache contents to '%s'.\n", path
         );
         return rc;
     }
 
-    pf_cli_printf(ctl->cli, "Saved cache contents to '%s'.", path);
+    pf_cli_printf(ctl->cli, "Saved cache contents to '%s'.\n", path);
     return HIDPP_OK;
 }
 
@@ -48,7 +48,7 @@ int cmd_cache(hidppctl_t *ctl) {
     int rc;
 
     if ((rc = hidppctl_cache_path(ctl->device, path, PATH_MAX))) {
-        pf_cli_errorf(ctl->cli, "Unable to compute the cache file path.");
+        pf_cli_errorf(ctl->cli, "Unable to compute the cache file path.\n");
         return rc;
     }
 
