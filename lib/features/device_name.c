@@ -196,7 +196,7 @@ int hidpp_device_type(hidpp_device_t *dev) {
     return dn->deviceType;
 }
 
-char *hidpp_device_name(hidpp_device_t *dev) {
+const char *hidpp_device_name(hidpp_device_t *dev) {
     struct hidpp_feat_device_name *dn;
 
     if (!dev || ensure_init(&dn, dev))

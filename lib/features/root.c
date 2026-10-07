@@ -67,6 +67,9 @@
 
 #define IS_OBSOLETE_FLAG 0x80
 #define IS_HIDDEN_FLAG 0x40
+#define IS_ENGINEERING_FLAG 0x20
+#define IS_MANUFACTURING_DEACTIVATABLE 0x10
+#define IS_COMPLIANCE_DEACTIVATABLE 0x08
 
 struct hidpp_feat_root {
     hidpp_bool_t initialized;
@@ -78,6 +81,13 @@ struct hidpp_feat_root {
 static void unpack_flags(struct hidpp_feature_info *out) {
     out->isObsolete = !!(out->flags & IS_OBSOLETE_FLAG);
     out->isHidden = !!(out->flags & IS_HIDDEN_FLAG);
+    out->isEngineering = !!(out->flags & IS_ENGINEERING_FLAG);
+    out->isManufacturingDeactivatable = !!(
+        out->flags & IS_MANUFACTURING_DEACTIVATABLE
+    );
+    out->isComplianceDeactivatable = !!(
+        out->flags & IS_COMPLIANCE_DEACTIVATABLE
+    );
 }
 
 static uint8_t root_feature_index(hidpp_device_t *dev, uint16_t feat) {
@@ -281,6 +291,9 @@ int hidpp_feature_id(hidpp_device_t *dev, uint8_t index) {
 
     if ((rc = ensure_init(&root, dev)))
         return rc;
+
+    if (index > root->featCount)
+        return HIDPP_ENOENT;
 
     info = &root->infos[index];
 

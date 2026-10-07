@@ -16,7 +16,7 @@
 
     #include <sys/un.h>
 
-int open_domain_socket(const char *path) {
+static int open_domain_socket(const char *path) {
     pf_sock_t sock = pf_sock_open(AF_UNIX, SOCK_STREAM, 0);
 
     if (sock < 0)
@@ -33,8 +33,8 @@ int open_domain_socket(const char *path) {
 
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(sock);
+    if (pf_sock_connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        pf_sock_close(sock);
         return HIDPP_EIO;
     }
 

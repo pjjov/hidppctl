@@ -74,6 +74,11 @@ extern "C" {
     (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) \
      | (uint32_t)(d))
 
+#define HIDPP_QWORD(a, b, c, d, e, f, g, h)                                  \
+    (((uint64_t)(a) << 56) | ((uint64_t)(b) << 48) | ((uint64_t)(c) << 40)   \
+     | ((uint64_t)(d) << 32) | ((uint64_t)(e) << 24) | ((uint64_t)(f) << 16) \
+     | ((uint64_t)(g) << 8) | (uint64_t)(h))
+
 #define HIDPP_BYTE(msn, lsn) (((msn) << 4) | ((lsn) & 0xF))
 #define HIDPP_MSN(word) ((uint8_t)(((word) >> 4) & 0xF))
 #define HIDPP_LSN(word) ((uint8_t)((word) & 0xF))
@@ -108,6 +113,18 @@ enum hidpp_device_type {
     HIDPP_TYPE_TRACKBALL,
     HIDPP_TYPE_PRESENTER,
     HIDPP_TYPE_RECEIVER,
+    HIDPP_TYPE_HEADSET,
+    HIDPP_TYPE_WEBCAM,
+    HIDPP_TYPE_STEERING_WHEEL,
+    HIDPP_TYPE_JOYSTICK,
+    HIDPP_TYPE_GAMEPAD,
+    HIDPP_TYPE_DOCK,
+    HIDPP_TYPE_SPEAKER,
+    HIDPP_TYPE_MICROPHONE,
+    HIDPP_TYPE_ILLUMINATION_LIGHT,
+    HIDPP_TYPE_PROGRAMMABLE_CONTROLLER,
+    HIDPP_TYPE_CAR_SIM_PEDALS,
+    HIDPP_TYPE_ADAPTER,
 };
 
 /** Buttons usable with hidpp_input_button(). */
@@ -407,7 +424,7 @@ HIDPP_API int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out);
 HIDPP_API int hidpp_device_type(hidpp_device_t *dev);
 
 /** Queries the device name. */
-HIDPP_API char *hidpp_device_name(hidpp_device_t *dev);
+HIDPP_API const char *hidpp_device_name(hidpp_device_t *dev);
 
 /** HID++ device information */
 struct hidpp_device_info {
@@ -504,6 +521,9 @@ struct hidpp_feature_info {
     uint8_t flags;
     hidpp_bool_t isObsolete;
     hidpp_bool_t isHidden;
+    hidpp_bool_t isEngineering;
+    hidpp_bool_t isManufacturingDeactivatable;
+    hidpp_bool_t isComplianceDeactivatable;
     hidpp_bool_t initialized;
 };
 
@@ -512,19 +532,50 @@ HIDPP_API struct hidpp_feature_info *hidpp_feature_info(
     hidpp_device_t *dev, uint16_t featId
 );
 
+/** Queries device's firmware for a serial number. */
+HIDPP_API const char *hidpp_serial_number(hidpp_device_t *dev);
+
+/** Firmware information */
+struct hidpp_firmware_info {
+    uint8_t entityCount;
+    uint32_t unitId;
+    uint16_t transportFlags;
+    uint64_t modelId;
+    uint8_t extendedModelId; /* device color */
+    uint8_t capabilities;
+    uint8_t reserved;
+
+    hidpp_bool_t hasSerialNumber;
+    hidpp_bool_t supportsUSB;
+    hidpp_bool_t supportsEQuad;
+    hidpp_bool_t supportsBTLE; /* Bluetooth low energy */
+    hidpp_bool_t supportsBT;   /* Bluetooth */
+    hidpp_bool_t initialized;
+};
+
+/** Queries the device for firmware information. */
+HIDPP_API struct hidpp_firmware_info *hidpp_firmware_info(hidpp_device_t *dev);
+
 /* Firmware entity type. */
 enum hidpp_firmware_type {
     HIDPP_FIRMWARE_MAIN_APP = 0,
     HIDPP_FIRMWARE_BOOT_LOADER = 1,
     HIDPP_FIRMWARE_HARDWARE = 2,
+    HIDPP_FIRMWARE_TOUCHPAD = 3,
+    HIDPP_FIRMWARE_OPTICAL_SENSOR = 4,
+    HIDPP_FIRMWARE_SOFTDEVICE = 5,
+    HIDPP_FIRMWARE_RF_COMPANION_MCU = 6,
+    HIDPP_FIRMWARE_FACTORY_APPLICATION = 7,
+    HIDPP_FIRMWARE_RGB_CUSTOM_EFFECT = 8,
+    HIDPP_FIRMWARE_MOTOR_DRIVE = 9,
 };
 
 /* Firmware entity information. */
 struct hidpp_firmware_entity {
     uint8_t id;
     uint8_t type;
-    uint32_t prefix;
-    uint16_t version;
+    uint32_t firmwareNumber;
+    uint8_t revision;
     uint16_t buildNumber;
     uint8_t reserved;
     uint8_t specificInfo[9];
@@ -535,7 +586,7 @@ struct hidpp_firmware_entity {
 
 /** Queries the device for firmware information for given entity id. */
 HIDPP_API struct hidpp_firmware_entity *hidpp_firmware_entity(
-    hidpp_device_t *dev, uint8_t id, uint8_t *count
+    hidpp_device_t *dev, uint8_t id
 );
 
 /** Returns the object for configuring device's keybindings. */
