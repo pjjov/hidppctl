@@ -48,8 +48,9 @@ enum {
     HIDPP_FEAT_FIRMWARE_INFO,
     HIDPP_FEAT_DEVICE_NAME,
     HIDPP_FEAT_BATTERY,
+    HIDPP_FEAT_NICKNAME,
     hidpp_feat_max,
-    hidpp_feat_sentinel = 2,
+    hidpp_feat_sentinel = 3,
 };
 
 struct hidpp_feat_vt {

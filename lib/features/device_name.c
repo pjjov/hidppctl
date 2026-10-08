@@ -8,7 +8,6 @@
 */
 
 #include "../common.h"
-#include "hidpp.h"
 
 /** Section: HID++ feature documentation
 

@@ -434,6 +434,8 @@ struct hidpp_device_info {
 
     uint8_t type;
     const char *name;
+    const char *nickname;
+    const char *serialNumber;
 };
 
 /** Reads device information to `out`.
@@ -531,6 +533,18 @@ struct hidpp_feature_info {
 HIDPP_API struct hidpp_feature_info *hidpp_feature_info(
     hidpp_device_t *dev, uint16_t featId
 );
+
+/** Returns the nickname stored on the device itself. */
+HIDPP_API const char *hidpp_nickname_get(hidpp_device_t *dev);
+
+/** Sets the device's nickname (stored on device itself). */
+HIDPP_API int hidpp_nickname_set(hidpp_device_t *dev, const char *nickname);
+
+/** Resets the device's nickname to the default one. */
+HIDPP_API int hidpp_nickname_reset(hidpp_device_t *dev);
+
+/** Returns the device's default nickname. */
+HIDPP_API const char *hidpp_nickname_default(hidpp_device_t *dev);
 
 /** Queries device's firmware for a serial number. */
 HIDPP_API const char *hidpp_serial_number(hidpp_device_t *dev);
