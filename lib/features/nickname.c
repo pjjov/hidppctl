@@ -54,7 +54,7 @@
         uint8_t nameLength
 
     -----------------------
-    Fn 3 - reset name to default
+    Fn 4 - reset name to default
     -----------------------
     request:
     response:
@@ -62,7 +62,7 @@
 */
 
 #define MAX_NAME_LEN 256
-#define DEFAULT_CYCLE_DURATION 5 * 60
+#define DEFAULT_CYCLE_DURATION (5 * 60)
 
 struct hidpp_feat_nickname {
     hidpp_bool_t initialized;
@@ -118,7 +118,7 @@ static int query_name(
         if ((rc = hidpp_device_request(dev, &req, &res)))
             return rc;
 
-        if (req.params[0] != res.params[1])
+        if (req.params[0] != res.params[0])
             return HIDPP_EINVAL;
 
         memcpy(
@@ -138,12 +138,14 @@ static int set_name(
 ) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 3);
+    req.kind = HIDPP_KIND_LONG; /* index + 15 characters need a long report */
 
     size_t size = 15;
     size_t written = 0;
     int rc;
 
     while (written < length) {
+        memset(req.params, 0, sizeof(req.params));
         req.params[0] = (uint8_t)written;
 
         memcpy(
@@ -175,7 +177,8 @@ static void query_uncached_name(
     if (time(NULL) - nick->lastUpdated < nick->cycleDuration)
         return;
 
-    if (query_name(dev, nick->featIndex, 1, nick->nameLength, nick->name)) {
+    if (query_name_length(dev, nick)
+        || query_name(dev, nick->featIndex, 1, nick->nameLength, nick->name)) {
         nick->name[0] = '\0';
         nick->nameLength = 0;
     }
@@ -219,12 +222,11 @@ static int ensure_init(struct hidpp_feat_nickname **out, hidpp_device_t *dev) {
         nick->cycleDuration = DEFAULT_CYCLE_DURATION;
         nick->lastUpdated = 0;
         nick->name[0] = '\0';
-        nick->nameLength = 0;
     }
 
     nick->initialized = HIDPP_TRUE;
 
-    return HIDPP_OK;
+    return nick->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 }
 
 static void clear_cache(hidpp_device_t *dev, void *feat) {
@@ -322,6 +324,7 @@ int hidpp_nickname_set(hidpp_device_t *dev, const char *nickname) {
 
     memcpy(nick->name, nickname, len + 1);
     nick->nameLength = len;
+    nick->lastUpdated = time(NULL);
     return HIDPP_OK;
 }
 
@@ -335,7 +338,11 @@ int hidpp_nickname_reset(hidpp_device_t *dev) {
     if ((rc = ensure_init(&nick, dev)))
         return rc;
 
-    return reset_name(dev, nick->featIndex);
+    if ((rc = reset_name(dev, nick->featIndex)))
+        return rc;
+
+    nick->lastUpdated = 0; /* force the next getter to re-read the name */
+    return HIDPP_OK;
 }
 
 const char *hidpp_nickname_default(hidpp_device_t *dev) {

@@ -136,13 +136,14 @@ static int query_entity_info(
         return rc;
 
     out->id = entityId;
-    out->type = res.params[0];
+    out->type = res.params[0] & 0x0F;
     out->firmwareNumber = HIDPP_DWORD(
         res.params[1], res.params[2], res.params[3], res.params[4]
     );
     out->revision = res.params[5];
     out->buildNumber = HIDPP_WORD(res.params[6], res.params[7]);
     out->reserved = res.params[8];
+    memset(out->specificInfo, 0, sizeof(out->specificInfo));
     memcpy(out->specificInfo, &res.params[9], 7);
     out->typeName = get_type_name(out->type);
     out->initialized = HIDPP_TRUE;
@@ -162,6 +163,7 @@ static int query_serial_number(
         return rc;
 
     memcpy(out, res.params, SERIAL_NUM_LEN);
+    out[SERIAL_NUM_LEN] = '\0';
     return HIDPP_OK;
 }
 
@@ -198,7 +200,7 @@ static int ensure_init(
 
     fw->initialized = HIDPP_TRUE;
 
-    return HIDPP_OK;
+    return fw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 }
 
 static void clear_cache(hidpp_device_t *dev, void *feat) {
@@ -209,7 +211,13 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
 static void collect_cache(hidpp_device_t *dev, void *feat) {
     struct hidpp_feat_firmware_info *fw;
     (void)feat;
-    ensure_init(&fw, dev);
+
+    if (ensure_init(&fw, dev))
+        return;
+
+    for (size_t id = 0; id < fw->entityCount; id++)
+        if (!fw->entities[id].initialized)
+            query_entity_info(&fw->entities[id], dev, fw->featIndex, id);
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -242,7 +250,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         SAVE_BYTE(b, info->id);
         SAVE_BYTE(b, info->type);
         SAVE_DWORD(b, info->firmwareNumber);
-        SAVE_WORD(b, info->revision);
+        SAVE_BYTE(b, info->revision);
         SAVE_WORD(b, info->buildNumber);
         SAVE_BYTE(b, info->reserved);
         SAVE_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
@@ -283,7 +291,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         info->id = LOAD_BYTE(b);
         info->type = LOAD_BYTE(b);
         info->firmwareNumber = LOAD_DWORD(b);
-        info->revision = LOAD_WORD(b);
+        info->revision = LOAD_BYTE(b);
         info->buildNumber = LOAD_WORD(b);
         info->reserved = LOAD_BYTE(b);
         LOAD_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
@@ -325,6 +333,9 @@ struct hidpp_firmware_entity *hidpp_firmware_entity(
     struct hidpp_firmware_entity *info;
 
     if (!dev || ensure_init(&fw, dev))
+        return NULL;
+
+    if (id >= fw->entityCount)
         return NULL;
 
     info = &fw->entities[id];

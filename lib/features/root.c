@@ -46,7 +46,8 @@
     -----------------------
     request:
     response:
-        uint8_t count
+        uint8_t count (does not include the root feature, valid indexes
+                       are therefore 0 to `count` inclusive)
 
     -----------------------
     Fn 1 - get feature id
@@ -90,6 +91,7 @@ static void unpack_flags(struct hidpp_feature_info *out) {
     );
 }
 
+/* Returns 0 if the feature is not present (index 0 is always the root). */
 static uint8_t root_feature_index(hidpp_device_t *dev, uint16_t feat) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, 0, 0);
@@ -123,6 +125,10 @@ static int query_feature_info_by_id(
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
+
+    /* Root answers with index 0 for features the device doesn't have. */
+    if (res.params[0] == 0 && feat != 0x0000)
+        return HIDPP_ENOENT;
 
     out->initialized = HIDPP_TRUE;
     out->id = feat;
@@ -175,6 +181,10 @@ static int ensure_init(struct hidpp_feat_root **out, hidpp_device_t *dev) {
 
     memset(root->infos, 0, sizeof(root->infos));
     root->featSetIndex = root_feature_index(dev, FEATURE_SET_ID);
+
+    if (root->featSetIndex == 0)
+        return HIDPP_ENOSYS; /* Feature set is mandatory on HID++ 2.0 */
+
     root->featCount = query_feature_count(dev, root->featSetIndex);
     root->initialized = HIDPP_TRUE;
 
@@ -188,6 +198,7 @@ static void clear_cache(hidpp_device_t *dev, void *feat) {
 
 static void collect_cache(hidpp_device_t *dev, void *feat) {
     uint16_t buf[MAX_FEAT_COUNT];
+    (void)feat;
     hidpp_feature_list(dev, buf, MAX_FEAT_COUNT);
 }
 
@@ -203,7 +214,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     SAVE_BYTE(b, root->featSetIndex);
     SAVE_BYTE(b, root->featCount);
 
-    for (size_t i = 0; i < root->featCount; i++) {
+    for (size_t i = 0; i <= root->featCount; i++) {
         struct hidpp_feature_info *info = &root->infos[i];
         SAVE_BYTE(b, info->initialized);
         SAVE_WORD(b, info->id);
@@ -227,7 +238,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     root->featSetIndex = LOAD_BYTE(b);
     root->featCount = LOAD_BYTE(b);
 
-    for (size_t i = 0; i < root->featCount; i++) {
+    for (size_t i = 0; i <= root->featCount; i++) {
         struct hidpp_feature_info *info = &root->infos[i];
         info->initialized = LOAD_BYTE(b);
         info->id = LOAD_WORD(b);
@@ -274,6 +285,9 @@ int hidpp_feature_index(hidpp_device_t *dev, uint16_t featureId) {
             return (int)info->index;
     }
 
+    if (featureId == 0x0000)
+        return 0;
+
     if ((rc = query_feature_info_by_id(&tmp, dev, featureId)))
         return rc;
 
@@ -294,6 +308,9 @@ int hidpp_feature_id(hidpp_device_t *dev, uint8_t index) {
 
     if (index > root->featCount)
         return HIDPP_ENOENT;
+
+    if (index == 0)
+        return 0x0000; /* Root is always at index 0 */
 
     info = &root->infos[index];
 
@@ -323,10 +340,18 @@ struct hidpp_feature_info *hidpp_feature_info(
     if ((index = hidpp_feature_index(dev, featId)) < 0)
         return NULL;
 
-    if (index > MAX_FEAT_COUNT)
+    if (index >= MAX_FEAT_COUNT)
         return NULL;
 
-    return &root->infos[index];
+    struct hidpp_feature_info *info = &root->infos[index];
+
+    if (!info->initialized
+        && query_feature_info_by_index(
+            info, dev, (uint8_t)index, root->featSetIndex
+        ))
+        return NULL;
+
+    return info;
 }
 
 size_t hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max) {
@@ -338,7 +363,8 @@ size_t hidpp_feature_list(hidpp_device_t *dev, uint16_t *out, size_t max) {
     if (ensure_init(&root, dev))
         return 0;
 
-    size_t count = root->featCount < max ? root->featCount : max;
+    size_t total = (size_t)root->featCount + 1; /* root is not counted */
+    size_t count = total < max ? total : max;
 
     for (size_t i = 0; i < count; i++) {
         int result = hidpp_feature_id(dev, i);
@@ -359,9 +385,9 @@ int hidpp_ping(hidpp_device_t *dev, uint8_t data) {
 
     hidpp_packet_t req, res;
     make_packet(&req, dev, 0, 1);
-    req.params[0] = data;
+    req.params[2] = data;
 
-    if (hidpp_request(rcv, &req, &res) || res.params[2] != req.params[2])
+    if (hidpp_request(rcv, &req, &res) || res.params[2] != data)
         return HIDPP_EIO;
 
     return HIDPP_OK;

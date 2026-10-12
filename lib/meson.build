@@ -26,7 +26,7 @@ lib_src += tables_src
 
 lib = library(
   'hidpp',
-  dependencies: [hidapi_dep, allocator_dep],
+  dependencies: [hidapi_dep, allocator_dep, cpolyfill_dep],
   install: true,
   include_directories: inc,
   sources: lib_src,

@@ -93,6 +93,9 @@
 #define STATE_PERSISTENT_FLAG  0x04
 #define STATE_DIVERTED_FLAG    0x01
 
+#define SET_DIVERT_VALID_FLAG  0x02
+#define SET_RAWXY_VALID_FLAG   0x20
+
 /* clang-format on */
 
 struct hidpp_keymap_t {
@@ -107,6 +110,12 @@ struct hidpp_keymap_t {
     struct hidpp_keymap_info controls[MAX_CONTROLS];
 };
 
+static int init_feature(hidpp_device_t *dev, void *feat) {
+    hidpp_keymap_t *map = feat;
+    map->device = dev;
+    return HIDPP_OK;
+}
+
 static void unpack_flags(struct hidpp_keymap_info *out) {
     out->isVirtual = !!(out->flags & IS_VIRTUAL_FLAG);
     out->isPersistable = !!(out->flags & IS_PERSISTABLE_FLAG);
@@ -119,7 +128,7 @@ static void unpack_flags(struct hidpp_keymap_info *out) {
 }
 
 static int query_keymap_version(hidpp_keymap_t *map) {
-    int version, result;
+    int version = 0, result;
 
     if ((result = hidpp_feature_index(map->device, 0x1B04)) > 0)
         version = 4;
@@ -182,7 +191,10 @@ static int ensure_init(hidpp_keymap_t *map) {
     if (map->initialized)
         return map->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 
+    /* the device pointer is set once at creation and must survive this */
+    hidpp_device_t *dev = map->device;
     memset(map, 0, sizeof(*map));
+    map->device = dev;
 
     if (query_keymap_version(map))
         return HIDPP_ENOSYS;
@@ -275,6 +287,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_keymap_vt = {
+    .init = init_feature,
     .size = sizeof(hidpp_keymap_t),
     .alignment = _Alignof(hidpp_keymap_t),
     .maxCacheSize = sizeof(hidpp_keymap_t),
@@ -329,7 +342,7 @@ int hidpp_keymap_id(hidpp_keymap_t *map, uint8_t index) {
 }
 
 size_t hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max) {
-    if (!map || !out || max == 0)
+    if (!map || !out || max == 0 || ensure_init(map))
         return 0;
 
     size_t count = map->ctrlCount < max ? map->ctrlCount : max;
@@ -348,9 +361,12 @@ int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
     make_packet(&req, map->device, map->featIndex, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
-    req.params[2] = value ? 3 : 0;
+    /* bit 1 (dvalid) tells the device to apply bit 0 (divert) */
+    req.params[2] = value ? (STATE_DIVERTED_FLAG | SET_DIVERT_VALID_FLAG)
+                          : SET_DIVERT_VALID_FLAG;
 
-    return hidpp_device_send(map->device, &req);
+    hidpp_packet_t res;
+    return hidpp_device_request(map->device, &req, &res);
 }
 
 int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
@@ -359,13 +375,15 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
 
     hidpp_packet_t req = { 0 };
     make_packet(&req, map->device, map->featIndex, 3);
+    req.kind = HIDPP_KIND_LONG; /* short reports only carry 3 parameters */
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
-    req.params[2] = 0;
+    req.params[2] = 0; /* no *valid bits: leave divert/persist/rawXY alone */
     req.params[3] = HIDPP_MSB(remap);
     req.params[4] = HIDPP_LSB(remap);
 
-    return hidpp_device_send(map->device, &req);
+    hidpp_packet_t res;
+    return hidpp_device_request(map->device, &req, &res);
 }
 
 int hidpp_keymap_state(
@@ -376,11 +394,16 @@ int hidpp_keymap_state(
 
     hidpp_packet_t req, res;
     make_packet(&req, map->device, map->featIndex, 2);
+    req.params[0] = HIDPP_MSB(id);
+    req.params[1] = HIDPP_LSB(id);
 
     int rc;
 
     if ((rc = hidpp_device_request(map->device, &req, &res)))
         return rc;
+
+    if (HIDPP_WORD(res.params[0], res.params[1]) != id)
+        return HIDPP_EIO;
 
     out->remapId = HIDPP_WORD(res.params[3], res.params[4]);
     out->flags = res.params[2];

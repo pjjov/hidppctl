@@ -12,8 +12,11 @@
 static int parse_event(
     hidpp_device_t *dev, struct hidpp_event *e, hidpp_packet_t *pkt
 ) {
-    uint16_t feat = hidpp_feature_id(dev, pkt->feat);
-    uint8_t func = pkt->func >> 8;
+    int id = hidpp_feature_id(dev, pkt->feat);
+    uint16_t feat = id >= 0 ? (uint16_t)id : 0xFFFF;
+
+    /* function id is the high nibble, the low one is the software id */
+    uint8_t func = HIDPP_MSN(pkt->func);
 
     switch (feat) {
 
@@ -48,7 +51,7 @@ static int parse_event(
 
         break;
 
-    case 0x2120: /* High resolution wheel */
+    case 0x2121: /* High resolution wheel */
         if (func == 0) {
             e->type = HIDPP_EVENT_WHEEL;
             e->as.wheel.flags = pkt->params[0];
@@ -89,7 +92,7 @@ static int parse_event(
                 p->x = xHi | xLo;
                 p->y = yHi | yLo;
                 p->wx = HIDPP_LSN(params[4]);
-                p->wx = HIDPP_MSN(params[4]);
+                p->wy = HIDPP_MSN(params[4]);
             }
 
             return HIDPP_OK;
@@ -144,7 +147,14 @@ static int parse_event(
 
     e->type = HIDPP_EVENT_UNKNOWN;
     memcpy(&e->as.unknown, pkt, sizeof(*pkt));
-    return HIDPP_EIO;
+    return HIDPP_OK; /* the event type tells the caller it is unparsed */
+}
+
+/*  Notifications use software id 0. HID++ error reports have the 0xFF (2.0)
+    or 0x8F (1.0) marker in place of the feature index and carry the failed
+    request's feature index in the next byte; they are never events. */
+static int is_event(const hidpp_packet_t *pkt) {
+    return !(pkt->func & 0xF) && pkt->feat != 0xFF && pkt->feat != 0x8F;
 }
 
 int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out) {
@@ -157,7 +167,7 @@ int hidpp_device_poll(hidpp_device_t *dev, struct hidpp_event *out) {
     do {
         if ((res = hidpp_device_receive(dev, &pkt)))
             return res;
-    } while (dev->index != pkt.device || pkt.func & 0xF);
+    } while (dev->index != pkt.device || !is_event(&pkt));
 
     return parse_event(dev, out, &pkt);
 }
@@ -172,7 +182,7 @@ int hidpp_poll(hidpp_receiver_t *rcv, struct hidpp_event *out) {
     do {
         if ((res = hidpp_receive(rcv, &pkt)))
             return res;
-    } while (pkt.func & 0xF);
+    } while (!is_event(&pkt));
 
     out->type = HIDPP_EVENT_UNKNOWN;
     memcpy(&out->as.unknown, &pkt, sizeof(pkt));

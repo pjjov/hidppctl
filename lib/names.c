@@ -14,28 +14,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int compare_name(const void *l, const void *r) {
-    const struct hidpp_constant *_l = l, *_r = r;
-    return _l->code - _r->code;
-}
-
 static const char *find_constant_name(
-    const struct hidpp_constant *constants, size_t count, const char *fallback
+    const struct hidpp_constant *constants,
+    size_t count,
+    uint16_t code,
+    const char *fallback
 ) {
-    if (count == 0)
-        return NULL;
+    for (size_t i = 0; i < count; i++)
+        if (constants[i].code == code)
+            return constants[i].name;
 
-    const char *result = bsearch(
-        &index, constants, count, sizeof(struct hidpp_constant), compare_name
-    );
-
-    return result ? result : fallback;
+    return fallback;
 }
 
 static int find_constant_code(
     const struct hidpp_constant *constants, size_t count, const char *name
 ) {
-    if (!name || count == 0)
+    if (!name)
         return HIDPP_EINVAL;
 
     for (size_t i = 0; i < count; i++)
@@ -44,18 +39,20 @@ static int find_constant_code(
     return HIDPP_ENOENT;
 }
 
-const char *hidpp_feature_name(uint16_t index) {
+const char *hidpp_feature_name(uint16_t feature) {
     return find_constant_name(
         hidpp_constant_features,
         hidpp_constant_features_count,
+        feature,
         "Unknown HID++ feature"
     );
 }
 
-const char *hidpp_keymap_name(uint16_t index) {
+const char *hidpp_keymap_name(uint16_t control) {
     return find_constant_name(
         hidpp_constant_controls,
         hidpp_constant_controls_count,
+        control,
         "Unknown HID++ button"
     );
 }

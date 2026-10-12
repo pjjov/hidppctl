@@ -77,14 +77,17 @@ static void query_device_name(
 
     size_t read = 0;
 
-    while (read < len && read < UINT8_MAX) {
+    while (read < len && read < MAX_NAME_LEN) {
         req.params[0] = read;
 
         if (hidpp_device_request(dev, &req, &res))
             break;
 
-        size_t psize = packet_length(res.kind);
+        size_t psize = packet_length(res.kind) - 4;
         size_t size = len - read < psize ? len - read : psize;
+
+        if (size == 0)
+            break;
 
         memcpy(&buf[read], res.params, size);
         read += size;
@@ -101,7 +104,7 @@ static int ensure_init(
     if (!out || !dev)
         return HIDPP_EINVAL;
 
-    dn = dev->features[HIDPP_FEAT_FIRMWARE_INFO];
+    dn = dev->features[HIDPP_FEAT_DEVICE_NAME];
     *out = dn;
 
     if (dn->initialized)
@@ -120,7 +123,7 @@ static int ensure_init(
 
     dn->initialized = HIDPP_TRUE;
 
-    return HIDPP_OK;
+    return dn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 }
 
 static void clear_cache(hidpp_device_t *dev, void *feat) {

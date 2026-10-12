@@ -9,11 +9,12 @@
 
 #include "common.h"
 
+#include <assert.h>
+#include <stdalign.h>
+
 #include <allocator.h>
 #include <allocator_joined.h>
 #include <pf_macro.h>
-
-#include <assert.h>
 
 extern struct hidpp_feat_vt hidpp_feat_root_vt;
 extern struct hidpp_feat_vt hidpp_feat_keymap_vt;
@@ -39,7 +40,11 @@ static int protocol_version(hidpp_device_t *dev) {
     make_packet(&req, dev, 0, 1);
     req.params[2] = 0xAA;
 
+    /* HID++ 1.0 devices answer with an "invalid sub id" error. */
     if (hidpp_request(rcv, &req, &res))
+        return HIDPP_EIO;
+
+    if (res.params[2] != 0xAA)
         return HIDPP_EIO;
 
     dev->version = HIDPP_WORD(res.params[0], res.params[1]);
@@ -66,10 +71,10 @@ static hidpp_device_t *alloc_device() {
         hidpp_allocator, blocks, PF_COUNTOF(blocks), &size
     );
 
-    memset(buffer, 0, size);
-
     if (!buffer)
         return NULL;
+
+    memset(buffer, 0, size);
 
     hidpp_device_t *dev = blocks[0].buffer;
 
@@ -118,8 +123,8 @@ hidpp_device_t *hidpp_device_open(hidpp_receiver_t *rcv, uint8_t device) {
     dev->swid = rcv->swid;
 
     if (protocol_version(dev) || init_features(dev)) {
-        dev->version = 0;
         free_features(dev);
+        deallocate(hidpp_allocator, dev->allocBuffer, dev->allocSize);
         return NULL;
     }
 
@@ -131,8 +136,19 @@ void hidpp_device_close(hidpp_device_t *dev) {
     if (!dev)
         return;
 
+    if (dev->receiver) {
+        size_t slot = dev->index != 0xFF ? dev->index : 0;
+
+        if (slot < PF_COUNTOF(dev->receiver->devices)
+            && dev->receiver->devices[slot] == dev)
+            dev->receiver->devices[slot] = NULL;
+    }
+
     free_features(dev);
-    deallocate(hidpp_allocator, dev->allocBuffer, dev->allocSize);
+
+    void *buffer = dev->allocBuffer;
+    size_t size = dev->allocSize;
+    deallocate(hidpp_allocator, buffer, size);
 }
 
 int hidpp_device_info(hidpp_device_t *dev, struct hidpp_device_info *out) {

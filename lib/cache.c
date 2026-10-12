@@ -13,7 +13,16 @@
 #include <assert.h>
 #include <pf_macro.h>
 
+/*  Header layout (big endian):
+        0  magic "hidppctl"
+        8  library version
+       12  maximum size of a cache with the current feature set
+       16  cache id of the device
+       24  number of bytes actually used by this cache, header included
+       28  reserved (zero)
+*/
 #define CACHE_HEADER_SIZE 32
+#define CACHE_USED_OFFSET 24
 #define CACHE_MAGIC "hidppctl"
 #define STACK_BUFFER_SIZE 65536
 
@@ -32,19 +41,21 @@ static size_t required_cache_size(void) {
 }
 
 static void write_header(hidpp_device_t *dev, uint8_t *b) {
+    memset(b, 0, CACHE_HEADER_SIZE);
     SAVE_BYTES(b, CACHE_MAGIC, sizeof(CACHE_MAGIC) - 1);
     SAVE_DWORD(b, HIDPP_VERSION);
     SAVE_DWORD(b, required_cache_size());
     SAVE_QWORD(b, hidpp_cache_id(dev));
 }
 
-static int check_header(hidpp_device_t *dev, const uint8_t *b) {
+static int check_header(hidpp_device_t *dev, const uint8_t *b, size_t size) {
     char buf[sizeof(CACHE_MAGIC) - 1];
 
     LOAD_BYTES(b, buf, sizeof(buf));
     uint32_t version = LOAD_DWORD(b);
     uint32_t req = LOAD_DWORD(b);
     uint64_t cacheId = LOAD_QWORD(b);
+    uint32_t used = LOAD_DWORD(b);
 
     if (memcmp(buf, CACHE_MAGIC, sizeof(buf)))
         return HIDPP_EINVAL;
@@ -52,7 +63,14 @@ static int check_header(hidpp_device_t *dev, const uint8_t *b) {
     if (version != HIDPP_VERSION || req != required_cache_size())
         return HIDPP_ENOSYS;
 
-    if (cacheId != hidpp_cache_id(dev))
+    /*  Loaders read missing bytes as zeros, which would silently turn a
+        truncated file into a cache full of half-initialised entries. */
+    if (used < CACHE_HEADER_SIZE || used > req || used > size)
+        return HIDPP_EINVAL;
+
+    uint64_t current = hidpp_cache_id(dev);
+
+    if (current == 0 || cacheId != current)
         return HIDPP_EINVAL;
 
     return HIDPP_OK;
@@ -73,6 +91,11 @@ uint64_t hidpp_cache_id(hidpp_device_t *dev) {
         return 0;
 
     uint8_t featIndex = res.params[0];
+
+    /* Index 0 is the root feature, meaning 0x0003 is not implemented. */
+    if (featIndex == 0)
+        return 0;
+
     make_packet(&req, dev, featIndex, 1);
     req.params[0] = 0;
 
@@ -119,6 +142,7 @@ int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size) {
         }
     }
 
+    save_dword((uint8_t *)buffer + CACHE_USED_OFFSET, (uint32_t)offset);
     *size = offset;
     return HIDPP_OK;
 }
@@ -141,12 +165,13 @@ int hidpp_cache_load(hidpp_device_t *dev, const void *buffer, size_t size) {
         unnecessary as it's just simple cache files.
     */
     char stackBuffer[STACK_BUFFER_SIZE];
+    memset(stackBuffer, 0, req);
     memcpy(stackBuffer, buffer, req > size ? size : req);
     buffer = stackBuffer;
 
     int rc;
 
-    if ((rc = check_header(dev, buffer)))
+    if ((rc = check_header(dev, buffer, size)))
         return rc;
 
     const struct hidpp_feat_vt *vt;
@@ -164,7 +189,7 @@ int hidpp_cache_load(hidpp_device_t *dev, const void *buffer, size_t size) {
     return HIDPP_OK;
 }
 
-void hidpp_clear_cache(hidpp_device_t *dev) {
+void hidpp_cache_clear(hidpp_device_t *dev) {
     if (!dev)
         return;
 

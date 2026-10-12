@@ -12,6 +12,7 @@
 #include <allocator.h>
 #include <allocator_std.h>
 #include <hidapi.h>
+#include <pf_macro.h>
 #include <pf_socket.h>
 
 #include <stdarg.h>
@@ -24,7 +25,8 @@
 #define DEFAULT_TIMEOUT 2000
 #define DEFAULT_SWID 14
 
-allocator_t *hidpp_allocator = NULL;
+/* usable without hidpp_init(), which only replaces it */
+allocator_t *hidpp_allocator = &standard_allocator;
 
 static void set_error(hidpp_receiver_t *rcv, const wchar_t *fmt, ...) {
     if (!rcv)
@@ -125,7 +127,7 @@ hidpp_receiver_t *hidpp_open_socket(int fd) {
 
     hidpp_receiver_t *rcv;
 
-    if ((rcv = create_receiver()))
+    if (!(rcv = create_receiver()))
         return NULL;
 
     rcv->type = RCV_SOCKET;
@@ -141,7 +143,7 @@ hidpp_receiver_t *hidpp_open_custom(
 
     hidpp_receiver_t *rcv;
 
-    if ((rcv = create_receiver()))
+    if (!(rcv = create_receiver()))
         return NULL;
 
     rcv->type = RCV_CUSTOM;
@@ -155,12 +157,19 @@ void hidpp_close(hidpp_receiver_t *rcv) {
     if (!rcv)
         return;
 
+    for (size_t i = 0; i < PF_COUNTOF(rcv->devices); i++)
+        if (rcv->devices[i])
+            hidpp_device_close(rcv->devices[i]);
+
     if (rcv->type == RCV_HIDAPI)
         hid_close(rcv->handle);
     deallocate(hidpp_allocator, rcv, sizeof(*rcv));
 }
 
 static const char *copy_string(const char *str) {
+    if (!str)
+        return NULL;
+
     size_t len = strlen(str) + 1;
     char *out;
 
@@ -172,6 +181,9 @@ static const char *copy_string(const char *str) {
 }
 
 static const wchar_t *copy_wide_string(const wchar_t *str) {
+    if (!str)
+        return NULL;
+
     size_t len = wcslen(str) + 1;
     wchar_t *out;
 
@@ -183,13 +195,22 @@ static const wchar_t *copy_wide_string(const wchar_t *str) {
 }
 
 static void free_wide_string(const wchar_t *str) {
+    if (!str)
+        return;
+
     deallocate(
         hidpp_allocator, (void *)str, (wcslen(str) + 1) * sizeof(wchar_t)
     );
 }
 
 void hidpp_free_info(struct hidpp_receiver_info *info) {
-    deallocate(hidpp_allocator, (void *)info->path, strlen(info->path) + 1);
+    if (!info)
+        return;
+
+    if (info->path) {
+        deallocate(hidpp_allocator, (void *)info->path, strlen(info->path) + 1);
+    }
+
     free_wide_string(info->serial);
     free_wide_string(info->manufacturer);
     free_wide_string(info->product);
@@ -251,7 +272,7 @@ static int send_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
     case RCV_SOCKET: {
         pf_sock_ssize_t sent = pf_sock_send(rcv->socket, buf, len, 0);
 
-        if (sent < len)
+        if (sent < 0 || (size_t)sent < len)
             return HIDPP_EIO;
         return HIDPP_OK;
     }
@@ -284,11 +305,49 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
     memcpy(&buf[4], pkt->params, len - 4);
 
     if (send_packet(rcv, buf, len)) {
-        set_error(rcv, L"tried to write %lu bytes.", len);
+        set_error(rcv, L"tried to write %zu bytes.", len);
         return HIDPP_EIO;
     }
 
     return HIDPP_OK;
+}
+
+/*  Reads exactly `count` bytes from a stream socket. */
+static int socket_read_exact(int fd, unsigned char *buf, size_t count) {
+    size_t total = 0;
+
+    while (total < count) {
+        pf_sock_ssize_t got = pf_sock_recv(fd, buf + total, count - total, 0);
+
+        if (got < 0)
+            return HIDPP_EIO;
+        if (got == 0)
+            return HIDPP_ENODATA; /* peer closed the connection */
+
+        total += (size_t)got;
+    }
+
+    return HIDPP_OK;
+}
+
+/*  HID++ reports are not length-prefixed, but the report kind implies the
+    length, so a stream socket can be framed by reading the first byte
+    first. Returns the packet length or a negative error code. */
+static int socket_read_packet(int fd, unsigned char *buf, size_t max) {
+    int rc;
+
+    if ((rc = socket_read_exact(fd, buf, 1)))
+        return rc;
+
+    size_t len = packet_length(buf[0]);
+
+    if (len == 0 || len > max)
+        return HIDPP_EIO; /* stream is out of sync */
+
+    if ((rc = socket_read_exact(fd, buf + 1, len - 1)))
+        return rc;
+
+    return (int)len;
 }
 
 static int recv_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
@@ -299,15 +358,8 @@ static int recv_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
             : hid_read_timeout(rcv->handle, buf, len, rcv->timeout);
     case RCV_CUSTOM:
         return rcv->customRecv(rcv, (char *)buf, len, rcv->customUser);
-    case RCV_SOCKET: {
-        pf_sock_ssize_t received = pf_sock_recv(rcv->socket, buf, len, 0);
-
-        if (received < 0)
-            return HIDPP_EIO;
-        if (received != len)
-            return HIDPP_ENODATA;
-        return HIDPP_OK;
-    }
+    case RCV_SOCKET:
+        return socket_read_packet(rcv->socket, buf, len);
     default:
         return HIDPP_ENOSYS;
     }
@@ -317,7 +369,7 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
     if (!rcv || !out)
         return HIDPP_EINVAL;
 
-    unsigned char buf[HIDPP_LEN_XLONG];
+    unsigned char buf[HIDPP_LEN_XLONG] = { 0 };
 
     int ret = recv_packet(rcv, buf, HIDPP_LEN_XLONG);
 
@@ -327,8 +379,14 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
         set_error(rcv, L"Packet reading timed out");
         return HIDPP_ETIMEDOUT;
     } else if (ret < 0) {
-        propagate_error(rcv);
-        return HIDPP_EIO;
+        if (rcv->type == RCV_HIDAPI) {
+            propagate_error(rcv);
+            return HIDPP_EIO;
+        }
+
+        /* socket and custom receivers already report hidpp_error codes */
+        set_error(rcv, L"Receiving a packet failed (%d)", ret);
+        return ret;
     } else if (ret < 4) {
         set_error(rcv, L"Cannot receive invalid packet");
         return HIDPP_EIO;
@@ -346,18 +404,35 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
     return HIDPP_OK;
 }
 
+/*  HID++ 2.0 error report:
+        [kind] [device] [0xFF] [feature index] [function | swid] [error code]
+    HID++ 1.0 error report:
+        [kind] [device] [0x8F] [sub id] [address] [error code]
+    In both cases bytes 3 and 4 echo the first two bytes of the request, which
+    in the packet structure are `func` and `params[0]`. The error code is
+    stored in `params[1]`.
+*/
+#define HIDPP2_ERROR_FEATURE 0xFF
+#define HIDPP1_ERROR_SUB_ID 0x8F
+
 static int is_error_packet(
     const hidpp_packet_t *req, const hidpp_packet_t *res
 ) {
-    return res->device == req->device && res->feat == 0xFF
-        && res->params[0] == req->feat && res->params[1] == req->func;
+    return res->device == req->device
+        && (res->feat == HIDPP2_ERROR_FEATURE
+            || res->feat == HIDPP1_ERROR_SUB_ID)
+        && res->func == req->feat && res->params[0] == req->func;
 }
 
+/*  Responses echo feature index, function and software id. Comparing the
+    software id as well is what separates responses to our own requests from
+    notifications (which always use swid 0) and from other software's replies.
+*/
 static int is_good_packet(
     const hidpp_packet_t *req, const hidpp_packet_t *res
 ) {
     return res->device == req->device && res->feat == req->feat
-        && (res->func & 0xF0) == (req->func & 0xF0);
+        && res->func == req->func;
 }
 
 static const char *hidpp_strerror(uint8_t code) {
@@ -385,6 +460,9 @@ int hidpp_request(
        receiver has been put into non-blocking mode for event-loop
        polling elsewhere -- save/restore that flag around the retry
        loop below. */
+    if (!rcv || !request || !response)
+        return HIDPP_EINVAL;
+
     hidpp_bool_t wasNonblocking = rcv->nonblocking;
     rcv->nonblocking = 0;
 
@@ -406,8 +484,14 @@ int hidpp_request(
         }
 
         if (is_error_packet(request, response)) {
-            const char *error = hidpp_strerror(response->params[2]);
-            set_error(rcv, L"HID++ error: %hs", error);
+            const char *error = hidpp_strerror(response->params[1]);
+            set_error(
+                rcv,
+                L"HID++ %hs error: %hs (0x%02X)",
+                response->feat == HIDPP1_ERROR_SUB_ID ? "1.0" : "2.0",
+                error,
+                response->params[1]
+            );
             rcv->nonblocking = wasNonblocking;
             return HIDPP_EIO;
         }
@@ -418,7 +502,7 @@ int hidpp_request(
         }
     }
 
-    set_error(rcv, L"No response after %d reads", MAX_RETRY);
+    set_error(rcv, L"No response after %d reads", (int)rcv->retries);
     rcv->nonblocking = wasNonblocking;
     return HIDPP_ENODATA;
 }
@@ -448,15 +532,24 @@ int hidpp_set_nonblocking(hidpp_receiver_t *rcv, int nonblock) {
 }
 
 int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid) {
-    if (!rcv)
+    /* The software id is a nibble and 0 is used by device notifications. */
+    if (!rcv || swid == 0 || swid > 0xF)
         return HIDPP_EINVAL;
 
     rcv->swid = swid;
     return HIDPP_OK;
 }
 
+#define LOGITECH_VENDOR_ID 0x046D
+
 static int is_hidpp_compatible(struct hid_device_info *info) {
-    if (0 == wcscmp(info->manufacturer_string, L"Logitech"))
+    /*  Bluetooth and some receivers report no manufacturer string, so
+        the vendor id is checked first. */
+    if (info->vendor_id == LOGITECH_VENDOR_ID)
+        return HIDPP_TRUE;
+
+    if (info->manufacturer_string
+        && 0 == wcscmp(info->manufacturer_string, L"Logitech"))
         return HIDPP_TRUE;
 
     return HIDPP_FALSE;

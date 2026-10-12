@@ -35,8 +35,6 @@
         uint8_t criticalLevel
 */
 
-#define MAX_NAME_LEN 256
-
 #define DISABLED_OSD_FLAG 0x1
 #define ENABLED_MILEAGE_FLAG 0x2
 #define IS_RECHARGABLE_FLAG 0x4
@@ -66,14 +64,15 @@ static const char *get_charge_name(int charge) {
     }
 }
 
-static const char *get_level_name(float level) {
-    if (level < 0 || level > 1)
+static const char *get_level_name(int percent) {
+    if (percent < 0 || percent > 100)
         return "Unknown";
-    if (level <= 0.1)
+
+    if (percent <= 10)
         return "Critical";
-    if (level <= 0.3)
+    if (percent <= 30)
         return "Low";
-    if (level <= 0.8)
+    if (percent <= 80)
         return "Good";
     return "Full";
 }
@@ -96,7 +95,7 @@ static void query_battery_info(
     out->levelCount = res.params[0];
     out->flags = res.params[1];
     out->nominalLife = HIDPP_WORD(res.params[2], res.params[3]);
-    out->criticalLevel = res.params[3];
+    out->criticalLevel = res.params[4];
     unpack_flags(out);
     out->initialized = HIDPP_TRUE;
 }
@@ -114,8 +113,8 @@ static int query_battery_status(
 
     out->dischargeLevel = res.params[0];
     out->dischargeNextLevel = res.params[1];
-    out->status = res.params[3];
-    out->levelName = get_level_name((float)out->dischargeLevel / UINT8_MAX);
+    out->status = res.params[2];
+    out->levelName = get_level_name(out->dischargeLevel);
     out->statusName = get_charge_name(out->status);
 
     return HIDPP_OK;
@@ -143,7 +142,7 @@ static int ensure_init(struct hidpp_feat_battery **out, hidpp_device_t *dev) {
 
     bat->initialized = HIDPP_TRUE;
 
-    return HIDPP_OK;
+    return bat->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 }
 
 static void clear_cache(hidpp_device_t *dev, void *feat) {
@@ -170,7 +169,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     SAVE_BYTE(b, bat->featIndex);
     SAVE_BYTE(b, bat->info.levelCount);
     SAVE_BYTE(b, bat->info.flags);
-    SAVE_BYTE(b, bat->info.nominalLife);
+    SAVE_WORD(b, bat->info.nominalLife);
     SAVE_BYTE(b, bat->info.criticalLevel);
 
     return b - start;
@@ -189,8 +188,9 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     bat->featIndex = LOAD_BYTE(b);
     bat->info.levelCount = LOAD_BYTE(b);
     bat->info.flags = LOAD_BYTE(b);
-    bat->info.nominalLife = LOAD_BYTE(b);
+    bat->info.nominalLife = LOAD_WORD(b);
     bat->info.criticalLevel = LOAD_BYTE(b);
+    bat->info.initialized = HIDPP_TRUE;
     unpack_flags(&bat->info);
 
     return b - start;
