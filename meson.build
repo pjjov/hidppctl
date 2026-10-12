@@ -17,6 +17,7 @@ inc = include_directories('include')
 subdir('data')
 subdir('lib')
 subdir('cli')
+subdir('test')
 
 install_headers('include/hidpp.h')
 
