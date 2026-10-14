@@ -49,6 +49,7 @@ enum {
     HIDPP_FEAT_DEVICE_NAME,
     HIDPP_FEAT_BATTERY,
     HIDPP_FEAT_NICKNAME,
+    HIDPP_FEAT_BACKLIGHT,
     HIDPP_FEAT_ACTION,
     hidpp_feat_max,
     hidpp_feat_sentinel = 3,

@@ -707,6 +707,123 @@ HIDPP_API struct hidpp_battery_status *hidpp_battery_status(
     hidpp_device_t *dev
 );
 
+/** Backlight modes selectable by software (feature 0x1982 v3). */
+enum hidpp_backlight_mode {
+    HIDPP_BACKLIGHT_MODE_NONE = 0,
+    HIDPP_BACKLIGHT_MODE_AUTO = 1,
+    HIDPP_BACKLIGHT_MODE_TEMP_MANUAL = 2,
+    HIDPP_BACKLIGHT_MODE_PERM_MANUAL = 3,
+};
+
+/** Backlight effects. The value is the bit index in the effect list. */
+enum hidpp_backlight_effect {
+    HIDPP_BACKLIGHT_EFFECT_STATIC = 0,
+    HIDPP_BACKLIGHT_EFFECT_NONE = 1,
+    HIDPP_BACKLIGHT_EFFECT_BREATHING = 2,
+    HIDPP_BACKLIGHT_EFFECT_CONTRAST = 3,
+    HIDPP_BACKLIGHT_EFFECT_REACTION = 4,
+    HIDPP_BACKLIGHT_EFFECT_RANDOM = 5,
+    HIDPP_BACKLIGHT_EFFECT_WAVES = 6,
+};
+
+/** Backlight status reported by the device. */
+enum hidpp_backlight_status {
+    HIDPP_BACKLIGHT_DISABLED_BY_SW = 0,
+    HIDPP_BACKLIGHT_DISABLED_BY_BATTERY = 1,
+    HIDPP_BACKLIGHT_ALS = 2,
+    HIDPP_BACKLIGHT_ALS_SATURATED = 3,
+    HIDPP_BACKLIGHT_MANUAL_TEMPORARY = 4,
+    HIDPP_BACKLIGHT_MANUAL_PERMANENT = 5,
+};
+
+/** Backlight capabilities. They do not change at runtime. */
+struct hidpp_backlight_info {
+    uint8_t version;     /* version of the feature on the device */
+    uint8_t levelCount;  /* number of brightness levels (nbLevels) */
+    uint16_t effectList; /* bit mask, bit N set if effect N is available */
+
+    hidpp_bool_t hasEffects;   /* version >= 2 */
+    hidpp_bool_t hasDurations; /* version >= 3: modes, level and durations */
+    hidpp_bool_t supportsWow;
+    hidpp_bool_t supportsCrown;
+    hidpp_bool_t supportsPowerSave;
+    hidpp_bool_t supportsAutoMode;
+    hidpp_bool_t supportsTempManualMode;
+    hidpp_bool_t supportsPermManualMode;
+
+    /** Out-of-box durations in seconds (version >= 3). */
+    uint16_t defaultDurationHandsOut;
+    uint16_t defaultDurationHandsIn;
+    uint16_t defaultDurationPowered;
+    hidpp_bool_t initialized;
+};
+
+/** Backlight configuration, stored persistently on the device. Durations are
+    in seconds, from 5 seconds to 2 hours, in steps of 5 seconds.
+*/
+struct hidpp_backlight_config {
+    hidpp_bool_t enabled;
+    hidpp_bool_t wow;       /* effect at power on */
+    hidpp_bool_t crown;     /* effect when the crown is touched */
+    hidpp_bool_t powerSave; /* disable at critical battery level */
+    uint8_t mode;           /* enum hidpp_backlight_mode */
+    uint8_t effect;         /* enum hidpp_backlight_effect */
+    uint8_t level;          /* level used in the permanent manual mode */
+    uint16_t durationHandsOut;
+    uint16_t durationHandsIn;
+    uint16_t durationPowered;
+};
+
+/** What the backlight is doing right now. */
+struct hidpp_backlight_state {
+    uint8_t levelCount;
+    uint8_t level;
+    uint8_t status; /* enum hidpp_backlight_status */
+    uint8_t effect; /* enum hidpp_backlight_effect */
+
+    const char *statusName;
+    const char *effectName;
+};
+
+/** Returns the backlight capabilities.
+    Errors (as NULL): the device has no supported backlight feature.
+*/
+HIDPP_API struct hidpp_backlight_info *hidpp_backlight_info(
+    hidpp_device_t *dev
+);
+
+/** Reads the stored backlight configuration.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_backlight_get(
+    hidpp_device_t *dev, struct hidpp_backlight_config *out
+);
+
+/** Writes the whole backlight configuration, which is meant to be modified
+    after hidpp_backlight_get(). Options the device does not support are
+    rejected.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_backlight_set(
+    hidpp_device_t *dev, const struct hidpp_backlight_config *config
+);
+
+/** Queries what the backlight is currently doing.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_backlight_state(
+    hidpp_device_t *dev, struct hidpp_backlight_state *out
+);
+
+/** Applies a backlight effect until the next power cycle (it is not stored).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_backlight_set_effect(hidpp_device_t *dev, uint8_t effect);
+
+/** Returns the name of a backlight effect. */
+HIDPP_API const char *hidpp_backlight_effect_name(uint8_t effect);
+
+
 /** Kind of the action performed when a control is triggered. */
 enum hidpp_action_type {
     HIDPP_ACTION_NONE = 0, /* no output */
