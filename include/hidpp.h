@@ -707,6 +707,164 @@ HIDPP_API struct hidpp_battery_status *hidpp_battery_status(
     hidpp_device_t *dev
 );
 
+/** Selects the host the device is currently connected to. Usable wherever a
+    host index is expected by the host, backlight and action functions.
+*/
+#define HIDPP_HOST_CURRENT 0xFF
+
+/** Bus (transport) a host is paired through. */
+enum hidpp_host_bus {
+    HIDPP_HOST_BUS_NONE = 0, /* unused slot */
+    HIDPP_HOST_BUS_EQUAD = 1,
+    HIDPP_HOST_BUS_USB = 2,
+    HIDPP_HOST_BUS_BT = 3,
+    HIDPP_HOST_BUS_BLE = 4,
+    HIDPP_HOST_BUS_BLE_PRO = 5, /* Bolt */
+};
+
+/** Multi-host capabilities (features 0x1814 and 0x1815). */
+struct hidpp_host_info {
+    uint8_t count;         /* number of host slots, paired or not */
+    uint16_t capabilities; /* raw 0x1815 capability mask, 0 without 0x1815 */
+
+    hidpp_bool_t canSwitch;   /* 0x1814: hidpp_host_switch() works */
+    hidpp_bool_t hasHostInfo; /* 0x1815: per-host information is available */
+    hidpp_bool_t canGetName;
+    hidpp_bool_t canSetName;
+    hidpp_bool_t canMove;
+    hidpp_bool_t canDelete;
+    hidpp_bool_t hasOsVersion;
+    hidpp_bool_t hasEQuadDescriptor;
+    hidpp_bool_t hasUSBDescriptor;
+    hidpp_bool_t hasBTDescriptor;
+    hidpp_bool_t hasBLEDescriptor;
+    hidpp_bool_t initialized;
+};
+
+/** State of a single host slot. */
+struct hidpp_host_status {
+    uint8_t index;
+    uint8_t status;  /* 0 = empty slot, 1 = paired */
+    uint8_t busType; /* enum hidpp_host_bus */
+    uint8_t numPages;
+    uint8_t nameLength;
+    uint8_t nameMaxLength;
+
+    hidpp_bool_t isPaired;
+    const char *busName;
+};
+
+/** Host operating system, as stored by software (the firmware never reads
+    it). All fields are zero if nothing has been stored.
+*/
+struct hidpp_host_os {
+    uint8_t type;
+    uint8_t version;
+    uint16_t revision;
+    uint16_t build;
+};
+
+/** One page of the host descriptor. `data` is the raw payload that follows
+    the (host, bus) header and its layout depends on `busType`.
+*/
+struct hidpp_host_descriptor {
+    uint8_t index;
+    uint8_t busType; /* enum hidpp_host_bus */
+    uint8_t data[14];
+};
+
+/** Returns the multi-host capabilities of the device.
+    Errors (as NULL): device has neither of the host features.
+*/
+HIDPP_API struct hidpp_host_info *hidpp_host_info(hidpp_device_t *dev);
+
+/** Returns the index of the host the device is connected to, or an error.
+    This is never cached, the device can be switched by its user.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_current(hidpp_device_t *dev);
+
+/** Switches the device to another host. The device is most probably going to
+    disconnect from this host and no answer is awaited: success only means
+    that the request was sent.
+    Errors: EINVAL (no such host), ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_switch(hidpp_device_t *dev, uint8_t host);
+
+/** Reads the status of `host` (or HIDPP_HOST_CURRENT).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_status(
+    hidpp_device_t *dev, uint8_t host, struct hidpp_host_status *out
+);
+
+/** Copies the friendly name of `host` into `out` (always null terminated,
+    truncated to `size - 1` bytes). Returns the number of bytes written,
+    excluding the terminator. Unpaired hosts have an empty name.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_name(
+    hidpp_device_t *dev, uint8_t host, char *out, size_t size
+);
+
+/** Sets the friendly name of `host`. The name must be printable ASCII and
+    not longer than the `nameMaxLength` of the host.
+    Errors: EINVAL, ENOMEM (too long), ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_set_name(
+    hidpp_device_t *dev, uint8_t host, const char *name
+);
+
+/** Moves a host to a different slot. Other hosts may shift up or down.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_move(
+    hidpp_device_t *dev, uint8_t host, uint8_t newIndex
+);
+
+/** Unpairs `host`, which makes its slot available for new pairing.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_delete(hidpp_device_t *dev, uint8_t host);
+
+/** Reads the operating system stored for `host`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_os(
+    hidpp_device_t *dev, uint8_t host, struct hidpp_host_os *out
+);
+
+/** Stores the operating system of `host`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_set_os(
+    hidpp_device_t *dev, uint8_t host, const struct hidpp_host_os *os
+);
+
+/** Reads a page (0 .. numPages - 1) of the descriptor of `host`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_descriptor(
+    hidpp_device_t *dev,
+    uint8_t host,
+    uint8_t page,
+    struct hidpp_host_descriptor *out
+);
+
+/** Returns the cookie (a persistent byte of software defined meaning) of
+    `host`, or an error. Cookies are cleared by the firmware when a new
+    host is paired.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_cookie(hidpp_device_t *dev, uint8_t host);
+
+/** Writes the cookie of `host`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_host_set_cookie(
+    hidpp_device_t *dev, uint8_t host, uint8_t cookie
+);
+
 /** Backlight modes selectable by software (feature 0x1982 v3). */
 enum hidpp_backlight_mode {
     HIDPP_BACKLIGHT_MODE_NONE = 0,

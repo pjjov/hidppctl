@@ -22,6 +22,7 @@ extern struct hidpp_feat_vt hidpp_feat_firmware_info_vt;
 extern struct hidpp_feat_vt hidpp_feat_device_name_vt;
 extern struct hidpp_feat_vt hidpp_feat_battery_vt;
 extern struct hidpp_feat_vt hidpp_feat_nickname_vt;
+extern struct hidpp_feat_vt hidpp_feat_hosts_vt;
 extern struct hidpp_feat_vt hidpp_feat_backlight_vt;
 extern struct hidpp_feat_vt hidpp_feat_action_vt;
 
@@ -33,6 +34,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_DEVICE_NAME] = &hidpp_feat_device_name_vt,
     [HIDPP_FEAT_BATTERY] = &hidpp_feat_battery_vt,
     [HIDPP_FEAT_NICKNAME] = &hidpp_feat_nickname_vt,
+    [HIDPP_FEAT_HOSTS] = &hidpp_feat_hosts_vt,
     [HIDPP_FEAT_BACKLIGHT] = &hidpp_feat_backlight_vt,
     [HIDPP_FEAT_ACTION] = &hidpp_feat_action_vt,
 };

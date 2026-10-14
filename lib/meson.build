@@ -12,6 +12,7 @@ lib_src = files(
   'features/battery.c',
   'features/device_name.c',
   'features/firmware_info.c',
+  'features/hosts.c',
   'features/keymap.c',
   'features/nickname.c',
   'features/root.c',
