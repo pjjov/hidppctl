@@ -49,6 +49,7 @@ enum {
     HIDPP_FEAT_DEVICE_NAME,
     HIDPP_FEAT_BATTERY,
     HIDPP_FEAT_NICKNAME,
+    HIDPP_FEAT_ACTION,
     hidpp_feat_max,
     hidpp_feat_sentinel = 3,
 };
@@ -101,6 +102,29 @@ struct hidpp_receiver_t {
 
 extern allocator_t *hidpp_allocator;
 extern const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max];
+
+/*  A failed request is final if the device answered it with an error report
+    (it will do so again). Anything else, such as a timeout or an I/O error,
+    may go away by itself and must not be remembered. */
+static inline int is_transient(hidpp_device_t *dev, int rc) {
+    return rc != HIDPP_OK
+        && !(rc == HIDPP_EIO && dev->receiver && dev->receiver->errorCode);
+}
+
+/*  Resolves a feature for the initialization of a feature object. Returns
+    its index (> 0), 0 if the device does not have it, or a negative error if
+    the answer is not known (yet), in which case nothing may be cached. */
+static inline int feature_lookup(hidpp_device_t *dev, uint16_t id) {
+    int rc = hidpp_feature_index(dev, id);
+
+    if (rc > 0)
+        return rc;
+
+    if (rc == 0 || rc == HIDPP_ENOENT || rc == HIDPP_ENOSYS)
+        return 0;
+
+    return rc;
+}
 
 static inline size_t packet_length(int kind) {
     switch (kind) {

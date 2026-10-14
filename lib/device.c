@@ -31,6 +31,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_DEVICE_NAME] = &hidpp_feat_device_name_vt,
     [HIDPP_FEAT_BATTERY] = &hidpp_feat_battery_vt,
     [HIDPP_FEAT_NICKNAME] = &hidpp_feat_nickname_vt,
+    [HIDPP_FEAT_ACTION] = &hidpp_feat_action_vt,
 };
 
 static int protocol_version(hidpp_device_t *dev) {

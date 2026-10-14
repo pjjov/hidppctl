@@ -7,6 +7,7 @@
 # Look at the COPYING file for more information.
 
 lib_src = files(
+  'features/action.c',
   'features/battery.c',
   'features/device_name.c',
   'features/firmware_info.c',

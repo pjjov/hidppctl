@@ -707,6 +707,109 @@ HIDPP_API struct hidpp_battery_status *hidpp_battery_status(
     hidpp_device_t *dev
 );
 
+/** Kind of the action performed when a control is triggered. */
+enum hidpp_action_type {
+    HIDPP_ACTION_NONE = 0, /* no output */
+    HIDPP_ACTION_KEY = 1,
+    HIDPP_ACTION_MOUSE_BUTTON = 2,      /* value is a bit map of buttons */
+    HIDPP_ACTION_X_DISPLACEMENT = 3,    /* value is signed */
+    HIDPP_ACTION_Y_DISPLACEMENT = 4,    /* value is signed */
+    HIDPP_ACTION_VERTICAL_ROLLER = 5,   /* value is signed */
+    HIDPP_ACTION_HORIZONTAL_ROLLER = 6, /* value is signed */
+    HIDPP_ACTION_CONSUMER = 7,
+    HIDPP_ACTION_INTERNAL = 8, /* value is the index of a device function */
+    HIDPP_ACTION_POWER = 9,
+};
+
+/** Bits of the modifier mask of a key action (same as HID boot keyboards). */
+enum hidpp_action_modifier {
+    HIDPP_MOD_LEFT_CTRL = 0x01,
+    HIDPP_MOD_LEFT_SHIFT = 0x02,
+    HIDPP_MOD_LEFT_ALT = 0x04,
+    HIDPP_MOD_LEFT_META = 0x08,
+    HIDPP_MOD_RIGHT_CTRL = 0x10,
+    HIDPP_MOD_RIGHT_SHIFT = 0x20,
+    HIDPP_MOD_RIGHT_ALT = 0x40,
+    HIDPP_MOD_RIGHT_META = 0x80,
+};
+
+/** What persistent actions the device is able to perform. */
+struct hidpp_action_info {
+    uint16_t flags;
+    uint8_t count;     /* number of controls */
+    uint8_t hostCount; /* 0xFF if the device has not said */
+
+    hidpp_bool_t canKey;
+    hidpp_bool_t canMouseButton;
+    hidpp_bool_t canXDisplacement;
+    hidpp_bool_t canYDisplacement;
+    hidpp_bool_t canVerticalRoller;
+    hidpp_bool_t canHorizontalRoller;
+    hidpp_bool_t canConsumer;
+    hidpp_bool_t canInternal;
+    hidpp_bool_t canPower;
+    hidpp_bool_t initialized;
+};
+
+/** Persistent action performed by a control on a host. */
+struct hidpp_action {
+    uint16_t id;
+    uint8_t host;
+    uint8_t type; /* enum hidpp_action_type */
+    uint16_t value;
+    uint8_t modifiers; /* bit mask of enum hidpp_action_modifier */
+    uint8_t status;
+
+    hidpp_bool_t isRemapped; /* false if the factory default is used */
+    const char *name;        /* name of the control */
+    const char *typeName;
+};
+
+/** Returns what actions the device can perform.
+    Errors (as NULL): the device has no persistent action feature.
+*/
+HIDPP_API struct hidpp_action_info *hidpp_action_info(hidpp_device_t *dev);
+
+/** Returns the control ID at the given table index or an error. */
+HIDPP_API int hidpp_action_id(hidpp_device_t *dev, uint8_t index);
+
+/** Copies up to `max` control IDs into `out` and returns their count. */
+HIDPP_API size_t
+hidpp_action_list(hidpp_device_t *dev, uint16_t *out, size_t max);
+
+/** Reads the action stored for control `id` on `host`.
+    Errors: EINVAL, ENOENT (no such control), ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_action_get(
+    hidpp_device_t *dev, uint16_t id, uint8_t host, struct hidpp_action *out
+);
+
+/** Stores the action of control `id` on `host` in the device's memory.
+    Errors: EINVAL, ENOENT (no such control), ENOSYS (unsupported action), EIO.
+*/
+HIDPP_API int hidpp_action_set(
+    hidpp_device_t *dev,
+    uint16_t id,
+    uint8_t host,
+    uint8_t type,
+    uint16_t value,
+    uint8_t modifiers
+);
+
+/** Restores factory behaviour of control `id` on `host`. */
+HIDPP_API int hidpp_action_reset(
+    hidpp_device_t *dev, uint16_t id, uint8_t host
+);
+
+/** Restores factory behaviour of all controls on hosts selected by the bit
+    mask `hostMask` (bit N selects host N).
+*/
+HIDPP_API int hidpp_action_reset_all(hidpp_device_t *dev, uint8_t hostMask);
+
+/** Returns the name of an action type. */
+HIDPP_API const char *hidpp_action_type_name(uint8_t type);
+
+
 /** Returns the last error message of `rcv` or it's devices. */
 HIDPP_API const wchar_t *hidpp_error(hidpp_receiver_t *rcv);
 
