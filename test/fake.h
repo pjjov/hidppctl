@@ -44,7 +44,15 @@ enum {
     FAKE_IDX_NICKNAME = 4,
     FAKE_IDX_BATTERY = 5,
     FAKE_IDX_KEYMAP = 6,
+    FAKE_IDX_CHANGE_HOST = 7,
+    FAKE_IDX_HOSTS_INFO = 8,
+    FAKE_IDX_BACKLIGHT = 9,
+    FAKE_IDX_ILLUMINATION = 10,
+    FAKE_IDX_ACTION = 11,
 };
+
+#define FAKE_MAX_HOSTS 4
+#define FAKE_MAX_ACTIONS 8
 
 /** Misbehaviours which can be mixed in `fake_t.noise`. Each of them queues
     an additional packet before the genuine response to a request. */
@@ -100,6 +108,29 @@ struct fake_control {
     uint16_t remap;
 };
 
+struct fake_host {
+    uint8_t status, bus, pages;
+    char name[FAKE_NAME_MAX + 1];
+    uint8_t nameMax;
+    uint8_t os[7]; /* type, version, revision (2), build (2) */
+    uint8_t desc[2][14];
+    uint8_t cookie;
+};
+
+struct fake_illum_control {
+    uint8_t flags, maxLevels;
+    uint16_t min, max, res, value;
+    int linear;
+    uint16_t lmin, lmax, lstep;
+    uint8_t levelCount;
+    uint16_t levels[16];
+};
+
+struct fake_action {
+    uint8_t type, modifiers, status;
+    uint16_t value;
+};
+
 struct fake_entity {
     uint8_t type;
     char prefix[3];
@@ -125,8 +156,13 @@ struct fake_t {
     int featureSetCountOverride; /* -1 = report the real count */
 
     /* transport behaviour */
-    int hidpp10;    /* answer everything with a HID++ 1.0 error */
-    int silent;     /* never answer */
+    int hidpp10;     /* answer everything with a HID++ 1.0 error */
+    int silent;      /* never answer */
+    int silentAfter; /* answer this many more requests, then go silent;
+                        -1 to never */
+    int errFeature;  /* with errFunc: answer this request with errCode */
+    int errFunc;     /* function to fail, -1 for none */
+    int errCode;
     int drop;       /* number of upcoming requests to ignore */
     int noise;      /* mask of enum fake_noise */
     int failSend;   /* the send callback fails with HIDPP_EIO */
@@ -171,6 +207,31 @@ struct fake_t {
     char nickDefault[FAKE_NAME_MAX + 1];
     uint8_t nickMax;
 
+    /* 0x1814 change host + 0x1815 hosts information */
+    uint8_t chCurrent, chFlags;
+    int chSwitched; /* host requested by the last setCurrentHost, or -1 */
+    uint16_t hiCaps;
+    uint8_t hostCount;
+    struct fake_host hosts[FAKE_MAX_HOSTS];
+
+    /* 0x1982 backlight */
+    uint8_t blVersion, blEnabled, blOptions, blSupported, blLevel, blNbLevels;
+    uint8_t blStatus, blEffect;
+    uint16_t blEffectList, blDur[3], blOob[3]; /* units of 5 s */
+
+    /* 0x1990 illumination */
+    uint8_t illVersion, illState;
+    uint16_t illEffMax;
+    int illBusy;
+    struct fake_illum_control ill[2];
+
+    /* 0x1c00 persistent remappable action */
+    uint16_t acCaps;
+    uint8_t acCount, acHosts;
+    uint16_t acCids[FAKE_MAX_CONTROLS];
+    struct fake_action actions[FAKE_MAX_HOSTS][FAKE_MAX_ACTIONS];
+    unsigned acResetAll;
+
     /* 0x1b04 reprogrammable controls */
     uint8_t keymapCount;
     struct fake_control controls[FAKE_MAX_CONTROLS];
@@ -183,6 +244,36 @@ fake_t *fake_new_bare(void);
 /** Creates a device with every feature the library supports, populated with
     realistic data (see fake.c for the exact values). */
 fake_t *fake_new(void);
+
+/** Features a fake device can be created with. They are always added in the
+    order below, so the indexes of a device with every feature are the
+    FAKE_IDX_* values; use fake_index() for any other combination. */
+enum fake_with {
+    FAKE_WITH_FIRMWARE = 1u << 0,
+    FAKE_WITH_DEVICE_NAME = 1u << 1,
+    FAKE_WITH_NICKNAME = 1u << 2,
+    FAKE_WITH_BATTERY = 1u << 3,
+    FAKE_WITH_KEYMAP = 1u << 4,
+    FAKE_WITH_CHANGE_HOST = 1u << 5,
+    FAKE_WITH_HOSTS_INFO = 1u << 6,
+    FAKE_WITH_BACKLIGHT = 1u << 7,    /* version 3 */
+    FAKE_WITH_ILLUMINATION = 1u << 8, /* version 1 */
+    FAKE_WITH_ACTION = 1u << 9,
+
+    /* what fake_new() creates, which the older suites rely on */
+    FAKE_WITH_CORE = FAKE_WITH_FIRMWARE | FAKE_WITH_DEVICE_NAME
+        | FAKE_WITH_NICKNAME | FAKE_WITH_BATTERY | FAKE_WITH_KEYMAP,
+    FAKE_WITH_ALL = (1u << 10) - 1,
+};
+
+/** Creates a device with the given features, and nothing else. */
+fake_t *fake_new_with(unsigned mask);
+
+/** `fake_new` plus every other feature, at the FAKE_IDX_* indexes. */
+fake_t *fake_new_all(void);
+
+/** Returns the index of the feature on the device, or -1 if it has none. */
+int fake_index(const fake_t *f, uint16_t id);
 
 /** Closes the receiver (and all devices) and frees the fake. */
 void fake_free(fake_t *f);
@@ -201,6 +292,11 @@ int fake_add_device_name(fake_t *f);
 int fake_add_firmware_info(fake_t *f);
 int fake_add_nickname(fake_t *f);
 int fake_add_keymap(fake_t *f, uint16_t id);
+int fake_add_change_host(fake_t *f);
+int fake_add_hosts_info(fake_t *f);
+int fake_add_backlight(fake_t *f, uint8_t version);
+int fake_add_illumination(fake_t *f, uint8_t version);
+int fake_add_action(fake_t *f);
 
 /** Appends a control to the keymap. Returns the control index. */
 int fake_add_control(

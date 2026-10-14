@@ -25,7 +25,10 @@ static const pf_suite_t *all[] = {
     &suite_hook,     &suite_device,      &suite_root,
     &suite_firmware, &suite_device_name, &suite_nickname,
     &suite_battery,  &suite_keymap,      &suite_poll,
-    &suite_cache,    &suite_robustness,  NULL,
+    &suite_cache,    &suite_robustness,  &suite_hosts,
+    &suite_backlight, &suite_illumination, &suite_action,
+    &suite_retry,
+    NULL,
 };
 
 int main(int argc, char **argv) {

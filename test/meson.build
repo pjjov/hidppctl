@@ -12,9 +12,13 @@ test_src = files(
   'test_battery.c',
   'test_cache.c',
   'test_device.c',
+  'test_action.c',
+  'test_backlight.c',
   'test_device_name.c',
   'test_firmware.c',
   'test_hook.c',
+  'test_hosts.c',
+  'test_illumination.c',
   'test_keymap.c',
   'test_names.c',
   'test_nickname.c',
@@ -22,6 +26,7 @@ test_src = files(
   'test_poll.c',
   'test_receiver.c',
   'test_robustness.c',
+  'test_retry.c',
   'test_root.c',
 )
 
@@ -50,6 +55,11 @@ test_suites = [
   'poll',
   'cache',
   'robustness',
+  'hosts',
+  'backlight',
+  'illumination',
+  'action',
+  'retry',
 ]
 
 foreach suite : test_suites

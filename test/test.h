@@ -143,6 +143,11 @@ extern const pf_suite_t suite_keymap;
 extern const pf_suite_t suite_poll;
 extern const pf_suite_t suite_cache;
 extern const pf_suite_t suite_robustness;
+extern const pf_suite_t suite_hosts;
+extern const pf_suite_t suite_backlight;
+extern const pf_suite_t suite_illumination;
+extern const pf_suite_t suite_action;
+extern const pf_suite_t suite_retry;
 
 /* Opens the fake device and fails the test if the library refuses. */
 static inline hidpp_device_t *t_open(fake_t *f) {

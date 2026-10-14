@@ -392,6 +392,332 @@ static int keymap_handler(
     }
 }
 
+static int change_host_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    switch (func) {
+    case 0:
+        res->params[0] = f->hostCount;
+        res->params[1] = f->chCurrent;
+        res->params[2] = f->chFlags;
+        return 0;
+    case 1:
+        f->chSwitched = req->params[0];
+        return FAKE_SILENT; /* the real device resets */
+    case 2:
+        for (unsigned i = 0; i < f->hostCount && i < 16; i++)
+            res->params[i] = f->hosts[i].cookie;
+        return 0;
+    case 3:
+        if (req->params[0] >= f->hostCount)
+            return ERR_INVALID_ARGUMENT;
+        f->hosts[req->params[0]].cookie = req->params[1];
+        return 0;
+    default:
+        return ERR_INVALID_FUNCTION;
+    }
+}
+
+static struct fake_host *host_of(fake_t *f, uint8_t index, uint8_t *real) {
+    if (index == 0xFF)
+        index = f->chCurrent;
+    if (index >= f->hostCount)
+        return NULL;
+    *real = index;
+    return &f->hosts[index];
+}
+
+static int hosts_info_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    uint8_t idx = 0;
+    struct fake_host *h = NULL;
+
+    if (func >= 1 && func != 5) {
+        h = host_of(f, req->params[0], &idx);
+        if (!h)
+            return ERR_INVALID_ARGUMENT;
+    }
+
+    switch (func) {
+    case 0:
+        res->params[0] = (uint8_t)(f->hiCaps & 0xFF);
+        res->params[1] = (uint8_t)(f->hiCaps >> 8);
+        res->params[2] = f->hostCount;
+        res->params[3] = f->chCurrent;
+        return 0;
+    case 1:
+        res->params[0] = idx;
+        res->params[1] = h->status;
+        res->params[2] = h->bus;
+        res->params[3] = h->pages;
+        res->params[4] = (uint8_t)strlen(h->name);
+        res->params[5] = h->nameMax;
+        return 0;
+    case 2:
+        res->params[0] = idx;
+        res->params[1] = h->bus;
+        memcpy(&res->params[2], h->desc[req->params[1] & 1], 14);
+        return 0;
+    case 3: {
+        size_t at = req->params[1], len = strlen(h->name);
+        res->params[0] = idx;
+        res->params[1] = req->params[1];
+        for (size_t i = 0; i < 14; i++)
+            res->params[2 + i] = at + i < len ? (uint8_t)h->name[at + i] : 0;
+        return 0;
+    }
+    case 4: {
+        size_t at = req->params[1];
+        char chunk[15] = { 0 };
+        memcpy(chunk, &req->params[2], 14);
+
+        if (at + strlen(chunk) > h->nameMax)
+            return ERR_INVALID_ARGUMENT;
+
+        memcpy(&h->name[at], chunk, strlen(chunk) + 1);
+        res->params[0] = idx;
+        res->params[1] = (uint8_t)strlen(h->name);
+        return 0;
+    }
+    case 5: {
+        uint8_t from = req->params[0], to = req->params[1];
+        if (from >= f->hostCount || to >= f->hostCount)
+            return ERR_INVALID_ARGUMENT;
+        struct fake_host tmp = f->hosts[from];
+        f->hosts[from] = f->hosts[to];
+        f->hosts[to] = tmp;
+        return 0;
+    }
+    case 6:
+        memset(h->name, 0, sizeof(h->name));
+        h->status = 0;
+        h->bus = 0;
+        return 0;
+    case 7:
+        res->params[0] = idx;
+        memcpy(&res->params[1], h->os, 7);
+        return 0;
+    case 8:
+        memcpy(h->os, &req->params[1], 7);
+        res->params[0] = idx;
+        return 0;
+    default:
+        return ERR_INVALID_FUNCTION;
+    }
+}
+
+static void put_le(uint8_t *b, uint16_t v) {
+    b[0] = (uint8_t)(v & 0xFF);
+    b[1] = (uint8_t)(v >> 8);
+}
+
+static int backlight_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    switch (func) {
+    case 0:
+        res->params[0] = f->blEnabled;
+        res->params[1] = f->blOptions;
+        res->params[2] = f->blSupported;
+        put_le(&res->params[3], f->blEffectList);
+        res->params[5] = f->blLevel;
+        put_le(&res->params[6], f->blDur[0]);
+        put_le(&res->params[8], f->blDur[1]);
+        put_le(&res->params[10], f->blDur[2]);
+        return 0;
+    case 1:
+        f->blEnabled = req->params[0];
+        f->blOptions = req->params[1];
+        if (f->blVersion >= 2)
+            f->blEffect = req->params[2];
+        if (f->blVersion >= 3) {
+            f->blLevel = req->params[3];
+            for (int i = 0; i < 3; i++)
+                f->blDur[i] = (uint16_t)(req->params[4 + 2 * i]
+                                         | (req->params[5 + 2 * i] << 8));
+        }
+        return 0;
+    case 2:
+        res->params[0] = f->blNbLevels;
+        res->params[1] = f->blLevel;
+        res->params[2] = f->blStatus;
+        res->params[3] = f->blEffect;
+        for (int i = 0; i < 3; i++)
+            put_le(&res->params[4 + 2 * i], f->blOob[i]);
+        return 0;
+    case 3:
+        if (f->blVersion < 2)
+            return ERR_INVALID_FUNCTION;
+        f->blEffect = req->params[0];
+        return 0;
+    default:
+        return ERR_INVALID_FUNCTION;
+    }
+}
+
+static int illumination_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    if (func == 0) {
+        res->params[0] = f->illState;
+        return 0;
+    }
+    if (func == 1) {
+        f->illState = req->params[0] & 1;
+        return 0;
+    }
+    if (func == 12) {
+        if (f->illVersion < 1)
+            return ERR_INVALID_FUNCTION;
+        if (f->illBusy)
+            return 8;
+        res->params[0] = HIDPP_MSB(f->illEffMax);
+        res->params[1] = HIDPP_LSB(f->illEffMax);
+        return 0;
+    }
+    if (func < 2 || func > 11)
+        return ERR_INVALID_FUNCTION;
+
+    struct fake_illum_control *c = &f->ill[func >= 7];
+    switch ((func - 2) % 5) {
+    case 0:
+        res->params[0] = c->flags;
+        res->params[1] = HIDPP_MSB(c->min);
+        res->params[2] = HIDPP_LSB(c->min);
+        res->params[3] = HIDPP_MSB(c->max);
+        res->params[4] = HIDPP_LSB(c->max);
+        res->params[5] = HIDPP_MSB(c->res);
+        res->params[6] = HIDPP_LSB(c->res);
+        res->params[7] = c->maxLevels;
+        return 0;
+    case 1:
+        res->params[0] = HIDPP_MSB(c->value);
+        res->params[1] = HIDPP_LSB(c->value);
+        return 0;
+    case 2: {
+        uint16_t v = HIDPP_WORD(req->params[0], req->params[1]);
+        if (v < c->min || v > c->max || (v - c->min) % c->res)
+            return ERR_INVALID_ARGUMENT;
+        c->value = v;
+        return 0;
+    }
+    case 3: {
+        uint8_t start = req->params[0] >> 4;
+        if (c->linear) {
+            res->params[0] = 1;
+            res->params[2] = HIDPP_MSB(c->lmin);
+            res->params[3] = HIDPP_LSB(c->lmin);
+            res->params[4] = HIDPP_MSB(c->lmax);
+            res->params[5] = HIDPP_LSB(c->lmax);
+            res->params[6] = HIDPP_MSB(c->lstep);
+            res->params[7] = HIDPP_LSB(c->lstep);
+            return 0;
+        }
+        if (start >= c->maxLevels)
+            return ERR_INVALID_ARGUMENT;
+        unsigned valid = c->levelCount - start < 7 ? c->levelCount - start : 7;
+        res->params[0] = (uint8_t)(valid << 5);
+        res->params[1] = (uint8_t)((start << 4) | c->levelCount);
+        for (unsigned i = 0; i < valid; i++) {
+            res->params[2 + 2 * i] = HIDPP_MSB(c->levels[start + i]);
+            res->params[3 + 2 * i] = HIDPP_LSB(c->levels[start + i]);
+        }
+        return 0;
+    }
+    default: { /* set levels */
+        uint8_t flags = req->params[0];
+        if (flags & 0x02) { /* reset */
+            c->linear = 0;
+            c->levelCount = 4;
+            return 0;
+        }
+        if (flags & 0x01) {
+            c->linear = 1;
+            c->lmin = HIDPP_WORD(req->params[2], req->params[3]);
+            c->lmax = HIDPP_WORD(req->params[4], req->params[5]);
+            c->lstep = HIDPP_WORD(req->params[6], req->params[7]);
+            return 0;
+        }
+        unsigned valid = flags >> 5, start = req->params[1] >> 4;
+        if (valid < 1 || valid > 7 || start + valid > 15)
+            return ERR_INVALID_ARGUMENT;
+        c->linear = 0;
+        c->levelCount = req->params[1] & 0x0F;
+        for (unsigned i = 0; i < valid; i++)
+            c->levels[start + i] = HIDPP_WORD(
+                req->params[2 + 2 * i], req->params[3 + 2 * i]
+            );
+        return 0;
+    }
+    }
+}
+
+static int action_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    switch (func) {
+    case 0:
+        res->params[0] = HIDPP_MSB(f->acCaps);
+        res->params[1] = HIDPP_LSB(f->acCaps);
+        return 0;
+    case 1:
+        res->params[0] = f->acCount;
+        res->params[1] = f->acHosts;
+        return 0;
+    case 2:
+        if (req->params[0] >= f->acCount)
+            return ERR_OUT_OF_RANGE;
+        res->params[0] = HIDPP_MSB(f->acCids[req->params[0]]);
+        res->params[1] = HIDPP_LSB(f->acCids[req->params[0]]);
+        return 0;
+    default:
+        break;
+    }
+
+    if (func == 6) {
+        f->acResetAll = req->params[0];
+        for (unsigned h = 0; h < FAKE_MAX_HOSTS; h++)
+            if (req->params[0] & (1u << h))
+                memset(f->actions[h], 0, sizeof(f->actions[h]));
+        return 0;
+    }
+
+    if (func < 3 || func > 5)
+        return ERR_INVALID_FUNCTION;
+
+    uint16_t cid = HIDPP_WORD(req->params[0], req->params[1]);
+    uint8_t host = req->params[2] == 0xFF ? f->chCurrent : req->params[2];
+    unsigned idx = 0;
+
+    while (idx < f->acCount && f->acCids[idx] != cid)
+        idx++;
+
+    if (idx >= f->acCount || host >= FAKE_MAX_HOSTS || idx >= FAKE_MAX_ACTIONS)
+        return ERR_INVALID_ARGUMENT;
+
+    struct fake_action *a = &f->actions[host][idx];
+
+    if (func == 3) {
+        res->params[0] = req->params[0];
+        res->params[1] = req->params[1];
+        res->params[2] = host;
+        res->params[3] = a->type;
+        res->params[4] = HIDPP_MSB(a->value);
+        res->params[5] = HIDPP_LSB(a->value);
+        res->params[6] = a->modifiers;
+        res->params[7] = a->status;
+    } else if (func == 4) {
+        a->type = req->params[3];
+        a->value = HIDPP_WORD(req->params[4], req->params[5]);
+        a->modifiers = req->params[6];
+        a->status = 1;
+    } else {
+        memset(a, 0, sizeof(*a));
+    }
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Request processing                                                 */
 /* ------------------------------------------------------------------ */
@@ -474,6 +800,12 @@ static void process(fake_t *f, const uint8_t *raw, size_t len) {
     if (f->silent || req.device != f->index)
         return;
 
+    if (f->silentAfter == 0)
+        return;
+
+    if (f->silentAfter > 0)
+        f->silentAfter--;
+
     if (f->drop > 0) {
         f->drop--;
         return;
@@ -496,7 +828,9 @@ static void process(fake_t *f, const uint8_t *raw, size_t len) {
     uint8_t func = (uint8_t)(req.func >> 4);
     int rc;
 
-    if (req.feat == 0)
+    if (f->errFunc >= 0 && req.feat == f->errFeature && func == f->errFunc)
+        rc = f->errCode;
+    else if (req.feat == 0)
         rc = root_handler(f, func, &req, &res);
     else if (req.feat <= f->featureCount)
         rc = f->features[req.feat - 1].handler(f, func, &req, &res);
@@ -680,6 +1014,92 @@ int fake_add_keymap(fake_t *f, uint16_t id) {
     return fake_add_feature(f, id, id == 0x1B04 ? 4 : 1, keymap_handler);
 }
 
+int fake_add_change_host(fake_t *f) {
+    f->hostCount = FAKE_MAX_HOSTS > 3 ? 3 : FAKE_MAX_HOSTS;
+    f->chCurrent = 1;
+    f->chSwitched = -1;
+    f->hosts[0].cookie = 0x11;
+    f->hosts[1].cookie = 0x22;
+    f->hosts[2].cookie = 0;
+    return fake_add_feature(f, 0x1814, 0, change_host_handler);
+}
+
+int fake_add_hosts_info(fake_t *f) {
+    f->hostCount = 3;
+    f->chSwitched = -1;
+    f->hiCaps = 0x01FF;
+    const char *names[3] = { "desktop", "Laptop with a long name", "" };
+    for (int i = 0; i < 3; i++) {
+        struct fake_host *h = &f->hosts[i];
+        strcpy(h->name, names[i]);
+        h->status = i < 2;
+        h->bus = i < 2 ? (i ? 4 : 3) : 0;
+        h->pages = i < 2 ? 2 : 0;
+        h->nameMax = 30;
+        h->desc[0][0] = (uint8_t)(0xA0 + i);
+        h->desc[1][0] = (uint8_t)(0xB0 + i);
+    }
+    memcpy(f->hosts[0].os, "\x01\x0A\x00\x0B\x4A\x61", 6);
+    return fake_add_feature(f, 0x1815, 2, hosts_info_handler);
+}
+
+int fake_add_backlight(fake_t *f, uint8_t version) {
+    f->blVersion = version;
+    f->blEnabled = 1;
+    f->blOptions = 0x01 | (1 << 3); /* wow + automatic mode */
+    f->blSupported = 0x3F;
+    f->blNbLevels = 8;
+    f->blLevel = 3;
+    f->blStatus = 2;
+    f->blEffect = 2;
+    f->blEffectList = 0x007F;
+    f->blDur[0] = 6; /* 30 s */
+    f->blDur[1] = 12;
+    f->blDur[2] = 0x0120;
+    f->blOob[0] = 6;
+    f->blOob[1] = 12;
+    f->blOob[2] = 60;
+    return fake_add_feature(f, 0x1982, version, backlight_handler);
+}
+
+int fake_add_illumination(fake_t *f, uint8_t version) {
+    f->illVersion = version;
+    f->illState = 1;
+    f->illEffMax = 800;
+    struct fake_illum_control *b = &f->ill[0], *c = &f->ill[1];
+    *b = (struct fake_illum_control) { .flags = 0x07 | (version ? 0x08 : 0),
+                                       .maxLevels = 6,
+                                       .min = 10,
+                                       .max = 1000,
+                                       .res = 10,
+                                       .value = 500,
+                                       .levelCount = 4,
+                                       .levels = { 10, 300, 700, 1000 } };
+    *c = (struct fake_illum_control) { .flags = 0x03,
+                                       .maxLevels = 0,
+                                       .min = 2700,
+                                       .max = 6500,
+                                       .res = 50,
+                                       .value = 4000,
+                                       .linear = 1,
+                                       .lmin = 2700,
+                                       .lmax = 6500,
+                                       .lstep = 950 };
+    return fake_add_feature(f, 0x1990, version, illumination_handler);
+}
+
+int fake_add_action(fake_t *f) {
+    f->acCaps = 0x01FF;
+    f->acCount = 3;
+    f->acHosts = 3;
+    f->acCids[0] = 0x0050;
+    f->acCids[1] = 0x0051;
+    f->acCids[2] = 0x00C3;
+    if (!f->hostCount)
+        f->hostCount = 3;
+    return fake_add_feature(f, 0x1C00, 0, action_handler);
+}
+
 fake_t *fake_new_bare(void) {
     fake_t *f = calloc(1, sizeof(*f));
 
@@ -692,6 +1112,9 @@ fake_t *fake_new_bare(void) {
     f->replyKind = HIDPP_KIND_LONG;
     f->errorKind = HIDPP_KIND_SHORT;
     f->featureSetCountOverride = -1;
+    f->chSwitched = -1;
+    f->errFunc = -1;
+    f->silentAfter = -1;
 
     f->rcv = hidpp_open_custom(fake_send, fake_recv, f);
 
@@ -702,14 +1125,44 @@ fake_t *fake_new_bare(void) {
     return f;
 }
 
-fake_t *fake_new(void) {
+fake_t *fake_new_with(unsigned mask) {
     fake_t *f = fake_new_bare();
-    fake_add_firmware_info(f);  /* index 2 */
-    fake_add_device_name(f);    /* index 3 */
-    fake_add_nickname(f);       /* index 4 */
-    fake_add_battery(f);        /* index 5 */
-    fake_add_keymap(f, 0x1B04); /* index 6 */
+
+    /* always in this order, so that a full mask gives the FAKE_IDX_* values */
+    if (mask & FAKE_WITH_FIRMWARE)
+        fake_add_firmware_info(f);
+    if (mask & FAKE_WITH_DEVICE_NAME)
+        fake_add_device_name(f);
+    if (mask & FAKE_WITH_NICKNAME)
+        fake_add_nickname(f);
+    if (mask & FAKE_WITH_BATTERY)
+        fake_add_battery(f);
+    if (mask & FAKE_WITH_KEYMAP)
+        fake_add_keymap(f, 0x1B04);
+    if (mask & FAKE_WITH_CHANGE_HOST)
+        fake_add_change_host(f);
+    if (mask & FAKE_WITH_HOSTS_INFO)
+        fake_add_hosts_info(f);
+    if (mask & FAKE_WITH_BACKLIGHT)
+        fake_add_backlight(f, 3);
+    if (mask & FAKE_WITH_ILLUMINATION)
+        fake_add_illumination(f, 1);
+    if (mask & FAKE_WITH_ACTION)
+        fake_add_action(f);
+
     return f;
+}
+
+fake_t *fake_new(void) { return fake_new_with(FAKE_WITH_CORE); }
+
+fake_t *fake_new_all(void) { return fake_new_with(FAKE_WITH_ALL); }
+
+int fake_index(const fake_t *f, uint16_t id) {
+    for (unsigned i = 0; i < f->featureCount; i++)
+        if (f->features[i].id == id)
+            return (int)i + 1; /* the root feature is index 0 */
+
+    return -1;
 }
 
 hidpp_device_t *fake_open(fake_t *f) {
