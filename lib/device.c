@@ -24,9 +24,10 @@ extern struct hidpp_feat_vt hidpp_feat_battery_vt;
 extern struct hidpp_feat_vt hidpp_feat_nickname_vt;
 extern struct hidpp_feat_vt hidpp_feat_hosts_vt;
 extern struct hidpp_feat_vt hidpp_feat_backlight_vt;
+extern struct hidpp_feat_vt hidpp_feat_illumination_vt;
 extern struct hidpp_feat_vt hidpp_feat_action_vt;
 
-PF_ENUM_GUARD(hidpp_feat, 3)
+PF_ENUM_GUARD(hidpp_feat, 4)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
@@ -36,6 +37,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_NICKNAME] = &hidpp_feat_nickname_vt,
     [HIDPP_FEAT_HOSTS] = &hidpp_feat_hosts_vt,
     [HIDPP_FEAT_BACKLIGHT] = &hidpp_feat_backlight_vt,
+    [HIDPP_FEAT_ILLUMINATION] = &hidpp_feat_illumination_vt,
     [HIDPP_FEAT_ACTION] = &hidpp_feat_action_vt,
 };
 

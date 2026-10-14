@@ -51,6 +51,55 @@ static int parse_event(
 
         break;
 
+    case 0x1982: /* Backlight */
+        if (func == 0) {
+            e->type = HIDPP_EVENT_BACKLIGHT;
+            e->as.backlight.levelCount = pkt->params[0];
+            e->as.backlight.level = pkt->params[1];
+            e->as.backlight.status = pkt->params[2];
+            e->as.backlight.effect = pkt->params[3];
+            return HIDPP_OK;
+        }
+
+        break;
+
+    case 0x1990: /* Illumination light */
+        if (func == 0) {
+            e->type = HIDPP_EVENT_ILLUMINATION;
+            e->as.illumination.kind = HIDPP_ILLUMINATION_EVENT_STATE;
+            e->as.illumination.state = pkt->params[0] & 1;
+            e->as.illumination.source = 0;
+            e->as.illumination.value = 0;
+            return HIDPP_OK;
+        } else if (func >= 1 && func <= 3) {
+            static const uint8_t kinds[] = {
+                0,
+                HIDPP_ILLUMINATION_EVENT_BRIGHTNESS,
+                HIDPP_ILLUMINATION_EVENT_COLOR_TEMPERATURE,
+                HIDPP_ILLUMINATION_EVENT_BRIGHTNESS_MAX,
+            };
+
+            e->type = HIDPP_EVENT_ILLUMINATION;
+            e->as.illumination.kind = kinds[func];
+            e->as.illumination.state = 0;
+            e->as.illumination.source = 0;
+            e->as.illumination.value = HIDPP_WORD(
+                pkt->params[0], pkt->params[1]
+            );
+            return HIDPP_OK;
+        } else if (func >= 4) {
+            e->type = HIDPP_EVENT_ILLUMINATION;
+            e->as.illumination.kind = HIDPP_ILLUMINATION_EVENT_CLAMPED;
+            e->as.illumination.state = 0;
+            e->as.illumination.source = pkt->params[0];
+            e->as.illumination.value = HIDPP_WORD(
+                pkt->params[1], pkt->params[2]
+            );
+            return HIDPP_OK;
+        }
+
+        break;
+
     case 0x2121: /* High resolution wheel */
         if (func == 0) {
             e->type = HIDPP_EVENT_WHEEL;

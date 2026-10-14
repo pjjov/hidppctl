@@ -51,9 +51,10 @@ enum {
     HIDPP_FEAT_NICKNAME,
     HIDPP_FEAT_HOSTS,
     HIDPP_FEAT_BACKLIGHT,
+    HIDPP_FEAT_ILLUMINATION,
     HIDPP_FEAT_ACTION,
     hidpp_feat_max,
-    hidpp_feat_sentinel = 3,
+    hidpp_feat_sentinel = 4,
 };
 
 struct hidpp_feat_vt {

@@ -182,7 +182,18 @@ enum hidpp_event_type {
     HIDPP_EVENT_TOUCH_PAD_POINTS,
     HIDPP_EVENT_TOUCH_MOUSE_POINTS,
     HIDPP_EVENT_TOUCH_MOUSE_STATUS,
+    HIDPP_EVENT_BACKLIGHT,
+    HIDPP_EVENT_ILLUMINATION,
     HIDPP__EVENT_MAX,
+};
+
+/** Kinds of `HIDPP_EVENT_ILLUMINATION` events (see `as.illumination.kind`). */
+enum hidpp_illumination_event {
+    HIDPP_ILLUMINATION_EVENT_STATE,             /* `state` is valid */
+    HIDPP_ILLUMINATION_EVENT_BRIGHTNESS,        /* `value` is valid */
+    HIDPP_ILLUMINATION_EVENT_COLOR_TEMPERATURE, /* `value` is valid */
+    HIDPP_ILLUMINATION_EVENT_BRIGHTNESS_MAX,    /* `value` is valid */
+    HIDPP_ILLUMINATION_EVENT_CLAMPED, /* `source` and `value` is valid */
 };
 
 enum hidpp_battery_charge {
@@ -237,6 +248,20 @@ struct hidpp_event {
             uint8_t mouseLifted;
             uint8_t buttonDown;
         } touchMouseStatus;
+
+        struct {
+            uint8_t levelCount;
+            uint8_t level;
+            uint8_t status; /* enum hidpp_backlight_status */
+            uint8_t effect; /* enum hidpp_backlight_effect */
+        } backlight;
+
+        struct {
+            uint8_t kind;   /* enum hidpp_illumination_event */
+            uint8_t state;  /* 0 = off, 1 = on */
+            uint8_t source; /* 0 = unknown, 1 = HID++, 2 = button */
+            uint16_t value;
+        } illumination;
 
         struct {
             uint16_t timestamp;
@@ -981,6 +1006,93 @@ HIDPP_API int hidpp_backlight_set_effect(hidpp_device_t *dev, uint8_t effect);
 /** Returns the name of a backlight effect. */
 HIDPP_API const char *hidpp_backlight_effect_name(uint8_t effect);
 
+/** Individually controllable properties of an illumination device. */
+enum hidpp_illumination_control {
+    HIDPP_ILLUMINATION_BRIGHTNESS = 0,        /* lumen */
+    HIDPP_ILLUMINATION_COLOR_TEMPERATURE = 1, /* kelvin */
+};
+
+/** Capabilities of a single control. They do not change at runtime. */
+struct hidpp_illumination_info {
+    uint16_t min;
+    uint16_t max;
+    uint16_t res; /* step size; 0 if only a single value is supported */
+    uint8_t maxLevels;
+    uint8_t flags;
+
+    hidpp_bool_t hasEvents;
+    hidpp_bool_t hasLinearLevels;
+    hidpp_bool_t hasNonLinearLevels;
+    hidpp_bool_t hasDynamicMaximum; /* brightness only, version >= 1 */
+    hidpp_bool_t isSettable;        /* min != max */
+    hidpp_bool_t initialized;
+};
+
+#define HIDPP_ILLUMINATION_MAX_LEVELS 15
+
+/** User-selectable values of a control. */
+struct hidpp_illumination_levels {
+    hidpp_bool_t linear;
+    uint16_t min;  /* linear: value of the first level */
+    uint16_t max;  /* linear: value of the last level */
+    uint16_t step; /* linear: difference between levels */
+    uint8_t count; /* number of levels */
+    uint16_t values[HIDPP_ILLUMINATION_MAX_LEVELS]; /* non-linear levels */
+};
+
+/** Returns the capabilities of `control`.
+    Errors (as NULL): no illumination feature or invalid control.
+*/
+HIDPP_API struct hidpp_illumination_info *hidpp_illumination_info(
+    hidpp_device_t *dev, int control
+);
+
+/** Returns 0 (off), 1 (on) or an error. */
+HIDPP_API int hidpp_illumination_get(hidpp_device_t *dev);
+
+/** Turns the light on (`state` != 0) or off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_illumination_set(hidpp_device_t *dev, int state);
+
+/** Returns the current value of `control` or an error. */
+HIDPP_API int hidpp_illumination_value(hidpp_device_t *dev, int control);
+
+/** Sets the value of `control`. The value must be within the range of the
+    control and a multiple of its resolution.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_illumination_set_value(
+    hidpp_device_t *dev, int control, uint16_t value
+);
+
+/** Reads the levels of `control`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_illumination_levels(
+    hidpp_device_t *dev, int control, struct hidpp_illumination_levels *out
+);
+
+/** Replaces the levels of `control`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_illumination_set_levels(
+    hidpp_device_t *dev,
+    int control,
+    const struct hidpp_illumination_levels *levels
+);
+
+/** Resets the levels of `control` to factory defaults.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_illumination_reset_levels(hidpp_device_t *dev, int control);
+
+/** Returns the effective maximum brightness, which is 0 if none is in effect.
+    The device can answer with a "busy" error while it is still testing
+    itself, which is reported as EAGAIN; try again later.
+    Errors: EINVAL, ENOSYS, EAGAIN, EIO.
+*/
+HIDPP_API int hidpp_illumination_effective_max(hidpp_device_t *dev);
 
 /** Kind of the action performed when a control is triggered. */
 enum hidpp_action_type {
