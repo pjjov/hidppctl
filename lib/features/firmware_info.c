@@ -184,19 +184,31 @@ static int ensure_init(
     memset(fw->serialNumber, 0, sizeof(fw->serialNumber));
     memset(&fw->info, 0, sizeof(fw->info));
     memset(fw->entities, 0, sizeof(fw->entities));
-    int featIndex = hidpp_feature_index(dev, 0x0003);
+    int featIndex = feature_lookup(dev, 0x0003);
+
+    if (featIndex < 0)
+        return featIndex;
+
     fw->featIndex = featIndex;
     fw->hasSerialNumber = HIDPP_FALSE;
-    fw->unsupported = featIndex <= 0;
+    fw->unsupported = featIndex == 0;
 
     if (!fw->unsupported) {
         int rc = query_firmware_info(dev, fw->featIndex, &fw->info);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
+
         fw->entityCount = rc == 0 ? fw->info.entityCount : 0;
         fw->hasSerialNumber = fw->info.hasSerialNumber;
     }
 
-    if (fw->hasSerialNumber)
-        query_serial_number(dev, fw->featIndex, fw->serialNumber);
+    if (fw->hasSerialNumber) {
+        int rc = query_serial_number(dev, fw->featIndex, fw->serialNumber);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
+    }
 
     fw->initialized = HIDPP_TRUE;
 

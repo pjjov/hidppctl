@@ -83,14 +83,16 @@ static void unpack_flags(struct hidpp_battery_info *info) {
     info->isRechargable = !!(info->flags & IS_RECHARGABLE_FLAG);
 }
 
-static void query_battery_info(
+static int query_battery_info(
     hidpp_device_t *dev, uint8_t featIndex, struct hidpp_battery_info *out
 ) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 1);
 
-    if (hidpp_device_request(dev, &req, &res))
-        return;
+    int rc;
+
+    if ((rc = hidpp_device_request(dev, &req, &res)))
+        return rc;
 
     out->levelCount = res.params[0];
     out->flags = res.params[1];
@@ -98,6 +100,7 @@ static void query_battery_info(
     out->criticalLevel = res.params[4];
     unpack_flags(out);
     out->initialized = HIDPP_TRUE;
+    return HIDPP_OK;
 }
 
 static int query_battery_status(
@@ -133,12 +136,20 @@ static int ensure_init(struct hidpp_feat_battery **out, hidpp_device_t *dev) {
         return bat->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 
     bat->info.initialized = HIDPP_FALSE;
-    int featIndex = hidpp_feature_index(dev, 0x1000);
-    bat->featIndex = featIndex;
-    bat->unsupported = featIndex <= 0;
+    int featIndex = feature_lookup(dev, 0x1000);
 
-    if (!bat->unsupported)
-        query_battery_info(dev, bat->featIndex, &bat->info);
+    if (featIndex < 0)
+        return featIndex; /* not known yet, ask again next time */
+
+    bat->featIndex = featIndex;
+    bat->unsupported = featIndex == 0;
+
+    if (!bat->unsupported) {
+        int rc = query_battery_info(dev, bat->featIndex, &bat->info);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
+    }
 
     bat->initialized = HIDPP_TRUE;
 

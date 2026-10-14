@@ -127,17 +127,23 @@ static void unpack_flags(struct hidpp_keymap_info *out) {
     out->isMouseButton = !!(out->flags & IS_MOUSE_BUTTON_FLAG);
 }
 
+/*  Returns HIDPP_OK, HIDPP_ENOSYS if the device has neither feature (which
+    is final) or the error that kept the lookup from finishing. */
 static int query_keymap_version(hidpp_keymap_t *map) {
-    int version = 0, result;
+    int version = 4, result;
 
-    if ((result = hidpp_feature_index(map->device, 0x1B04)) > 0)
-        version = 4;
-    else if ((result = hidpp_feature_index(map->device, 0x1B00)) > 0)
+    if ((result = feature_lookup(map->device, 0x1B04)) < 0)
+        return result;
+
+    if (result == 0) {
         version = 1;
 
-    map->initialized = HIDPP_TRUE;
+        if ((result = feature_lookup(map->device, 0x1B00)) < 0)
+            return result;
+    }
 
-    if (result <= 0) {
+    if (result == 0) {
+        map->initialized = HIDPP_TRUE;
         map->unsupported = HIDPP_TRUE;
         return HIDPP_ENOSYS;
     }
@@ -151,8 +157,10 @@ static int query_control_count(hidpp_keymap_t *map) {
     hidpp_packet_t req, res;
     make_packet(&req, map->device, map->featIndex, 0);
 
-    if (hidpp_device_request(map->device, &req, &res))
-        return 0;
+    int rc;
+
+    if ((rc = hidpp_device_request(map->device, &req, &res)))
+        return rc;
 
     return res.params[0];
 }
@@ -196,13 +204,29 @@ static int ensure_init(hidpp_keymap_t *map) {
     memset(map, 0, sizeof(*map));
     map->device = dev;
 
-    if (query_keymap_version(map))
-        return HIDPP_ENOSYS;
+    int rc;
 
-    map->ctrlCount = query_control_count(map);
+    if ((rc = query_keymap_version(map)))
+        return rc;
 
-    for (size_t i = 0; i < map->ctrlCount; i++)
-        query_control_info(&map->controls[i], map, i);
+    if ((rc = query_control_count(map)) < 0) {
+        if (is_transient(dev, rc))
+            return rc;
+
+        rc = 0;
+    }
+
+    map->ctrlCount = rc;
+
+    for (size_t i = 0; i < map->ctrlCount; i++) {
+        rc = query_control_info(&map->controls[i], map, i);
+
+        /* a control the device refuses for good stays uninitialized */
+        if (rc && is_transient(dev, rc))
+            return rc;
+    }
+
+    map->initialized = HIDPP_TRUE;
 
     return HIDPP_OK;
 }

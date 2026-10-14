@@ -95,6 +95,9 @@ struct hidpp_receiver_t {
     uint8_t retries;
     hidpp_bool_t nonblocking;
 
+    /* HID++ error code of the last request, 0 if it was not an error report */
+    uint8_t errorCode;
+
     hidpp_packet_t *currentRequest;
     hidpp_protocol_hook_fn *hook;
     void *hookUser;

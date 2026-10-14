@@ -435,7 +435,7 @@ static int is_good_packet(
         && res->func == req->func;
 }
 
-static const char *hidpp_strerror(uint8_t code) {
+const char *hidpp_protocol_error_str(int code) {
     switch (code) {
         /* clang-format off */
     case 0x00: return "No error";
@@ -465,6 +465,7 @@ int hidpp_request(
 
     hidpp_bool_t wasNonblocking = rcv->nonblocking;
     rcv->nonblocking = 0;
+    rcv->errorCode = 0;
 
     int ret = hidpp_send(rcv, request);
 
@@ -484,7 +485,7 @@ int hidpp_request(
         }
 
         if (is_error_packet(request, response)) {
-            const char *error = hidpp_strerror(response->params[1]);
+            const char *error = hidpp_protocol_error_str(response->params[1]);
             set_error(
                 rcv,
                 L"HID++ %hs error: %hs (0x%02X)",
@@ -492,6 +493,7 @@ int hidpp_request(
                 error,
                 response->params[1]
             );
+            rcv->errorCode = response->params[1];
             rcv->nonblocking = wasNonblocking;
             return HIDPP_EIO;
         }
@@ -506,6 +508,8 @@ int hidpp_request(
     rcv->nonblocking = wasNonblocking;
     return HIDPP_ENODATA;
 }
+
+int hidpp_error_code(hidpp_receiver_t *rcv) { return rcv ? rcv->errorCode : 0; }
 
 int hidpp_set_timeout(hidpp_receiver_t *rcv, int timeout) {
     if (!rcv)

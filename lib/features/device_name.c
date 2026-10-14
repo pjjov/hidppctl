@@ -49,29 +49,40 @@ struct hidpp_feat_device_name {
     char name[MAX_NAME_LEN + 1];
 };
 
-static uint8_t query_device_type(hidpp_device_t *dev, uint8_t featIndex) {
+static int query_device_type(
+    hidpp_device_t *dev, uint8_t featIndex, uint8_t *out
+) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 2);
 
-    if (hidpp_device_request(dev, &req, &res))
-        return 0;
+    int rc;
 
-    return res.params[0];
+    if ((rc = hidpp_device_request(dev, &req, &res)))
+        return rc;
+
+    *out = res.params[0];
+    return HIDPP_OK;
 }
 
-static uint8_t query_name_length(hidpp_device_t *dev, uint8_t featIndex) {
+static int query_name_length(
+    hidpp_device_t *dev, uint8_t featIndex, uint8_t *out
+) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 0);
 
-    if (hidpp_device_request(dev, &req, &res))
-        return 0;
+    int rc;
 
-    return res.params[0];
+    if ((rc = hidpp_device_request(dev, &req, &res)))
+        return rc;
+
+    *out = res.params[0];
+    return HIDPP_OK;
 }
 
-static void query_device_name(
+static int query_device_name(
     hidpp_device_t *dev, uint8_t featIndex, size_t len, char *buf
 ) {
+    int rc = HIDPP_OK;
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 1);
 
@@ -80,7 +91,7 @@ static void query_device_name(
     while (read < len && read < MAX_NAME_LEN) {
         req.params[0] = read;
 
-        if (hidpp_device_request(dev, &req, &res))
+        if ((rc = hidpp_device_request(dev, &req, &res)))
             break;
 
         size_t psize = packet_length(res.kind) - 4;
@@ -94,6 +105,7 @@ static void query_device_name(
     }
 
     buf[read] = '\0';
+    return rc;
 }
 
 static int ensure_init(
@@ -111,14 +123,32 @@ static int ensure_init(
         return dn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 
     memset(dn->name, 0, sizeof(dn->name));
-    int featIndex = hidpp_feature_index(dev, 0x0005);
+    int featIndex = feature_lookup(dev, 0x0005);
+
+    if (featIndex < 0)
+        return featIndex;
+
     dn->featIndex = featIndex;
-    dn->unsupported = featIndex <= 0;
+    dn->unsupported = featIndex == 0;
 
     if (!dn->unsupported) {
-        dn->deviceType = query_device_type(dev, dn->featIndex);
-        dn->nameLength = query_name_length(dev, dn->featIndex);
-        query_device_name(dev, dn->featIndex, dn->nameLength, dn->name);
+        int rc;
+
+        /* answers the device refuses for good are left empty */
+        rc = query_device_type(dev, dn->featIndex, &dn->deviceType);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
+
+        rc = query_name_length(dev, dn->featIndex, &dn->nameLength);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
+
+        rc = query_device_name(dev, dn->featIndex, dn->nameLength, dn->name);
+
+        if (rc && is_transient(dev, rc))
+            return rc;
     }
 
     dn->initialized = HIDPP_TRUE;

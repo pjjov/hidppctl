@@ -199,22 +199,34 @@ static int ensure_init(struct hidpp_feat_nickname **out, hidpp_device_t *dev) {
         return nick->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
 
     memset(nick, 0, sizeof(*nick));
-    int featIndex = hidpp_feature_index(dev, 0x0007);
+    int featIndex = feature_lookup(dev, 0x0007);
+
+    if (featIndex < 0)
+        return featIndex;
+
     nick->featIndex = featIndex;
-    nick->unsupported = featIndex <= 0;
+    nick->unsupported = featIndex == 0;
 
     if (!nick->unsupported) {
-        if (query_name_length(dev, nick)) {
+        int rc;
+
+        if ((rc = query_name_length(dev, nick))) {
+            if (is_transient(dev, rc))
+                return rc;
+
             nick->unsupported = HIDPP_TRUE;
         } else if (
-            query_name(
-                dev,
-                nick->featIndex,
-                2,
-                nick->defaultNameLength,
-                nick->defaultName
-            )
+            (rc = query_name(
+                 dev,
+                 nick->featIndex,
+                 2,
+                 nick->defaultNameLength,
+                 nick->defaultName
+             ))
         ) {
+            if (is_transient(dev, rc))
+                return rc;
+
             nick->defaultName[0] = '\0';
             nick->defaultNameLength = 0;
         }

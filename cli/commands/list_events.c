@@ -21,6 +21,8 @@ const char *hidppctl_event_names[HIDPP__EVENT_MAX] = {
     "TOUCH_PAD_POINTS",
     "TOUCH_MOUSE_POINTS",
     "TOUCH_MOUSE_STATUS",
+    "BACKLIGHT",
+    "ILLUMINATION",
 };
 
 int cmd_list_events(hidppctl_t *ctl) {

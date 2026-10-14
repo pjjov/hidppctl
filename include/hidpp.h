@@ -98,6 +98,20 @@ enum hidpp_error {
     HIDPP_ETIMEDOUT = -110,
 };
 
+/** Error codes of HID++ error reports (see hidpp_error_code()). */
+enum hidpp_protocol_error {
+    HIDPP_ERR_NONE = 0,
+    HIDPP_ERR_UNKNOWN = 1,
+    HIDPP_ERR_INVALID_ARGUMENT = 2,
+    HIDPP_ERR_OUT_OF_RANGE = 3,
+    HIDPP_ERR_HW_ERROR = 4,
+    HIDPP_ERR_INTERNAL = 5,
+    HIDPP_ERR_INVALID_FEATURE_INDEX = 6,
+    HIDPP_ERR_INVALID_FUNCTION_ID = 7,
+    HIDPP_ERR_BUSY = 8,
+    HIDPP_ERR_UNSUPPORTED = 9,
+};
+
 enum hidpp_bool {
     HIDPP_TOGGLE = -1,
     HIDPP_FALSE = 0,
@@ -1196,6 +1210,16 @@ HIDPP_API int hidpp_action_reset_all(hidpp_device_t *dev, uint8_t hostMask);
 /** Returns the name of an action type. */
 HIDPP_API const char *hidpp_action_type_name(uint8_t type);
 
+/** Returns the HID++ error code (`enum hidpp_protocol_error`) the device
+    answered the last request of `rcv` with, or 0 if the last request did not
+    fail that way. Requests answered by an error report fail with HIDPP_EIO,
+    so this is what tells them apart from transport failures and from each
+    other (for example "busy" from "invalid argument").
+*/
+HIDPP_API int hidpp_error_code(hidpp_receiver_t *rcv);
+
+/** Returns a human-readable string for a HID++ error code. */
+HIDPP_API const char *hidpp_protocol_error_str(int code);
 
 /** Returns the last error message of `rcv` or it's devices. */
 HIDPP_API const wchar_t *hidpp_error(hidpp_receiver_t *rcv);

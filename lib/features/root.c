@@ -91,24 +91,33 @@ static void unpack_flags(struct hidpp_feature_info *out) {
     );
 }
 
-/* Returns 0 if the feature is not present (index 0 is always the root). */
-static uint8_t root_feature_index(hidpp_device_t *dev, uint16_t feat) {
+/*  Returns the index of the feature, 0 if it is not present (index 0 is
+    always the root) or a negative error if the device did not answer. */
+static int root_feature_index(hidpp_device_t *dev, uint16_t feat) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, 0, 0);
     req.params[0] = HIDPP_MSB(feat);
     req.params[1] = HIDPP_LSB(feat);
 
-    if (hidpp_device_request(dev, &req, &res))
-        return 0;
+    int rc;
+
+    if ((rc = hidpp_device_request(dev, &req, &res)))
+        return rc;
+
     return res.params[0];
 }
 
-static uint8_t query_feature_count(hidpp_device_t *dev, uint8_t featIndex) {
+static int query_feature_count(hidpp_device_t *dev, uint8_t featIndex) {
     hidpp_packet_t req, res;
     make_packet(&req, dev, featIndex, 0);
 
-    if (featIndex == 0 || hidpp_device_request(dev, &req, &res))
+    int rc;
+
+    if (featIndex == 0)
         return 0;
+
+    if ((rc = hidpp_device_request(dev, &req, &res)))
+        return rc;
 
     return res.params[0];
 }
@@ -180,12 +189,21 @@ static int ensure_init(struct hidpp_feat_root **out, hidpp_device_t *dev) {
         return HIDPP_OK;
 
     memset(root->infos, 0, sizeof(root->infos));
-    root->featSetIndex = root_feature_index(dev, FEATURE_SET_ID);
+    int index = root_feature_index(dev, FEATURE_SET_ID);
 
-    if (root->featSetIndex == 0)
+    if (index < 0)
+        return index;
+
+    if (index == 0)
         return HIDPP_ENOSYS; /* Feature set is mandatory on HID++ 2.0 */
 
-    root->featCount = query_feature_count(dev, root->featSetIndex);
+    root->featSetIndex = (uint8_t)index;
+    int count = query_feature_count(dev, root->featSetIndex);
+
+    if (count < 0)
+        return count;
+
+    root->featCount = (uint8_t)count;
     root->initialized = HIDPP_TRUE;
 
     return HIDPP_OK;
