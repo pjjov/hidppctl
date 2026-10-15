@@ -25,6 +25,7 @@ lib_src = files(
   'features/led.c',
   'features/mode_status.c',
   'features/nickname.c',
+  'features/perkey.c',
   'features/root.c',
   'features/scrolling.c',
   'cache.c',

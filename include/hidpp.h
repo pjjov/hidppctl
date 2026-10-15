@@ -2031,6 +2031,79 @@ HIDPP_API int hidpp_led_onboard_info(
     uint8_t out[13]
 );
 
+/** An RGB color. */
+struct hidpp_color {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+};
+
+/** Returns the number of lighting zones of a per-key lighting device
+    (feature 0x8081) and copies up to `max` of their ids into `out`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_perkey_zones(hidpp_device_t *dev, uint8_t *out, size_t max);
+
+/** Returns 1 if the device has the zone `id`, 0 if not, or an error. */
+HIDPP_API int hidpp_perkey_has_zone(hidpp_device_t *dev, uint8_t id);
+
+/** Sets the colors of the zones `ids`. Zone ids 0 and 255 are invalid.
+    Changes are only shown after hidpp_perkey_frame_end().
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_perkey_set(
+    hidpp_device_t *dev,
+    const uint8_t *ids,
+    const struct hidpp_color *colors,
+    size_t count
+);
+
+/** Sets the colors of `count` consecutive zones starting at `first`. */
+HIDPP_API int hidpp_perkey_set_consecutive(
+    hidpp_device_t *dev,
+    uint8_t first,
+    const struct hidpp_color *colors,
+    size_t count
+);
+
+/** Sets all zones from `first` to `last` to the same color. */
+HIDPP_API int hidpp_perkey_set_range(
+    hidpp_device_t *dev, uint8_t first, uint8_t last, struct hidpp_color color
+);
+
+/** Sets the zones `ids` to the same color. */
+HIDPP_API int hidpp_perkey_set_color(
+    hidpp_device_t *dev,
+    const uint8_t *ids,
+    size_t count,
+    struct hidpp_color color
+);
+
+/** Changes the colors of `count` consecutive zones starting at `first` from
+    `previous` (what the device shows) to `current`. Only changed zones are
+    sent, and delta compression is used where possible, which keeps the
+    traffic low when the colors change smoothly. Returns the number of
+    requests that were needed.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_perkey_update(
+    hidpp_device_t *dev,
+    uint8_t first,
+    const struct hidpp_color *previous,
+    const struct hidpp_color *current,
+    size_t count
+);
+
+/** Shows all changes made since the previous frame. `framesToNext` is the
+    number of frames until the next change, 0 when streaming live.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_perkey_frame_end(
+    hidpp_device_t *dev,
+    uint8_t persistence,
+    uint16_t frame,
+    uint16_t framesToNext
+);
 
 /** Bits of the mode status (feature 0x8090). */
 enum hidpp_mode_status {

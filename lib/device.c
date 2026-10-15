@@ -34,6 +34,7 @@ extern struct hidpp_feat_vt hidpp_feat_disable_keys_vt;
 extern struct hidpp_feat_vt hidpp_feat_crown_vt;
 extern struct hidpp_feat_vt hidpp_feat_brightness_vt;
 extern struct hidpp_feat_vt hidpp_feat_led_vt;
+extern struct hidpp_feat_vt hidpp_feat_perkey_vt;
 extern struct hidpp_feat_vt hidpp_feat_mode_status_vt;
 extern struct hidpp_feat_vt hidpp_feat_equalizer_vt;
 
@@ -57,6 +58,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_CROWN] = &hidpp_feat_crown_vt,
     [HIDPP_FEAT_BRIGHTNESS] = &hidpp_feat_brightness_vt,
     [HIDPP_FEAT_LED] = &hidpp_feat_led_vt,
+    [HIDPP_FEAT_PERKEY] = &hidpp_feat_perkey_vt,
     [HIDPP_FEAT_MODE_STATUS] = &hidpp_feat_mode_status_vt,
     [HIDPP_FEAT_EQUALIZER] = &hidpp_feat_equalizer_vt,
 };
