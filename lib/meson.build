@@ -23,6 +23,7 @@ lib_src = files(
   'features/illumination.c',
   'features/keymap.c',
   'features/led.c',
+  'features/mode_status.c',
   'features/nickname.c',
   'features/root.c',
   'features/scrolling.c',

@@ -2032,6 +2032,42 @@ HIDPP_API int hidpp_led_onboard_info(
 );
 
 
+/** Bits of the mode status (feature 0x8090). */
+enum hidpp_mode_status {
+    HIDPP_MODE_PERFORMANCE = 0x0001, /* clear for endurance mode */
+};
+
+/** Mode status capabilities (feature 0x8090). */
+struct hidpp_mode_status_info {
+    uint8_t version;
+    uint16_t capabilities; /* version >= 1 */
+
+    hidpp_bool_t canSet;      /* version >= 1 */
+    hidpp_bool_t hasHwSwitch; /* performance mode is set by a switch */
+    hidpp_bool_t hasSwSwitch; /* performance mode can be set */
+    hidpp_bool_t initialized;
+};
+
+/** Returns the mode status capabilities.
+    Errors (as NULL): device has no mode status feature.
+*/
+HIDPP_API struct hidpp_mode_status_info *hidpp_mode_status_info(
+    hidpp_device_t *dev
+);
+
+/** Returns the mode status (enum hidpp_mode_status) or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_mode_status_get(hidpp_device_t *dev);
+
+/** Changes the bits of the mode status selected by `mask`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_mode_status_set(
+    hidpp_device_t *dev, uint16_t status, uint16_t mask
+);
+
+
 #define HIDPP_EQ_MAX_BANDS 15
 
 /** Equalizer of an audio device (feature 0x8310). */
