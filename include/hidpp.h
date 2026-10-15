@@ -1561,6 +1561,87 @@ HIDPP_API int hidpp_enable_usages(
 */
 HIDPP_API int hidpp_enable_all_usages(hidpp_device_t *dev);
 
+/** Platforms of a dual platform device (feature 0x4530). */
+enum hidpp_dual_platform {
+    HIDPP_PLATFORM_APPLE = 0, /* iOS or macOS */
+    HIDPP_PLATFORM_OTHER = 1, /* Android or Windows */
+};
+
+/** Operating systems of a platform descriptor (feature 0x4531). */
+enum hidpp_platform_os {
+    HIDPP_OS_TIZEN = 0x0001,
+    HIDPP_OS_WINDOWS = 0x0100,
+    HIDPP_OS_WINDOWS_EMBEDDED = 0x0200,
+    HIDPP_OS_LINUX = 0x0400,
+    HIDPP_OS_CHROME = 0x0800,
+    HIDPP_OS_ANDROID = 0x1000,
+    HIDPP_OS_MACOS = 0x2000,
+    HIDPP_OS_IOS = 0x4000,
+    HIDPP_OS_WEBOS = 0x8000,
+};
+
+/** Platform capabilities (features 0x4530 and 0x4531). */
+struct hidpp_platform_info {
+    uint16_t capabilities;
+    uint8_t platformCount;
+    uint8_t descriptorCount;
+    uint8_t hostCount;
+
+    hidpp_bool_t isMultiPlatform; /* 0x4531, otherwise dual platform */
+    hidpp_bool_t hasOsDetection;
+    hidpp_bool_t canSet;
+    hidpp_bool_t initialized;
+};
+
+/** Operating systems (and their versions) a platform applies to. A range
+    of 0.0 to 0.0 covers all versions.
+*/
+struct hidpp_platform_descriptor {
+    uint8_t index;
+    uint8_t platform;
+    uint16_t osMask; /* enum hidpp_platform_os */
+    uint8_t fromVersion;
+    uint8_t fromRevision;
+    uint8_t toVersion;
+    uint8_t toRevision;
+};
+
+/** Platform configured for a host. */
+struct hidpp_host_platform {
+    uint8_t host;
+    uint8_t status;
+    uint8_t platform;
+    uint8_t source;
+    uint8_t autoPlatform;
+    uint8_t autoDescriptor;
+};
+
+/** Returns the platform capabilities.
+    Errors (as NULL): device has neither of the platform features.
+*/
+HIDPP_API struct hidpp_platform_info *hidpp_platform_info(hidpp_device_t *dev);
+
+/** Reads the platform descriptor at `index`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_platform_descriptor(
+    hidpp_device_t *dev, uint8_t index, struct hidpp_platform_descriptor *out
+);
+
+/** Reads the platform of `host`. Dual platform devices only accept
+    HIDPP_HOST_CURRENT.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_platform_get(
+    hidpp_device_t *dev, uint8_t host, struct hidpp_host_platform *out
+);
+
+/** Sets the platform of `host`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_platform_set(
+    hidpp_device_t *dev, uint8_t host, uint8_t platform
+);
 
 /** States of the crown button. */
 enum hidpp_crown_button {

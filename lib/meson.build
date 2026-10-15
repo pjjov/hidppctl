@@ -26,6 +26,7 @@ lib_src = files(
   'features/mode_status.c',
   'features/nickname.c',
   'features/perkey.c',
+  'features/platform.c',
   'features/root.c',
   'features/scrolling.c',
   'cache.c',
