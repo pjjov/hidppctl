@@ -1676,6 +1676,362 @@ HIDPP_API int hidpp_brightness_state(hidpp_device_t *dev);
 HIDPP_API int hidpp_brightness_set_state(hidpp_device_t *dev, int on);
 
 
+/** Effect identifiers of features 0x8070 and 0x8071. */
+enum hidpp_led_effect_id {
+    HIDPP_LED_DISABLED = 0,
+    HIDPP_LED_FIXED = 1,
+    HIDPP_LED_PULSING = 2,
+    HIDPP_LED_CYCLING = 3,
+    HIDPP_LED_WAVE = 4,
+    HIDPP_LED_STARLIGHT = 5,
+    HIDPP_LED_LIGHT_ON_PRESS = 6,
+    HIDPP_LED_AUDIO = 7,
+    HIDPP_LED_BOOT_UP = 8,
+    HIDPP_LED_DEMO = 9,
+    HIDPP_LED_BREATHING = 10,
+    HIDPP_LED_RIPPLE = 11,
+    HIDPP_LED_ONBOARD = 12, /* 0x8071 */
+};
+
+/** Where an effect is stored. Values can be combined. */
+enum hidpp_led_persistence {
+    HIDPP_LED_VOLATILE = 0x01,
+    HIDPP_LED_NON_VOLATILE = 0x02,
+};
+
+/** Non-volatile capabilities (see struct hidpp_led_nv). */
+enum hidpp_led_nv_capability {
+    HIDPP_LED_NV_BOOT_UP = 0x0001,
+    HIDPP_LED_NV_DEMO = 0x0002,
+    HIDPP_LED_NV_USER_DEMO = 0x0004,
+    HIDPP_LED_NV_EVENTS_DISPLAY = 0x0008, /* 0x8071 */
+    HIDPP_LED_NV_ACTIVE_DIMMING = 0x0010, /* 0x8071 */
+    HIDPP_LED_NV_RAMP_DOWN = 0x0020,      /* 0x8071 */
+    HIDPP_LED_NV_SHUTDOWN = 0x0040,       /* 0x8071 */
+};
+
+/** Software control flags (see hidpp_led_sw_control_set()). */
+enum hidpp_led_sw_control {
+    HIDPP_LED_SW_EFFECTS = 0x01,     /* software owns all LEDs */
+    HIDPP_LED_SW_POWER_MODES = 0x02, /* 0x8071 */
+};
+
+/** Notification flags (see hidpp_led_sw_control_set()). */
+enum hidpp_led_notification {
+    HIDPP_LED_NOTIFY_SYNC = 0x01,
+    HIDPP_LED_NOTIFY_ACTIVITY = 0x02, /* 0x8071 */
+    HIDPP_LED_NOTIFY_TIMEOUT = 0x04,  /* 0x8071 */
+};
+
+/** RGB power modes (feature 0x8071). */
+enum hidpp_led_power_mode {
+    HIDPP_LED_POWER_FULL = 1,
+    HIDPP_LED_POWER_SAVE = 2,
+    HIDPP_LED_POWER_OFF = 3,
+};
+
+/** Use as a zone index to address every zone at once (0x8071). */
+#define HIDPP_LED_ALL_ZONES 0xFF
+
+/** Color LED capabilities (features 0x8070 and 0x8071, called zones and
+    RGB clusters respectively).
+*/
+struct hidpp_led_info {
+    uint8_t version;
+    uint8_t zoneCount;
+    uint16_t nvCapabilities; /* enum hidpp_led_nv_capability */
+    uint16_t extCapabilities;
+    uint8_t multiZoneEffects; /* 0x8071: effects of HIDPP_LED_ALL_ZONES */
+
+    hidpp_bool_t isRgbEffects;  /* 0x8071 */
+    hidpp_bool_t hasZoneEffect; /* hidpp_led_get_effect() */
+    hidpp_bool_t hasSettings;   /* hidpp_led_settings() */
+    hidpp_bool_t canSetBin;
+    hidpp_bool_t isMonochrome;
+    hidpp_bool_t hasSync;
+    hidpp_bool_t hasShutdown;      /* 0x8071 */
+    hidpp_bool_t hasChangedEvents; /* 0x8071 */
+    hidpp_bool_t initialized;
+};
+
+/** A zone (an RGB cluster) of LEDs. */
+struct hidpp_led_zone {
+    uint8_t index;
+    uint16_t location;
+    uint8_t effectCount;
+    uint8_t displayPersistency;
+    uint8_t effectPersistency; /* 0x8071 */
+    hidpp_bool_t hasPatterns;  /* 0x8071 */
+    const char *locationName;
+    hidpp_bool_t initialized;
+};
+
+/** An effect that can be played on a zone. */
+struct hidpp_led_effect_info {
+    uint8_t zone;
+    uint8_t index;
+    uint16_t id; /* enum hidpp_led_effect_id */
+    uint16_t capabilities;
+    uint16_t period; /* ms, 0 if not available */
+    const char *name;
+    hidpp_bool_t initialized;
+};
+
+/** Raw effect configuration. The meaning of `params` depends on the effect
+    id; hidpp_led_pack() and hidpp_led_unpack() convert them.
+*/
+struct hidpp_led_effect {
+    uint8_t zone;
+    uint8_t index;       /* index of the effect within the zone */
+    uint8_t persistence; /* enum hidpp_led_persistence */
+    uint8_t powerMode;   /* 0x8071: 0 = full power, 1 = power save */
+    uint8_t params[10];
+};
+
+/** Typed effect parameters. Fields an effect does not use are ignored. A
+    16-bit period is only available if it is at least 256 ms, otherwise the
+    8-bit, device dependent `speed` is used.
+*/
+struct hidpp_led_params {
+    uint8_t red, green, blue;    /* color, start, sky or pressed color */
+    uint8_t red2, green2, blue2; /* stop, star or released color */
+    uint16_t period;             /* ms */
+    uint8_t speed;
+    uint8_t intensity; /* 1-100, 0 = default */
+    uint8_t waveform;  /* breathing: 1 = sine, 2 = square, 3 = triangle... */
+    uint8_t direction; /* wave: 1 = horizontal, 2 = vertical... */
+    uint8_t ramp;      /* fixed: 1 = ramp up/down, 2 = no effect */
+    uint16_t delay;    /* light on press: ms */
+};
+
+/** Non-volatile configuration. */
+struct hidpp_led_nv {
+    uint16_t capability; /* enum hidpp_led_nv_capability */
+    uint8_t state;       /* 1 = enabled, 2 = disabled (0 = unchanged) */
+    uint8_t params[6];   /* 0x8070 only has 2 */
+};
+
+/** LED bin information (calibration data stored during manufacturing).
+    For 0x8070 `data` holds the red, green, blue and white values as big
+    endian words; for 0x8071 the layout depends on `binIndex`.
+*/
+struct hidpp_led_bin {
+    uint8_t zone;
+    uint8_t binIndex;
+    uint8_t data[8];
+};
+
+/** Effect settings of a zone (0x8070). */
+struct hidpp_led_settings {
+    uint8_t red, green, blue;
+    uint16_t period;
+    uint8_t brightness; /* 0-100 */
+    uint8_t param;
+};
+
+/** RGB power mode configuration (0x8071). Timeouts are in seconds,
+    0xFFFF means never.
+*/
+struct hidpp_led_power_config {
+    uint16_t flags;
+    uint16_t toPowerSave; /* since the last user activity */
+    uint16_t toOff;       /* since entering power save mode */
+};
+
+/** Returns the color LED capabilities.
+    Errors (as NULL): device has neither of the color LED features.
+*/
+HIDPP_API struct hidpp_led_info *hidpp_led_info(hidpp_device_t *dev);
+
+/** Returns the information about a zone (not HIDPP_LED_ALL_ZONES).
+    Errors (as NULL): no color LED feature or no such zone.
+*/
+HIDPP_API struct hidpp_led_zone *hidpp_led_zone(
+    hidpp_device_t *dev, uint8_t zone
+);
+
+/** Returns the information about the effect `index` of `zone`, which can be
+    HIDPP_LED_ALL_ZONES for the multi-zone effects of 0x8071.
+    Errors (as NULL): no color LED feature, no such zone or effect.
+*/
+HIDPP_API struct hidpp_led_effect_info *hidpp_led_effect_info(
+    hidpp_device_t *dev, uint8_t zone, uint8_t index
+);
+
+/** Returns the index of the effect with `id` in `zone`, or an error.
+    Errors: EINVAL, ENOENT, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_find_effect(
+    hidpp_device_t *dev, uint8_t zone, uint16_t id
+);
+
+/** Returns the name of an effect id. */
+HIDPP_API const char *hidpp_led_effect_name(uint16_t id);
+
+/** Converts typed parameters of the effect `id` to raw ones.
+    Errors: EINVAL (unknown effect or unrepresentable period).
+*/
+HIDPP_API int hidpp_led_pack(
+    uint16_t id, const struct hidpp_led_params *params, uint8_t out[10]
+);
+
+/** Converts raw parameters of the effect `id` to typed ones.
+    Errors: EINVAL (unknown effect).
+*/
+HIDPP_API int hidpp_led_unpack(
+    uint16_t id, const uint8_t params[10], struct hidpp_led_params *out
+);
+
+/** Plays an effect. The zone, effect and persistence are checked against
+    the capabilities of the device.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_set_effect(
+    hidpp_device_t *dev, const struct hidpp_led_effect *effect
+);
+
+/** Reads the effect of a zone, either the playing one or the stored one
+    (`persistence` is HIDPP_LED_NON_VOLATILE).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_get_effect(
+    hidpp_device_t *dev,
+    uint8_t zone,
+    uint8_t persistence,
+    struct hidpp_led_effect *out
+);
+
+/** Reads the non-volatile configuration of `capability`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_nv_get(
+    hidpp_device_t *dev, uint16_t capability, struct hidpp_led_nv *out
+);
+
+/** Changes the non-volatile configuration.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_nv_set(
+    hidpp_device_t *dev, const struct hidpp_led_nv *config
+);
+
+/** Reads who controls the LEDs (enum hidpp_led_sw_control) and which
+    notifications are sent (enum hidpp_led_notification).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_sw_control_get(
+    hidpp_device_t *dev, uint8_t *control, uint8_t *notifications
+);
+
+/** Changes who controls the LEDs and which notifications are sent.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_sw_control_set(
+    hidpp_device_t *dev, uint8_t control, uint8_t notifications
+);
+
+/** Reads LED bin information. `backup` reads the copy stored by feature
+    0x1806 (0x8071 only).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_bin_get(
+    hidpp_device_t *dev,
+    uint8_t zone,
+    uint8_t binIndex,
+    int backup,
+    struct hidpp_led_bin *out
+);
+
+/** Stores LED bin information.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_bin_set(
+    hidpp_device_t *dev, const struct hidpp_led_bin *bin
+);
+
+/** Corrects the drift (in ms) of an effect against the software reference.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_sync(hidpp_device_t *dev, uint8_t zone, int16_t drift);
+
+/** Reads the effect settings of a zone (0x8070).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_settings(
+    hidpp_device_t *dev,
+    uint8_t zone,
+    uint8_t persistence,
+    struct hidpp_led_settings *out
+);
+
+/** Returns a zone to its default effect (0x8070).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_clear_settings(hidpp_device_t *dev, uint8_t zone);
+
+/** Changes the color cycling direction, 0 = clockwise (0x8070).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_cycling_direction(hidpp_device_t *dev, int direction);
+
+/** Reads the color a zone currently shows into `rgb` (0x8070).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_current_color(
+    hidpp_device_t *dev, uint8_t zone, uint8_t rgb[3]
+);
+
+/** Lights a combination of the LEDs of a multi-LED zone (0x8071). The
+    meaning of `pattern` is device specific, 0xFF lights all of them.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_set_pattern(
+    hidpp_device_t *dev, uint8_t zone, uint8_t pattern
+);
+
+/** Reads the RGB power mode configuration (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_power_config_get(
+    hidpp_device_t *dev, struct hidpp_led_power_config *out
+);
+
+/** Changes the RGB power mode configuration (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_power_config_set(
+    hidpp_device_t *dev, const struct hidpp_led_power_config *config
+);
+
+/** Returns the RGB power mode (enum hidpp_led_power_mode) or an error
+    (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_power_mode(hidpp_device_t *dev);
+
+/** Changes the RGB power mode, which software must control (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_set_power_mode(hidpp_device_t *dev, uint8_t mode);
+
+/** Plays the shutdown effect and puts the device into deep sleep (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_shutdown(hidpp_device_t *dev);
+
+/** Reads `type` (0-6) information about the slot of an onboard stored
+    effect into `out` (0x8071).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_led_onboard_info(
+    hidpp_device_t *dev,
+    uint8_t effect,
+    uint8_t slot,
+    uint8_t type,
+    uint8_t out[13]
+);
+
+
 #define HIDPP_EQ_MAX_BANDS 15
 
 /** Equalizer of an audio device (feature 0x8310). */
