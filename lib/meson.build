@@ -36,6 +36,7 @@ lib_src = files(
   'features/solar.c',
   'features/thumbwheel.c',
   'features/touch_mouse.c',
+  'features/touchpad.c',
   'cache.c',
   'device.c',
   'input.c',

@@ -29,6 +29,7 @@ extern struct hidpp_feat_vt hidpp_feat_action_vt;
 extern struct hidpp_feat_vt hidpp_feat_scrolling_vt;
 extern struct hidpp_feat_vt hidpp_feat_smartshift_vt;
 extern struct hidpp_feat_vt hidpp_feat_hires_wheel_vt;
+extern struct hidpp_feat_vt hidpp_feat_thumbwheel_vt;
 extern struct hidpp_feat_vt hidpp_feat_pointer_vt;
 extern struct hidpp_feat_vt hidpp_feat_dpi_vt;
 extern struct hidpp_feat_vt hidpp_feat_fn_inversion_vt;
@@ -36,14 +37,17 @@ extern struct hidpp_feat_vt hidpp_feat_solar_vt;
 extern struct hidpp_feat_vt hidpp_feat_disable_keys_vt;
 extern struct hidpp_feat_vt hidpp_feat_platform_vt;
 extern struct hidpp_feat_vt hidpp_feat_crown_vt;
+extern struct hidpp_feat_vt hidpp_feat_touchpad_vt;
+extern struct hidpp_feat_vt hidpp_feat_touch_mouse_vt;
 extern struct hidpp_feat_vt hidpp_feat_brightness_vt;
 extern struct hidpp_feat_vt hidpp_feat_report_rate_vt;
 extern struct hidpp_feat_vt hidpp_feat_led_vt;
 extern struct hidpp_feat_vt hidpp_feat_perkey_vt;
 extern struct hidpp_feat_vt hidpp_feat_mode_status_vt;
+extern struct hidpp_feat_vt hidpp_feat_sidetone_vt;
 extern struct hidpp_feat_vt hidpp_feat_equalizer_vt;
 
-PF_ENUM_GUARD(hidpp_feat, 4)
+PF_ENUM_GUARD(hidpp_feat, 5)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
@@ -66,6 +70,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_DISABLE_KEYS] = &hidpp_feat_disable_keys_vt,
     [HIDPP_FEAT_PLATFORM] = &hidpp_feat_platform_vt,
     [HIDPP_FEAT_CROWN] = &hidpp_feat_crown_vt,
+    [HIDPP_FEAT_TOUCHPAD] = &hidpp_feat_touchpad_vt,
     [HIDPP_FEAT_TOUCH_MOUSE] = &hidpp_feat_touch_mouse_vt,
     [HIDPP_FEAT_BRIGHTNESS] = &hidpp_feat_brightness_vt,
     [HIDPP_FEAT_REPORT_RATE] = &hidpp_feat_report_rate_vt,

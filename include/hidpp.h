@@ -1848,6 +1848,55 @@ HIDPP_API int hidpp_crown_set(
     hidpp_device_t *dev, const struct hidpp_crown_mode *mode
 );
 
+/** Raw report bits of a touchpad (feature 0x6100). */
+enum hidpp_touchpad_report {
+    HIDPP_TOUCHPAD_RAW = 0x01,
+    HIDPP_TOUCHPAD_FORCE = 0x02, /* deprecated */
+    HIDPP_TOUCHPAD_ENHANCED = 0x04,
+    HIDPP_TOUCHPAD_WIDTH_HEIGHT = 0x08,
+    HIDPP_TOUCHPAD_NATIVE_GESTURES = 0x10,
+    HIDPP_TOUCHPAD_MAJOR_MINOR = 0x20,
+    HIDPP_TOUCHPAD_WIDTH_HEIGHT8 = 0x40,
+};
+
+/** Corner of a touch surface its coordinates start from. */
+enum hidpp_touch_origin {
+    HIDPP_ORIGIN_LOWER_LEFT = 1,
+    HIDPP_ORIGIN_LOWER_RIGHT = 2,
+    HIDPP_ORIGIN_UPPER_LEFT = 3,
+    HIDPP_ORIGIN_UPPER_RIGHT = 4,
+};
+
+/** Touchpad characteristics (feature 0x6100). */
+struct hidpp_touchpad_info {
+    uint16_t width;  /* extent of the X coordinates */
+    uint16_t height; /* extent of the Y coordinates */
+    uint8_t zRange;  /* 0 = none, 0x0F = 16 bits */
+    uint8_t areaRange;
+    uint8_t timestampUnit; /* 0.1 ms per time stamp increment */
+    uint8_t maxFingers;
+    uint8_t origin; /* enum hidpp_touch_origin */
+    uint8_t mappingVersion;
+    uint16_t dpi;
+
+    hidpp_bool_t hasPen;
+    hidpp_bool_t initialized;
+};
+
+/** Returns the touchpad characteristics.
+    Errors (as NULL): device has no raw touchpad feature.
+*/
+HIDPP_API struct hidpp_touchpad_info *hidpp_touchpad_info(hidpp_device_t *dev);
+
+/** Returns the raw report bits (enum hidpp_touchpad_report) or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_touchpad_get_mode(hidpp_device_t *dev);
+
+/** Sets the raw report bits. Raw reporting turns HID reports off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_touchpad_set_mode(hidpp_device_t *dev, uint8_t mode);
 
 /** Raw modes of a touch mouse (feature 0x6110). */
 enum hidpp_touch_mouse_mode {

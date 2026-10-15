@@ -64,6 +64,7 @@ enum {
     HIDPP_FEAT_DISABLE_KEYS,
     HIDPP_FEAT_PLATFORM,
     HIDPP_FEAT_CROWN,
+    HIDPP_FEAT_TOUCHPAD,
     HIDPP_FEAT_TOUCH_MOUSE,
     HIDPP_FEAT_BRIGHTNESS,
     HIDPP_FEAT_REPORT_RATE,
@@ -73,7 +74,7 @@ enum {
     HIDPP_FEAT_SIDETONE,
     HIDPP_FEAT_EQUALIZER,
     hidpp_feat_max,
-    hidpp_feat_sentinel = 4,
+    hidpp_feat_sentinel = 5,
 };
 
 struct hidpp_feat_vt {
