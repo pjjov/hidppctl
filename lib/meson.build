@@ -35,6 +35,7 @@ lib_src = files(
   'features/smartshift.c',
   'features/solar.c',
   'features/thumbwheel.c',
+  'features/touch_mouse.c',
   'cache.c',
   'device.c',
   'input.c',

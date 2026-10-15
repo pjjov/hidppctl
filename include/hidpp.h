@@ -1849,6 +1849,43 @@ HIDPP_API int hidpp_crown_set(
 );
 
 
+/** Raw modes of a touch mouse (feature 0x6110). */
+enum hidpp_touch_mouse_mode {
+    HIDPP_TOUCH_MOUSE_NATIVE = 0,
+    HIDPP_TOUCH_MOUSE_RAW = 1,            /* filtered */
+    HIDPP_TOUCH_MOUSE_RAW_GESTURES = 2,   /* unfiltered + native gestures */
+    HIDPP_TOUCH_MOUSE_RAW_ALWAYS = 3,     /* unfiltered, even when lifted */
+    HIDPP_TOUCH_MOUSE_RAW_GESTURES_Z = 4, /* as 2, with Z instead of W */
+};
+
+/** Touch mouse characteristics (feature 0x6110). */
+struct hidpp_touch_mouse_info {
+    uint16_t xMax; /* dots */
+    uint16_t yMax;
+    uint16_t dpi;
+    uint8_t origin; /* enum hidpp_touch_origin */
+    uint8_t maxFingers;
+    uint8_t contactMax; /* range of the width and height of a touch */
+    hidpp_bool_t initialized;
+};
+
+/** Returns the touch mouse characteristics.
+    Errors (as NULL): device has no touch mouse feature.
+*/
+HIDPP_API struct hidpp_touch_mouse_info *hidpp_touch_mouse_info(
+    hidpp_device_t *dev
+);
+
+/** Returns the raw mode (enum hidpp_touch_mouse_mode) or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_touch_mouse_get_mode(hidpp_device_t *dev);
+
+/** Sets the raw mode.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_touch_mouse_set_mode(hidpp_device_t *dev, uint8_t mode);
+
 /** Brightness control capabilities (feature 0x8040). They are meant for
     cosmetic and RGB lighting, white illumination uses feature 0x1990.
 */

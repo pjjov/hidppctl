@@ -66,6 +66,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_DISABLE_KEYS] = &hidpp_feat_disable_keys_vt,
     [HIDPP_FEAT_PLATFORM] = &hidpp_feat_platform_vt,
     [HIDPP_FEAT_CROWN] = &hidpp_feat_crown_vt,
+    [HIDPP_FEAT_TOUCH_MOUSE] = &hidpp_feat_touch_mouse_vt,
     [HIDPP_FEAT_BRIGHTNESS] = &hidpp_feat_brightness_vt,
     [HIDPP_FEAT_REPORT_RATE] = &hidpp_feat_report_rate_vt,
     [HIDPP_FEAT_LED] = &hidpp_feat_led_vt,
