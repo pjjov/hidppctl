@@ -1256,6 +1256,61 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
 
+/** High resolution wheel capabilities (feature 0x2121). */
+struct hidpp_wheel_info {
+    uint8_t version;
+    uint8_t multiplier; /* counts per ratchet in high resolution mode */
+    uint8_t flags;
+    uint8_t ratchetsPerRotation; /* version >= 1 */
+    uint8_t diameter;            /* millimeters, version >= 1 */
+
+    hidpp_bool_t hasInvert;
+    hidpp_bool_t hasSwitch; /* the ratchet state can be read */
+    hidpp_bool_t hasAnalytics;
+    hidpp_bool_t initialized;
+};
+
+/** High resolution wheel reporting mode. */
+struct hidpp_wheel_mode {
+    hidpp_bool_t diverted; /* report through HID++ (HIDPP_EVENT_WHEEL) */
+    hidpp_bool_t highRes;
+    hidpp_bool_t inverted; /* only affects native HID reports */
+    hidpp_bool_t analytics;
+};
+
+/** Returns the wheel capabilities.
+    Errors (as NULL): device has no high resolution wheel.
+*/
+HIDPP_API struct hidpp_wheel_info *hidpp_wheel_info(hidpp_device_t *dev);
+
+/** Reads the wheel reporting mode.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_wheel_get_mode(
+    hidpp_device_t *dev, struct hidpp_wheel_mode *out
+);
+
+/** Changes the wheel reporting mode. Options the device lacks are rejected.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_wheel_set_mode(
+    hidpp_device_t *dev, const struct hidpp_wheel_mode *mode
+);
+
+/** Returns 1 if the ratchet is engaged, 0 for free wheel, or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_wheel_ratchet(hidpp_device_t *dev);
+
+/** Copies up to `size` bytes of project specific analytics data into `out`
+    and returns their count. The device clears the data once it is read.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_wheel_analytics(
+    hidpp_device_t *dev, uint8_t *out, size_t size
+);
+
+
 /** Lift off distances. */
 enum hidpp_dpi_lod {
     HIDPP_DPI_LOD_NONE = 0, /* not supported */

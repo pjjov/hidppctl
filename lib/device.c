@@ -27,6 +27,7 @@ extern struct hidpp_feat_vt hidpp_feat_backlight_vt;
 extern struct hidpp_feat_vt hidpp_feat_illumination_vt;
 extern struct hidpp_feat_vt hidpp_feat_action_vt;
 extern struct hidpp_feat_vt hidpp_feat_scrolling_vt;
+extern struct hidpp_feat_vt hidpp_feat_hires_wheel_vt;
 extern struct hidpp_feat_vt hidpp_feat_dpi_vt;
 extern struct hidpp_feat_vt hidpp_feat_fn_inversion_vt;
 extern struct hidpp_feat_vt hidpp_feat_disable_keys_vt;
@@ -47,6 +48,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ILLUMINATION] = &hidpp_feat_illumination_vt,
     [HIDPP_FEAT_ACTION] = &hidpp_feat_action_vt,
     [HIDPP_FEAT_SCROLLING] = &hidpp_feat_scrolling_vt,
+    [HIDPP_FEAT_HIRES_WHEEL] = &hidpp_feat_hires_wheel_vt,
     [HIDPP_FEAT_DPI] = &hidpp_feat_dpi_vt,
     [HIDPP_FEAT_FN_INVERSION] = &hidpp_feat_fn_inversion_vt,
     [HIDPP_FEAT_DISABLE_KEYS] = &hidpp_feat_disable_keys_vt,
