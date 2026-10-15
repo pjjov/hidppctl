@@ -31,6 +31,7 @@ lib_src = files(
   'features/report_rate.c',
   'features/root.c',
   'features/scrolling.c',
+  'features/sidetone.c',
   'cache.c',
   'device.c',
   'input.c',

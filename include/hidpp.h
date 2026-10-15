@@ -2286,6 +2286,29 @@ HIDPP_API int hidpp_mode_status_set(
     hidpp_device_t *dev, uint16_t status, uint16_t mask
 );
 
+/** Returns the sidetone level (0-100) of an audio device (feature 0x8300)
+    or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_sidetone_get(hidpp_device_t *dev);
+
+/** Sets the sidetone level (0-100).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_sidetone_set(hidpp_device_t *dev, uint8_t level);
+
+/** Returns the muted sidetone channels (bit N is channel N + 1) or an
+    error. Needs version 1 of the feature.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_sidetone_mute(hidpp_device_t *dev);
+
+/** Mutes (bit set in `mute`) or unmutes the channels selected by `mask`.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_sidetone_set_mute(
+    hidpp_device_t *dev, uint8_t mask, uint8_t mute
+);
 
 #define HIDPP_EQ_MAX_BANDS 15
 

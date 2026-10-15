@@ -66,6 +66,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_LED] = &hidpp_feat_led_vt,
     [HIDPP_FEAT_PERKEY] = &hidpp_feat_perkey_vt,
     [HIDPP_FEAT_MODE_STATUS] = &hidpp_feat_mode_status_vt,
+    [HIDPP_FEAT_SIDETONE] = &hidpp_feat_sidetone_vt,
     [HIDPP_FEAT_EQUALIZER] = &hidpp_feat_equalizer_vt,
 };
 

@@ -66,6 +66,7 @@ enum {
     HIDPP_FEAT_LED,
     HIDPP_FEAT_PERKEY,
     HIDPP_FEAT_MODE_STATUS,
+    HIDPP_FEAT_SIDETONE,
     HIDPP_FEAT_EQUALIZER,
     hidpp_feat_max,
     hidpp_feat_sentinel = 4,
