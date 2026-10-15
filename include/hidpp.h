@@ -1256,6 +1256,74 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
 
+/** States of the crown button. */
+enum hidpp_crown_button {
+    HIDPP_CROWN_BUTTON_INACTIVE = 0,
+    HIDPP_CROWN_BUTTON_PRESS = 1,
+    HIDPP_CROWN_BUTTON_SHORT = 2, /* short press active */
+    HIDPP_CROWN_BUTTON_LONG = 3,  /* long press threshold reached */
+    HIDPP_CROWN_BUTTON_LONG_ACTIVE = 4,
+    HIDPP_CROWN_BUTTON_RELEASE = 5,
+};
+
+/** Crown capabilities (feature 0x4600). */
+struct hidpp_crown_info {
+    uint16_t capabilities;
+    uint16_t slots;    /* per revolution */
+    uint16_t ratchets; /* per revolution */
+
+    hidpp_bool_t hasButton;
+    hidpp_bool_t hasLongPress;
+    hidpp_bool_t isMechanized; /* ratchet with no manual control */
+    hidpp_bool_t canSetRotationTimeout;
+    hidpp_bool_t canSetShortLongTimeout;
+    hidpp_bool_t canSetDoubleTapSpeed;
+    hidpp_bool_t hasProximity;
+    hidpp_bool_t hasTouch;
+    hidpp_bool_t hasTap;
+    hidpp_bool_t hasDoubleTap;
+    hidpp_bool_t initialized;
+};
+
+/** Where the crown reports to. */
+enum hidpp_crown_reporting {
+    HIDPP_CROWN_UNCHANGED = 0, /* only valid when setting */
+    HIDPP_CROWN_HID = 1,
+    HIDPP_CROWN_DIVERTED = 2, /* HID++ (HIDPP_EVENT_CROWN) */
+};
+
+/** Crown configuration. When setting, zero fields are left unchanged.
+    Times are in milliseconds, in steps of 10.
+*/
+struct hidpp_crown_mode {
+    uint8_t reporting;        /* enum hidpp_crown_reporting */
+    uint8_t ratchet;          /* enum hidpp_smartshift_mode */
+    uint16_t rotationTimeout; /* at most 640 ms */
+    uint16_t shortLongTimeout;
+    uint16_t doubleTapSpeed;
+};
+
+/** Returns the crown capabilities.
+    Errors (as NULL): device has no crown.
+*/
+HIDPP_API struct hidpp_crown_info *hidpp_crown_info(hidpp_device_t *dev);
+
+/** Reads the crown configuration.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_crown_get(
+    hidpp_device_t *dev, struct hidpp_crown_mode *out
+);
+
+/** Changes the crown configuration. Timeouts the device does not let
+    software configure must be 0.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_crown_set(
+    hidpp_device_t *dev, const struct hidpp_crown_mode *mode
+);
+
+
 /** Brightness control capabilities (feature 0x8040). They are meant for
     cosmetic and RGB lighting, white illumination uses feature 0x1990.
 */
