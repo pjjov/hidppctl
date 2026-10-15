@@ -32,6 +32,7 @@ lib_src = files(
   'features/root.c',
   'features/scrolling.c',
   'features/sidetone.c',
+  'features/smartshift.c',
   'cache.c',
   'device.c',
   'input.c',

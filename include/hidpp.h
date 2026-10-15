@@ -1255,6 +1255,56 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 */
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
+/** Wheel modes of a SmartShift wheel. */
+enum hidpp_smartshift_mode {
+    HIDPP_WHEEL_MODE_UNCHANGED = 0, /* only valid when setting */
+    HIDPP_WHEEL_MODE_FREESPIN = 1,
+    HIDPP_WHEEL_MODE_RATCHET = 2,
+};
+
+/** Value of `autoDisengage` that keeps the ratchet always engaged. */
+#define HIDPP_SMARTSHIFT_ALWAYS_ENGAGED 0xFF
+
+/** SmartShift capabilities (features 0x2110 and 0x2111). */
+struct hidpp_smartshift_info {
+    hidpp_bool_t isEnhanced; /* 0x2111 */
+    hidpp_bool_t hasTunableTorque;
+    uint8_t defaultAutoDisengage; /* 0x2111 only */
+    uint8_t defaultTorque;        /* percent of `maxForce` */
+    uint16_t maxForce;            /* gram-force */
+    hidpp_bool_t initialized;
+};
+
+/** SmartShift configuration. When setting, zero fields are left unchanged.
+    `autoDisengage` disengages the ratchet above N/4 turns per second.
+*/
+struct hidpp_smartshift {
+    uint8_t wheelMode;            /* enum hidpp_smartshift_mode */
+    uint8_t autoDisengage;        /* 1-254 or HIDPP_SMARTSHIFT_ALWAYS_ENGAGED */
+    uint8_t autoDisengageDefault; /* 0x2110 only, applied after a reset */
+    uint8_t torque;               /* 0x2111 only, 1-100 % of `maxForce` */
+};
+
+/** Returns the SmartShift capabilities.
+    Errors (as NULL): device has no SmartShift wheel.
+*/
+HIDPP_API struct hidpp_smartshift_info *hidpp_smartshift_info(
+    hidpp_device_t *dev
+);
+
+/** Reads the SmartShift configuration.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_smartshift_get(
+    hidpp_device_t *dev, struct hidpp_smartshift *out
+);
+
+/** Changes the SmartShift configuration (persistent).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_smartshift_set(
+    hidpp_device_t *dev, const struct hidpp_smartshift *config
+);
 
 /** High resolution wheel capabilities (feature 0x2121). */
 struct hidpp_wheel_info {
