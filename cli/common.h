@@ -29,19 +29,66 @@ typedef struct pf_argparser pf_argparser_t;
 
 enum hidppctl_command {
     HIDPPCTL_NONE = 0,
+    HIDPPCTL_ACTION,
+    HIDPPCTL_BACKLIGHT,
+    HIDPPCTL_BATTERY,
+    HIDPPCTL_BRIGHTNESS,
     HIDPPCTL_CACHE,
+    HIDPPCTL_CROWN,
+    HIDPPCTL_DISABLE_KEYS,
     HIDPPCTL_DIVERT,
+    HIDPPCTL_DPI,
+    HIDPPCTL_EQ,
+    HIDPPCTL_FN_INVERSION,
+    HIDPPCTL_HOST,
+    HIDPPCTL_ILLUMINATION,
     HIDPPCTL_KEYMAP,
+    HIDPPCTL_LED,
     HIDPPCTL_LIST_EVENTS,
     HIDPPCTL_LIST_FEATURES,
     HIDPPCTL_LIST_KEYCODES,
+    HIDPPCTL_MODE,
+    HIDPPCTL_NICKNAME,
+    HIDPPCTL_PERKEY,
+    HIDPPCTL_PLATFORM,
+    HIDPPCTL_POINTER,
     HIDPPCTL_POLL,
     HIDPPCTL_REMAP,
+    HIDPPCTL_REPORT_RATE,
+    HIDPPCTL_SCROLL,
+    HIDPPCTL_SIDETONE,
+    HIDPPCTL_SMARTSHIFT,
+    HIDPPCTL_SOLAR,
     HIDPPCTL_STATUS,
+    HIDPPCTL_THUMBWHEEL,
+    HIDPPCTL_TOUCH_MOUSE,
+    HIDPPCTL_TOUCHPAD,
+    HIDPPCTL_WHEEL,
 
     hidppctl_command_max,
-    hidppctl_command_sentinel = 2,
 };
+
+/** What a subcommand needs to be able to run. */
+enum hidppctl_need {
+    HIDPPCTL_NEEDS_NOTHING,
+    HIDPPCTL_NEEDS_ANYTHING, /* receiver and device are both optional */
+    HIDPPCTL_NEEDS_RECEIVER, /* device is optional */
+    HIDPPCTL_NEEDS_DEVICE,   /* receiver and device */
+};
+
+struct hidppctl_t;
+
+struct hidppctl_command_spec {
+    const char *name;
+    int (*run)(struct hidppctl_t *ctl);
+    int needs;            /* enum hidppctl_need */
+    int minArgs, maxArgs; /* maxArgs < 0 means unlimited */
+    const char *args;     /* usage of the arguments */
+    const char *summary;  /* one line */
+    const char *help;     /* long description */
+};
+
+extern const struct hidppctl_command_spec hidppctl_commands[];
 
 struct diversion {
     uint16_t ctrl;

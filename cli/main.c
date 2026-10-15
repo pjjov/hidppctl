@@ -43,16 +43,6 @@ static pf_sock_t open_domain_socket(const char *path) {
 
 #endif
 
-extern int cmd_cache(hidppctl_t *ctl);
-extern int cmd_divert(hidppctl_t *ctl);
-extern int cmd_keymap(hidppctl_t *ctl);
-extern int cmd_list_events(hidppctl_t *ctl);
-extern int cmd_list_features(hidppctl_t *ctl);
-extern int cmd_list_keycodes(hidppctl_t *ctl);
-extern int cmd_poll(hidppctl_t *ctl);
-extern int cmd_remap(hidppctl_t *ctl);
-extern int cmd_status(hidppctl_t *ctl);
-
 extern void hidppctl_load_cache(hidppctl_t *ctl);
 extern void hidppctl_save_cache(hidppctl_t *ctl);
 

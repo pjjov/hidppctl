@@ -17,74 +17,19 @@
 
 #define COMMON_OPTIONS                                                      \
     (PF_COMMON_HELP | PF_COMMON_VERBOSE | PF_COMMON_QUIET | PF_COMMON_COLOR \
-     | PF_COMMON_INTERACTIVE)
-
-PF_ENUM_GUARD(hidppctl_command, 2);
-static const pf_option_enum_t hidppctl_command_enum[] = {
-    { "none", HIDPPCTL_NONE },
-    { "cache", HIDPPCTL_CACHE },
-    { "divert", HIDPPCTL_DIVERT },
-    { "keymap", HIDPPCTL_KEYMAP },
-    { "list-events", HIDPPCTL_LIST_EVENTS },
-    { "list-features", HIDPPCTL_LIST_FEATURES },
-    { "list-keycodes", HIDPPCTL_LIST_KEYCODES },
-    { "poll", HIDPPCTL_POLL },
-    { "remap", HIDPPCTL_REMAP },
-    { "status", HIDPPCTL_STATUS },
-    { 0 },
-};
+     | PF_COMMON_INTERACTIVE | PF_COMMON_VERSION)
 
 static const char *help_epilog = "For more information, run `man hidppctl.1'.";
-
-PF_ENUM_GUARD(hidppctl_command, 2);
-static const char *help_usage_list[] = {
-    [HIDPPCTL_NONE] = "hidppctl [OPTIONS]... <command>",
-    [HIDPPCTL_CACHE] = "hidppctl [OPTIONS]... cache <collect|clear>",
-    [HIDPPCTL_DIVERT] = "hidppctl [OPTIONS]... divert [buttons...]",
-    [HIDPPCTL_KEYMAP] = "hidppctl [OPTIONS]... show-keymap",
-    [HIDPPCTL_LIST_EVENTS] = "hidppctl [OPTIONS]... list-events",
-    [HIDPPCTL_LIST_FEATURES] = "hidppctl [OPTIONS]... show-features",
-    [HIDPPCTL_LIST_KEYCODES] = "hidppctl [OPTIONS]... list-keycodes",
-    [HIDPPCTL_POLL] = "hidppctl [OPTIONS]... poll",
-    [HIDPPCTL_REMAP] = "hidppctl [OPTIONS]... remap <control-id> <remap-id>",
-    [HIDPPCTL_STATUS] = "hidppctl [OPTIONS]... status",
-};
-
-PF_ENUM_GUARD(hidppctl_command, 2);
-static const char *help_desc_list[] = {
-    /* clang-format off */
-    [HIDPPCTL_NONE] = "Configure HID++ compatible devices.",
-    [HIDPPCTL_CACHE] = (
-"Manipulate the selected device's cache file."
-"\nThe program caches device information automatically both at runtime and"
-"\nbetween sessions. This can significantly improve the speed of most operations"
-"\nand in most cases shouldn't produce problems. However, the user can turn off"
-"\nfile-based hashing by using the '--no-cache' option. Runtime caching cannot"
-"\nbe disabled."
-"\n"
-"\nPassing 'collect' as a parameter will cache all information from all features"
-"\nthat the given device supports."
-    ),
-    [HIDPPCTL_DIVERT] = (
-"Diverts specified device's buttons and prints associated events."
-"\nYou can also rebind device's buttons using an argument like this:"
-"\n    '<button code>=<key code>[+<modifier>]'"
-"\nFor example: '0x0104=home+lshift'."
-    ),
-    [HIDPPCTL_KEYMAP] = "Shows keymap information for specified device.",
-    [HIDPPCTL_LIST_EVENTS] = "Lists supported events and their identifiers.",
-    [HIDPPCTL_LIST_FEATURES] = "Lists supported features for specified device.",
-    [HIDPPCTL_LIST_KEYCODES] = "Lists supported OS key identifiers.",
-    [HIDPPCTL_POLL] = "Polls specified device for incoming events.",
-    [HIDPPCTL_REMAP] = "Remaps device's specified control to a different one.",
-    [HIDPPCTL_STATUS] = "Shows status information about HID++ devices.",
-    /* clang-format on */
-};
 
 /* The common options (help, verbose, ...) are listed by the library. */
 static const pf_cli_definition_t help_options[] = {
     { "-r, --receiver", "Specifies which HID++ receiver to use." },
     { "-d, --device", "Specifies which HID++ device index to use." },
+    { "--host",
+      "Selects a host (a number or 'current') for host-specific commands." },
+    { "--sensor", "Selects a motion sensor for the 'dpi' command." },
+    { "--zone",
+      "Selects a LED zone for the 'led' command (255 is all zones)." },
     { "--interface", "Specifies which HID interface to use." },
     { "--socket", "Specifies a path or a TCP port to use as a receiver." },
     { "--timeout", "Sets the timeout for IO operations in milliseconds." },
@@ -96,36 +41,45 @@ static const pf_cli_definition_t help_options[] = {
     { 0 },
 };
 
-PF_ENUM_GUARD(hidppctl_command, 2);
-static const pf_cli_definition_t help_subcommands[] = {
-    { "none", "" },
-    { "cache", "manipulates cache files for specified device." },
-    { "divert", "diverts events of reprogrammable buttons." },
-    { "keymap", "shows keymap information for specified device" },
-    { "list-events", "lists event identifiers" },
-    { "list-features", "lists supported features for specified device" },
-    { "list-keycodes", "lists program's supported keycodes" },
-    { "poll", "polls specified devices for incoming events." },
-    { "remap", "remaps device's control to a different one." },
-    { "status", "shows status information about HID++ devices." },
-    { 0 },
-};
+static const struct hidppctl_command_spec *find_command(const char *name) {
+    for (int i = 1; i < hidppctl_command_max; i++)
+        if (0 == strcmp(name, hidppctl_commands[i].name))
+            return &hidppctl_commands[i];
+
+    return NULL;
+}
 
 int hidppctl_print_help(hidppctl_t *ctl) {
     pf_cli_t *cli = ctl->cli;
-    int cmd = ctl->options->command;
+    const struct hidppctl_command_spec
+        *spec = &hidppctl_commands[ctl->options->command];
 
-    pf_cli_printf(
-        cli, "usage: %s\n\n%s\n", help_usage_list[cmd], help_desc_list[cmd]
-    );
+    if (ctl->options->command == HIDPPCTL_NONE)
+        pf_cli_printf(cli, "usage: hidppctl [OPTIONS]... <command>\n\n");
+    else
+        pf_cli_printf(
+            cli,
+            "usage: hidppctl [OPTIONS]... %s %s\n\n",
+            spec->name,
+            spec->args
+        );
+
+    pf_cli_printf(cli, "%s\n", spec->help);
 
     pf_cli_help_section(cli, "Options:");
     pf_argparser_help_options(ctl->argparser, COMMON_OPTIONS);
     pf_cli_help_definitions(cli, help_options);
 
-    if (cmd == HIDPPCTL_NONE) {
+    if (ctl->options->command == HIDPPCTL_NONE) {
+        pf_cli_definition_t defs[hidppctl_command_max] = { 0 };
+
+        for (int i = 1; i < hidppctl_command_max; i++) {
+            defs[i - 1].name = hidppctl_commands[i].name;
+            defs[i - 1].description = hidppctl_commands[i].summary;
+        }
+
         pf_cli_help_section(cli, "Subcommands:");
-        pf_cli_help_definitions(cli, help_subcommands);
+        pf_cli_help_definitions(cli, defs);
     }
 
     pf_cli_printf(cli, "\n%s\n", help_epilog);
@@ -242,7 +196,7 @@ static int parse_socket_path(pf_argparser_t *p, struct hidppctl_opt *opt) {
     char *end;
 
     errno = 0;
-    int v = strtol(opt->socket.path, &end, 0);
+    long v = strtol(str, &end, 0);
 
     if (end == str || *end) {
         opt->socket.isPort = HIDPP_FALSE;
@@ -268,13 +222,15 @@ static int parse_socket_path(pf_argparser_t *p, struct hidppctl_opt *opt) {
 
 static int parse_args_start(struct pf_argparser *p, struct hidppctl_opt *o) {
     memset(o, 0, sizeof(*o));
+    o->host = HIDPP_HOST_CURRENT;
     return HIDPP_OK;
 }
 
 static void parse_args_option(
     struct pf_argparser *p, struct hidppctl_opt *opt
 ) {
-    int dev, swid;
+    int dev, swid, sensor, zone;
+    char *host;
 
     /* --help, --verbose, --quiet, --color, --interactive */
     if (pf_option_common(p, COMMON_OPTIONS))
@@ -299,6 +255,28 @@ static void parse_args_option(
         }
     }
 
+    if (pf_option_string(p, "host", 0, &host)) {
+        char *end;
+        long v = strtol(host, &end, 0);
+
+        if (0 == strcmp(host, "current")) {
+            opt->host = HIDPP_HOST_CURRENT;
+        } else if (end == host || *end || v < 0 || v > 0xFE) {
+            pf_argparser_error(
+                p,
+                "Host must be 'current' or between 0 and 254; got '%s'.",
+                host
+            );
+        } else {
+            opt->host = (uint8_t)v;
+        }
+    }
+
+    if (pf_option_int_range(p, "sensor", 0, 0, 255, &sensor))
+        opt->sensor = (uint8_t)sensor;
+    if (pf_option_int_range(p, "zone", 0, 0, 255, &zone))
+        opt->zone = (uint8_t)zone;
+
     if (pf_option_int_range(p, "swid", 0, 0, 15, &swid)) {
         opt->swid = swid;
         opt->setSwid = HIDPP_TRUE;
@@ -316,11 +294,21 @@ static void parse_args_option(
 }
 
 static void parse_args_param(struct pf_argparser *p, struct hidppctl_opt *opt) {
-    int cmd;
+    const struct hidppctl_command_spec *spec;
 
     /* The first parameter is the subcommand; it is not kept in paramv. */
-    if (pf_param_subcommand(p, "subcommand", hidppctl_command_enum, &cmd))
-        opt->command = cmd;
+    if (p->subcommandSeen || !pf_is_param(p, -1))
+        return;
+
+    p->subcommandSeen = PF_TRUE;
+
+    if (!(spec = find_command(p->item.param))) {
+        pf_argparser_error(p, "Unknown subcommand '%s'.", p->item.param);
+        return;
+    }
+
+    opt->command = (int)(spec - hidppctl_commands);
+    pf_argparser_consume(p);
 }
 
 static int parse_args_cb(struct pf_argparser *p, void *user) {
@@ -342,29 +330,11 @@ static int parse_args_cb(struct pf_argparser *p, void *user) {
 static pf_bool check_param_count(
     struct pf_argparser *p, const struct hidppctl_opt *opt
 ) {
+    const struct hidppctl_command_spec *spec = &hidppctl_commands[opt->command];
     char what[64];
 
-    switch (opt->command) {
-        /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 2);
-    case HIDPPCTL_CACHE:
-        return pf_argparser_expect_params(p, 0, 1, "subcommand 'cache'");
-    case HIDPPCTL_DIVERT:
-        return pf_argparser_expect_params(
-            p, 1, HIDPP_MAX_DIVERT, "subcommand 'divert'"
-        );
-    case HIDPPCTL_REMAP:
-        return pf_argparser_expect_params(p, 2, 2, "subcommand 'remap'");
-    case HIDPPCTL_POLL:
-        return PF_TRUE; /* any number of event names */
-    default:
-        snprintf(
-            what, sizeof(what), "subcommand '%s'",
-            help_subcommands[opt->command].name
-        );
-        return pf_argparser_expect_params(p, 0, 0, what);
-        /* clang-format on */
-    }
+    snprintf(what, sizeof(what), "subcommand '%s'", spec->name);
+    return pf_argparser_expect_params(p, spec->minArgs, spec->maxArgs, what);
 }
 
 static pf_bool check_device_selection(
@@ -407,32 +377,24 @@ static pf_bool check_device_selection(
 static int check_command_requirements(
     hidppctl_t *ctl, struct pf_argparser *p, struct hidppctl_opt *opt
 ) {
-    hidpp_bool_t cmdRequiresDevice;
-    hidpp_bool_t cmdRequiresReceiver;
+    int needs = hidppctl_commands[opt->command].needs;
+    hidpp_bool_t cmdRequiresDevice = HIDPP_FALSE;
+    hidpp_bool_t cmdRequiresReceiver = HIDPP_FALSE;
 
-    switch (opt->command) {
-        PF_ENUM_GUARD(hidppctl_command, 2);
-    case HIDPPCTL_POLL:
-        cmdRequiresReceiver = HIDPP_TRUE;
-        cmdRequiresDevice = opt->setDevice;
-        break;
-    case HIDPPCTL_STATUS:
-        cmdRequiresReceiver = opt->setReceiver || opt->setSocket;
-        cmdRequiresDevice = opt->setDevice;
-        break;
-    case HIDPPCTL_CACHE:
-    case HIDPPCTL_DIVERT:
-    case HIDPPCTL_KEYMAP:
-    case HIDPPCTL_LIST_FEATURES:
-    case HIDPPCTL_REMAP:
+    switch (needs) {
+    case HIDPPCTL_NEEDS_DEVICE:
         cmdRequiresDevice = HIDPP_TRUE;
         cmdRequiresReceiver = HIDPP_TRUE;
         break;
-    case HIDPPCTL_LIST_EVENTS:
-    case HIDPPCTL_LIST_KEYCODES:
+    case HIDPPCTL_NEEDS_RECEIVER:
+        cmdRequiresReceiver = HIDPP_TRUE;
+        cmdRequiresDevice = opt->setDevice;
+        break;
+    case HIDPPCTL_NEEDS_ANYTHING:
+        cmdRequiresReceiver = opt->setReceiver || opt->setSocket;
+        cmdRequiresDevice = opt->setDevice;
+        break;
     default:
-        cmdRequiresDevice = HIDPP_FALSE;
-        cmdRequiresReceiver = HIDPP_FALSE;
         break;
     }
 
@@ -497,12 +459,6 @@ static void parse_args_poll(struct pf_argparser *p, struct hidppctl_opt *opt) {
 static void parse_args_divert(
     struct pf_argparser *p, struct hidppctl_opt *opt
 ) {
-    if (opt->setDevice) {
-        pf_argparser_error(
-            p, "A device must be specified for 'divert' subcommand!"
-        );
-    }
-
     opt->divert.needsInput = HIDPP_FALSE;
 
     /* The count was checked by check_param_count(), so this fits. */
@@ -546,6 +502,12 @@ static int parse_args_end(
     opt->paramc = p->paramc;
     opt->paramv = p->paramv;
 
+    if (p->version) {
+        pf_argparser_print_version(p, "hidppctl", HIDPP_VERSION_STRING);
+        opt->version = HIDPP_TRUE;
+        return HIDPP_OK;
+    }
+
     if (opt->command == HIDPPCTL_NONE)
         opt->help = HIDPP_TRUE;
 
@@ -563,7 +525,6 @@ static int parse_args_end(
 
     switch (opt->command) {
         /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 2);
     case HIDPPCTL_CACHE:  parse_args_cache(p, opt);  break;
     case HIDPPCTL_DIVERT: parse_args_divert(p, opt); break;
     case HIDPPCTL_REMAP:  parse_args_remap(p, opt);  break;
