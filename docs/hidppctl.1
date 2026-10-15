@@ -11,11 +11,12 @@ hidppctl \- Configure HID++ compatible peripherals.
 .SH SYNOPSIS
 .nf
     \fBhidppctl\fR [\fIOPTIONS\fR]... \fI<subcommand>\fR
-    \fBhidppctl\fR [\fIOPTIONS\fR]... \fIinfo\fR \fI[parameter]\fR
+    \fBhidppctl\fR [\fIOPTIONS\fR]... \fIstatus\fR
     \fBhidppctl\fR [\fIOPTIONS\fR]... \fIdivert [buttons]...\fR
+    \fBhidppctl\fR [\fIOPTIONS\fR]... \fIkeymap\fR
 .fi
 .SH DESCRIPTION
-\hidppctl\fR enables configuration of peripherals that use the proprietary HID++ protocol.
+\fBhidppctl\fR enables configuration of peripherals that use the proprietary HID++ protocol.
 
 .SS Remappable controls
 .PP
@@ -30,8 +31,8 @@ To remap a control to another one, you can use the \fIremap\fR subcommand:
 .PP
 To view a list of all available controls, run:
 
-.ni
-    hidppctl (your device) info keymap
+.nf
+    hidppctl (your device) keymap
 .fi
 
 .PP
@@ -69,8 +70,78 @@ a \fB=\fR character and a keybind specification after it.
 Keybind can also use a platform-specific numeric code.
 To view a list of all available keycode names, run:
 
-.ni
-    hidppctl info keycodes
+.nf
+    hidppctl list-keycodes
+.fi
+
+.SS Aliases
+.PP
+The options which pick a device (\fB\-\-receiver\fR, \fB\-\-socket\fR, \fB\-\-device\fR,
+\fB\-\-interface\fR, \fB\-\-swid\fR and \fB\-\-timeout\fR) can be saved under a name:
+
+.nf
+    hidppctl \-r 046d:c548 \-d 1 alias set mouse
+    hidppctl \-\-alias mouse dpi
+    hidppctl alias [list|show <name>|remove <name>]
+.fi
+.PP
+Options given next to \fB\-\-alias\fR override the saved ones. Aliases live in a
+text file, one per line (\fIname key=value...\fR), in the user's configuration
+directory; \fB\-\-alias\-file\fR selects another file.
+
+.PP
+\fBhidppctl search\fR looks for connected devices and, in an interactive terminal,
+offers to save each one as an alias and to collect its cache.
+
+.SS Other subcommands
+.PP
+Every subcommand shows the current state of its feature when it is run without
+arguments. Arguments change the state. Run \fBhidppctl <subcommand> \-\-help\fR
+for the exact syntax.
+
+.TP
+.B status
+Lists receivers, the devices of a receiver (\fB-r\fR) or details of a device (\fB-d\fR).
+.TP
+.B battery, mode, nickname, host, platform
+Battery state, performance mode, device nickname, multi-host management
+(\fIlist\fR, \fIswitch\fR, \fIname\fR, \fImove\fR, \fIdelete\fR, \fIos\fR,
+\fIcookie\fR) and the platform of a host.
+.TP
+.B action, disable-keys, fn-inversion
+Persistent control actions (\fIset\fR, \fIreset\fR), disabled keys and the Fn key inversion.
+Use \fB\-\-host\fR to select the host.
+.TP
+.B dpi, pointer, report-rate, scroll, smartshift, wheel, thumbwheel, crown
+Pointing device configuration. Use \fB\-\-sensor\fR to select a motion sensor.
+.TP
+.B touchpad, touch-mouse
+Raw touch reporting modes.
+.TP
+.B backlight, illumination, brightness, led, perkey
+Lighting. Use \fB\-\-zone\fR to select a LED zone.
+.TP
+.B sidetone, eq, solar
+Audio device and solar keyboard features.
+.TP
+.B poll
+Prints incoming events, optionally only the given event types
+(see \fBlist-events\fR).
+
+.PP
+Settings with several values use \fIname=value\fR pairs:
+
+.nf
+    hidppctl (your device) smartshift set mode=ratchet torque=60
+    hidppctl (your device) led set fixed color=FF8800
+    hidppctl (your device) host switch 1
+.fi
+
+.PP
+Use \fB\-\-\fR before arguments which start with a minus sign:
+
+.nf
+    hidppctl (your device) eq set stored \-\- \-3 0 2 4 6
 .fi
 
 .SH OPTIONS
@@ -85,6 +156,29 @@ or a vendor and product id pair separated by \fB:\fR character (\fI046d:c548\fR 
 .BR \-d ", " \-\-device =\fIINDEX\fR
 Specifies which device to pick from the receiver.
 .TP
+.BR \-\-host =\fIINDEX|current\fR
+Selects the host for host-specific subcommands (\fIaction\fR, \fIfn-inversion\fR, \fIplatform\fR).
+.TP
+.BR \-\-sensor =\fIINDEX\fR
+Selects the motion sensor used by \fIdpi\fR.
+.TP
+.BR \-\-zone =\fIINDEX\fR
+Selects the LED zone used by \fIled\fR (255 selects all zones).
+.TP
+.BR \-\-socket =\fIPATH|PORT|HOST:PORT\fR
+Uses a receiver which is reachable through a Unix domain socket or a TCP
+connection. A port alone connects to \fIlocalhost\fR.
+.TP
+.BR \-\-log\-path =\fIFILE\fR
+Logs the packets exchanged with the device to \fIFILE\fR. Logging is off by
+default; \fB\-\-verbose\fR logs to a file in the runtime directory instead.
+.TP
+.BR \-\-no\-log
+Never log, even if \fB\-\-verbose\fR is given.
+.TP
+.BR \-V ", " \-\-version
+Shows the program version and exits.
+.TP
 .BR \-\-timeout =\fIMS\fR
 Sets the timeout of IO operations in milliseconds.
 .SH EXIT STATUS
@@ -92,8 +186,8 @@ Sets the timeout of IO operations in milliseconds.
 .B 0
 Successful program execution.
 .TP
-.B non-zero
-An error occurred during processing.
+.B 1
+An error occurred during processing or the arguments were invalid.
 .SH SEE ALSO
 .BR hidppctl (1),
 .BR libhidpp (3).
