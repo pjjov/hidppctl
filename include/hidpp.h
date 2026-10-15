@@ -1256,6 +1256,177 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
 
+/** Lift off distances. */
+enum hidpp_dpi_lod {
+    HIDPP_DPI_LOD_NONE = 0, /* not supported */
+    HIDPP_DPI_LOD_LOW = 1,
+    HIDPP_DPI_LOD_MEDIUM = 2,
+    HIDPP_DPI_LOD_HIGH = 3,
+};
+
+/** Directions of a motion sensor. */
+enum hidpp_dpi_direction {
+    HIDPP_DPI_X = 0,
+    HIDPP_DPI_Y = 1,
+};
+
+/** Highest resolution which can be set on a sensor. */
+#define HIDPP_DPI_MAX 57343
+
+/** Capabilities of a motion sensor (feature 0x2202). */
+struct hidpp_dpi_sensor {
+    uint8_t index;
+    uint8_t levelCount; /* number of DPI levels of the current profile */
+    uint8_t flags;
+
+    hidpp_bool_t hasY; /* the Y resolution can differ from the X one */
+    hidpp_bool_t hasLod;
+    hidpp_bool_t hasCalibration;
+    hidpp_bool_t hasProfile;
+    hidpp_bool_t initialized;
+};
+
+/** Settable resolutions: `min` to `max` in steps of `step`. A single value
+    has `min` == `max` and `step` 0.
+*/
+struct hidpp_dpi_range {
+    uint16_t min;
+    uint16_t max;
+    uint16_t step;
+};
+
+/** Resolution of a sensor. */
+struct hidpp_dpi {
+    uint16_t x;
+    uint16_t y; /* 0 if the sensor has no separate Y resolution */
+    uint16_t defaultX;
+    uint16_t defaultY;
+    uint8_t lod; /* enum hidpp_dpi_lod */
+};
+
+/** Information needed to calibrate a sensor. */
+struct hidpp_dpi_calibration_info {
+    uint8_t mouseWidth;   /* millimeters */
+    uint16_t mouseLength; /* millimeters */
+    uint16_t dpiX;        /* resolution used during calibration */
+    uint16_t dpiY;
+};
+
+/** Parameters of a calibration run. Timeouts are in seconds (max 60). */
+struct hidpp_dpi_calibration {
+    uint8_t direction;      /* enum hidpp_dpi_direction */
+    uint16_t expectedCount; /* expected counts for the calibration move */
+    uint8_t type;           /* 0 = hardware, 1 = software */
+    uint8_t startTimeout;
+    uint8_t hwProcessTimeout;
+    uint8_t swProcessTimeout;
+};
+
+/** Returns the number of motion sensors, or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_sensor_count(hidpp_device_t *dev);
+
+/** Returns the capabilities of a sensor.
+    Errors (as NULL): no adjustable DPI feature or no such sensor.
+*/
+HIDPP_API struct hidpp_dpi_sensor *hidpp_dpi_sensor(
+    hidpp_device_t *dev, uint8_t sensor
+);
+
+/** Copies up to `max` resolution ranges of the sensor in `direction` into
+    `out`, from the lowest to the highest, and returns their count.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_ranges(
+    hidpp_device_t *dev,
+    uint8_t sensor,
+    uint8_t direction,
+    struct hidpp_dpi_range *out,
+    size_t max
+);
+
+/** Copies up to `max` resolutions of the current profile into `out` and
+    returns their count.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_levels(
+    hidpp_device_t *dev,
+    uint8_t sensor,
+    uint8_t direction,
+    uint16_t *out,
+    size_t max
+);
+
+/** Copies up to `max` lift off distances of the current profile into `out`
+    and returns their count.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_lods(
+    hidpp_device_t *dev, uint8_t sensor, uint8_t *out, size_t max
+);
+
+/** Reads the current and the default resolution of the sensor.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_get(
+    hidpp_device_t *dev, uint8_t sensor, struct hidpp_dpi *out
+);
+
+/** Sets the resolution of the sensor. `y` must be 0 for sensors without a
+    separate Y resolution and `lod` must be 0 for sensors without lift off
+    distance control.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_set(
+    hidpp_device_t *dev, uint8_t sensor, uint16_t x, uint16_t y, uint8_t lod
+);
+
+/** How long the DPI status is shown. */
+enum hidpp_dpi_led_hold {
+    HIDPP_DPI_LED_TIMER = 0,
+    HIDPP_DPI_LED_EVENT = 1,
+    HIDPP_DPI_LED_ON = 2,
+    HIDPP_DPI_LED_OFF = 3,
+};
+
+/** Shows DPI level `level` (1 .. levelCount) on the device LEDs. `button`
+    is the HID button number (from 1) that changes the level.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_show(
+    hidpp_device_t *dev,
+    uint8_t sensor,
+    uint8_t level,
+    uint8_t hold,
+    uint8_t button
+);
+
+/** Reads the information needed to calibrate the sensor.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_calibration_info(
+    hidpp_device_t *dev, uint8_t sensor, struct hidpp_dpi_calibration_info *out
+);
+
+/** Starts a calibration run. Its result is reported by an
+    HIDPP_EVENT_DPI_CALIBRATION event.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_start_calibration(
+    hidpp_device_t *dev,
+    uint8_t sensor,
+    const struct hidpp_dpi_calibration *calibration
+);
+
+/** Stores a calibration correction (-1023 to 1023).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_dpi_set_calibration(
+    hidpp_device_t *dev, uint8_t sensor, uint8_t direction, int16_t correction
+);
+
+
 /** Keys which can be disabled with feature 0x4521. */
 enum hidpp_disable_key {
     HIDPP_DISABLE_CAPS_LOCK = 0x01,
