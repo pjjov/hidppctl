@@ -33,6 +33,7 @@ lib_src = files(
   'features/scrolling.c',
   'features/sidetone.c',
   'features/smartshift.c',
+  'features/solar.c',
   'cache.c',
   'device.c',
   'input.c',

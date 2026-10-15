@@ -1578,6 +1578,27 @@ HIDPP_API int hidpp_fn_inversion_set(
     hidpp_device_t *dev, uint8_t host, int enabled
 );
 
+/** LEDs of a solar keyboard. */
+enum hidpp_solar_led {
+    HIDPP_SOLAR_LED_OFF = 0,
+    HIDPP_SOLAR_LED_RED = 1,
+    HIDPP_SOLAR_LED_ORANGE = 2,
+    HIDPP_SOLAR_LED_GREEN = 3,
+};
+
+/** Asks a solar keyboard (feature 0x4301) for up to `count` light measure
+    events, at most one every `period` seconds. A zero `count` or `period`
+    cancels the events.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_solar_measure(
+    hidpp_device_t *dev, uint8_t count, uint8_t period
+);
+
+/** Lights an LED of a solar keyboard for a moment.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_solar_led(hidpp_device_t *dev, uint8_t led);
 
 /** Keys which can be disabled with feature 0x4521. */
 enum hidpp_disable_key {
