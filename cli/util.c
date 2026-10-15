@@ -69,6 +69,35 @@ int cli_is(const char *a, const char *b) {
 }
 
 const char *cli_str(const char *s) { return s ? s : "unknown"; }
+const char *cli_device_type(int type) {
+    static const char *names[] = {
+        "keyboard",
+        "remote control",
+        "numpad",
+        "mouse",
+        "touchpad",
+        "trackball",
+        "presenter",
+        "receiver",
+        "headset",
+        "webcam",
+        "steering wheel",
+        "joystick",
+        "gamepad",
+        "dock",
+        "speaker",
+        "microphone",
+        "illumination light",
+        "programmable controller",
+        "car simulator pedals",
+        "adapter",
+    };
+
+    if (type < 0 || (size_t)type >= PF_COUNTOF(names))
+        return "unknown";
+    return names[type];
+}
+
 const char *cli_yesno(int value) { return value ? "yes" : "no"; }
 const char *cli_onoff(int value) { return value ? "on" : "off"; }
 

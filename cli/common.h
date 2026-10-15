@@ -55,6 +55,7 @@ enum hidppctl_command {
     HIDPPCTL_POINTER,
     HIDPPCTL_POLL,
     HIDPPCTL_REMAP,
+    HIDPPCTL_SEARCH,
     HIDPPCTL_REPORT_RATE,
     HIDPPCTL_SCROLL,
     HIDPPCTL_SIDETONE,
@@ -202,6 +203,7 @@ extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];
 
 int hidppctl_print_help(hidppctl_t *ctl);
 int hidppctl_parse_args(hidppctl_t *ctl);
+int hidppctl_cache_collect(hidppctl_t *ctl, hidpp_device_t *dev);
 int hidppctl_cache_path(hidpp_device_t *dev, char *buf, size_t size);
 
 /* ------------------------------------------------------------------------ */
@@ -281,6 +283,7 @@ void cli_flag_names(
 );
 
 const char *cli_str(const char *s);
+const char *cli_device_type(int type);
 const char *cli_yesno(int value);
 const char *cli_onoff(int value);
 

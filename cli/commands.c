@@ -35,6 +35,7 @@ extern int cmd_platform(hidppctl_t *ctl);
 extern int cmd_pointer(hidppctl_t *ctl);
 extern int cmd_poll(hidppctl_t *ctl);
 extern int cmd_remap(hidppctl_t *ctl);
+extern int cmd_search(hidppctl_t *ctl);
 extern int cmd_report_rate(hidppctl_t *ctl);
 extern int cmd_scroll(hidppctl_t *ctl);
 extern int cmd_sidetone(hidppctl_t *ctl);
@@ -245,6 +246,14 @@ const struct hidppctl_command_spec hidppctl_commands[hidppctl_command_max] = {
         "remap", cmd_remap, DEVICE, 2, 2, "<control-id> <remap-id>",
         "remaps device's control to a different one.",
         "Remaps device's specified control to a different one.",
+    },
+    [HIDPPCTL_SEARCH] = {
+        "search", cmd_search, HIDPPCTL_NEEDS_NOTHING, 0, 0, "",
+        "searches for HID++ compatible devices.",
+        "Searches all receivers for connected devices. In an interactive terminal,"
+        "\nyou are offered to save each found device as an alias (see 'alias') and to"
+        "\ncollect its cache (see 'cache') right away. Use '--interactive=always' or"
+        "\n'--interactive=never' to force or skip the questions.",
     },
     [HIDPPCTL_REPORT_RATE] = {
         "report-rate", cmd_report_rate, DEVICE, 0, 2, "[set <rate>]",

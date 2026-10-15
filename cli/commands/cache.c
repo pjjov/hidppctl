@@ -14,15 +14,17 @@
 #include <stdio.h>
 #include <string.h>
 
-static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
+static int cache_collect(
+    hidppctl_t *ctl, hidpp_device_t *dev, const char *path
+) {
     char buffer[CACHE_BUFFER_SIZE];
     size_t size = CACHE_BUFFER_SIZE;
     int rc;
 
     memset(buffer, 0, size);
-    hidpp_cache_collect(ctl->device);
+    hidpp_cache_collect(dev);
 
-    if ((rc = hidpp_cache_save(ctl->device, buffer, &size))) {
+    if ((rc = hidpp_cache_save(dev, buffer, &size))) {
         pf_cli_errorf(ctl->cli, "Failed to retrieve the cache contents.\n");
         return rc;
     }
@@ -36,6 +38,18 @@ static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
 
     pf_cli_printf(ctl->cli, "Saved cache contents to '%s'.\n", path);
     return HIDPP_OK;
+}
+
+int hidppctl_cache_collect(hidppctl_t *ctl, hidpp_device_t *dev) {
+    char path[PATH_MAX];
+    int rc;
+
+    if ((rc = hidppctl_cache_path(dev, path, PATH_MAX))) {
+        pf_cli_errorf(ctl->cli, "Unable to compute the cache file path.\n");
+        return rc;
+    }
+
+    return cache_collect(ctl, dev, path);
 }
 
 static int cmd_cache_clear(hidppctl_t *ctl, const char *path) {
@@ -58,7 +72,7 @@ int cmd_cache(hidppctl_t *ctl) {
     }
 
     if (ctl->options->cache.collect)
-        return cmd_cache_collect(ctl, path);
+        return cache_collect(ctl, ctl->device, path);
     if (ctl->options->cache.clear)
         return cmd_cache_clear(ctl, path);
 

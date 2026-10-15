@@ -35,6 +35,7 @@ cli_src = files(
   'commands/remap.c',
   'commands/report_rate.c',
   'commands/scroll.c',
+  'commands/search.c',
   'commands/sidetone.c',
   'commands/smartshift.c',
   'commands/solar.c',

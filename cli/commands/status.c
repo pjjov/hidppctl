@@ -51,35 +51,6 @@ static int cmd_status_all(hidppctl_t *ctl) {
     return HIDPP_OK;
 }
 
-static const char *device_type_name(int type) {
-    static const char *names[] = {
-        "keyboard",
-        "remote control",
-        "numpad",
-        "mouse",
-        "touchpad",
-        "trackball",
-        "presenter",
-        "receiver",
-        "headset",
-        "webcam",
-        "steering wheel",
-        "joystick",
-        "gamepad",
-        "dock",
-        "speaker",
-        "microphone",
-        "illumination light",
-        "programmable controller",
-        "car simulator pedals",
-        "adapter",
-    };
-
-    if (type < 0 || (size_t)type >= PF_COUNTOF(names))
-        return "unknown";
-    return names[type];
-}
-
 static int cmd_status_rcv(hidppctl_t *ctl) {
     pf_cli_t *cli = ctl->cli;
 
@@ -114,7 +85,7 @@ static int cmd_status_rcv(hidppctl_t *ctl) {
 
         if (!hidpp_device_info(dev, &dinfo)) {
             pf_cli_printf(cli, "    Name: %s\n", cli_str(dinfo.name));
-            pf_cli_printf(cli, "    Type: %s\n", device_type_name(dinfo.type));
+            pf_cli_printf(cli, "    Type: %s\n", cli_device_type(dinfo.type));
             pf_cli_printf(
                 cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor
             );
@@ -151,7 +122,7 @@ static int cmd_status_dev(hidppctl_t *ctl) {
     pf_cli_printf(
         cli, "Device %d connected '%s'\n", info.index, cli_str(info.name)
     );
-    pf_cli_printf(cli, "  Type: %s\n", device_type_name(info.type));
+    pf_cli_printf(cli, "  Type: %s\n", cli_device_type(info.type));
     pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
 
     if (info.nickname)
