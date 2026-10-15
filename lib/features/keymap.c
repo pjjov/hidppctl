@@ -161,6 +161,7 @@ static int query_control_info(
 
     out->initialized = HIDPP_TRUE;
     out->name = hidpp_keymap_name(out->id);
+    out->taskName = hidpp_task_name(out->taskId);
     out->remapName = NULL;
 
     return HIDPP_OK;
@@ -245,9 +246,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         if (info->initialized) {
             unpack_flags(info);
             info->name = hidpp_keymap_name(info->id);
+            info->taskName = hidpp_task_name(info->taskId);
             info->remapName = NULL;
         } else {
             info->name = NULL;
+            info->taskName = NULL;
             info->remapName = NULL;
         }
     }

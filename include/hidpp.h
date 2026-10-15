@@ -435,6 +435,10 @@ extern const size_t hidpp_constant_features_count;
 extern const struct hidpp_constant hidpp_constant_controls[];
 extern const size_t hidpp_constant_controls_count;
 
+/** Keymap task name and code pairs. */
+extern const struct hidpp_constant hidpp_constant_tasks[];
+extern const size_t hidpp_constant_tasks_count;
+
 /** Returns the library's runtime version string (see HIDPP_VERSION_STRING).
     Useful for shared-library consumers to detect a mismatch against the
     header they compiled with.
@@ -785,6 +789,9 @@ HIDPP_API int hidpp_keymap_from_name(const char *name);
 /** Returns the name of the control with the passed ID. */
 HIDPP_API const char *hidpp_keymap_name(uint16_t feature);
 
+/** Returns the name of the task with the passed ID. */
+HIDPP_API const char *hidpp_task_name(uint16_t task);
+
 /** Copies up to `max` of the keymap's control IDs into `out`.
     Returns the number of entries written.
 */
@@ -821,6 +828,7 @@ struct hidpp_keymap_info {
 
     hidpp_bool_t initialized;
     const char *name;
+    const char *taskName;
     const char *remapName;
 };
 

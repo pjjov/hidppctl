@@ -57,6 +57,15 @@ const char *hidpp_keymap_name(uint16_t control) {
     );
 }
 
+const char *hidpp_task_name(uint16_t task) {
+    return find_constant_name(
+        hidpp_constant_tasks,
+        hidpp_constant_tasks_count,
+        task,
+        "Unknown HID++ task"
+    );
+}
+
 int hidpp_keymap_from_name(const char *name) {
     return find_constant_code(
         hidpp_constant_controls, hidpp_constant_controls_count, name

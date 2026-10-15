@@ -23,5 +23,8 @@ struct hidpp_constant {
 const struct hidpp_constant hidpp_constant_controls[1] = { 0 };
 const size_t hidpp_constant_controls_count = 0;
 
+const struct hidpp_constant hidpp_constant_tasks[1] = { 0 };
+const size_t hidpp_constant_tasks_count = 0;
+
 const struct hidpp_constant hidpp_constant_features[1] = { 0 };
 const size_t hidpp_constant_features_count = 0;

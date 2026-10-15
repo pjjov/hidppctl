@@ -12,6 +12,7 @@ if get_option('embed_tables')
   table_files = files(
     'controls.txt',
     'features.txt',
+    'tasks.txt',
   )
 
   tables_src = custom_target(
