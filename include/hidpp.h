@@ -1780,6 +1780,47 @@ HIDPP_API int hidpp_brightness_state(hidpp_device_t *dev);
 */
 HIDPP_API int hidpp_brightness_set_state(hidpp_device_t *dev, int on);
 
+/** Connection types a report rate applies to. */
+enum hidpp_connection {
+    HIDPP_CONNECTION_WIRED = 0,
+    HIDPP_CONNECTION_WIRELESS = 1, /* gaming wireless, e.g. Lightspeed */
+    HIDPP_CONNECTION_CURRENT = 0xFF,
+};
+
+/** Report rate capabilities (features 0x8060 and 0x8061). */
+struct hidpp_report_rate_info {
+    hidpp_bool_t isExtended; /* 0x8061: rates per connection type */
+    hidpp_bool_t initialized;
+};
+
+/** Returns the report rate capabilities.
+    Errors (as NULL): device has neither of the report rate features.
+*/
+HIDPP_API struct hidpp_report_rate_info *hidpp_report_rate_info(
+    hidpp_device_t *dev
+);
+
+/** Copies up to `max` report intervals (in microseconds, shortest first)
+    supported on `connection` into `out` and returns their count. For
+    HIDPP_CONNECTION_CURRENT these are the ones usable right now. Only
+    0x8061 devices accept other connection types.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_report_rate_list(
+    hidpp_device_t *dev, uint8_t connection, uint16_t *out, size_t max
+);
+
+/** Returns the report interval (in microseconds) of `connection` or an
+    error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_report_rate_get(hidpp_device_t *dev, uint8_t connection);
+
+/** Sets the report interval of the current connection in microseconds.
+    The device must be in host mode.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_report_rate_set(hidpp_device_t *dev, uint16_t interval);
 
 /** Effect identifiers of features 0x8070 and 0x8071. */
 enum hidpp_led_effect_id {

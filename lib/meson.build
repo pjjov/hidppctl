@@ -27,6 +27,8 @@ lib_src = files(
   'features/nickname.c',
   'features/perkey.c',
   'features/platform.c',
+  'features/pointer.c',
+  'features/report_rate.c',
   'features/root.c',
   'features/scrolling.c',
   'cache.c',
