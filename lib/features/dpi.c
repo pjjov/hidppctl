@@ -178,10 +178,7 @@ struct dpi_sensor {
 };
 
 struct hidpp_feat_dpi {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t sensorCount;
     struct dpi_sensor sensors[MAX_SENSORS];
 };
@@ -209,7 +206,7 @@ static int query_ranges(
     hidpp_packet_t req, res;
     int rc;
 
-    make_packet(&req, dev, dpi->featIndex, 2);
+    make_packet(&req, dev, dpi->base.featIndex, 2);
     req.params[0] = s->info.index;
     req.params[1] = direction;
 
@@ -254,7 +251,7 @@ static int query_sensor(
     hidpp_packet_t req, res;
     int rc;
 
-    make_packet(&req, dev, dpi->featIndex, 1);
+    make_packet(&req, dev, dpi->base.featIndex, 1);
     req.params[0] = index;
 
     /* a sensor the device refuses for good stays uninitialized */
@@ -278,9 +275,10 @@ static int query_sensor(
     return HIDPP_OK;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_dpi *dpi) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_dpi *dpi = feat;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 0);
+    make_packet(&req, dev, dpi->base.featIndex, 0);
 
     int rc;
 
@@ -298,45 +296,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_dpi *dpi) {
 }
 
 static int ensure_init(struct hidpp_feat_dpi **out, hidpp_device_t *dev) {
-    struct hidpp_feat_dpi *dpi;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    dpi = dev->features[HIDPP_FEAT_DPI];
-    *out = dpi;
-
-    if (dpi->initialized)
-        return dpi->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(dpi, 0, sizeof(*dpi));
-    int featIndex = feature_lookup(dev, DPI_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    dpi->featIndex = (uint8_t)featIndex;
-    dpi->unsupported = featIndex == 0;
-
-    if (!dpi->unsupported && (rc = query_info(dev, dpi)))
-        return rc;
-
-    dpi->initialized = HIDPP_TRUE;
-
-    return dpi->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_dpi *dpi = feat;
-    (void)dev;
-    dpi->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_dpi *dpi;
-    (void)feat;
-    ensure_init(&dpi, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_DPI, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -344,13 +307,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, dpi->initialized);
-    SAVE_BYTE(b, dpi->unsupported);
-
-    if (!dpi->initialized || dpi->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, dpi->featIndex);
     SAVE_BYTE(b, dpi->sensorCount);
 
     for (uint8_t i = 0; i < dpi->sensorCount; i++) {
@@ -375,13 +331,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    dpi->initialized = LOAD_BYTE(b);
-    dpi->unsupported = LOAD_BYTE(b);
-
-    if (!dpi->initialized || dpi->unsupported)
-        return b - start;
-
-    dpi->featIndex = LOAD_BYTE(b);
     dpi->sensorCount = LOAD_BYTE(b);
 
     if (dpi->sensorCount > MAX_SENSORS)
@@ -409,15 +358,46 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != DPI_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_DPI;
+        e->as.dpi.sensor = p[0];
+        e->as.dpi.x = HIDPP_WORD(p[1], p[2]);
+        e->as.dpi.y = HIDPP_WORD(p[3], p[4]);
+        e->as.dpi.lod = p[5];
+        return HIDPP_OK;
+    } else if (func == 1) {
+        e->type = HIDPP_EVENT_DPI_CALIBRATION;
+        e->as.dpiCalibration.sensor = p[0];
+        e->as.dpiCalibration.direction = p[1];
+        e->as.dpiCalibration.correction = (int16_t)HIDPP_WORD(p[2], p[3]);
+        e->as.dpiCalibration.delta = (int16_t)HIDPP_WORD(p[4], p[5]);
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_dpi_vt = {
-    .size = sizeof(struct hidpp_feat_dpi),
-    .alignment = _Alignof(struct hidpp_feat_dpi),
-    .maxCacheSize = sizeof(struct hidpp_feat_dpi),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_dpi),
+    .ids = { DPI_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 static int get_sensor(
@@ -585,7 +565,7 @@ int hidpp_dpi_levels(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 3);
+    make_packet(&req, dev, dpi->base.featIndex, 3);
     req.params[0] = sensor;
     req.params[1] = direction;
 
@@ -623,7 +603,7 @@ int hidpp_dpi_lods(
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 4);
+    make_packet(&req, dev, dpi->base.featIndex, 4);
     req.params[0] = sensor;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -653,7 +633,7 @@ int hidpp_dpi_get(hidpp_device_t *dev, uint8_t sensor, struct hidpp_dpi *out) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 5);
+    make_packet(&req, dev, dpi->base.featIndex, 5);
     req.params[0] = sensor;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -691,7 +671,7 @@ int hidpp_dpi_set(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 6);
+    make_packet(&req, dev, dpi->base.featIndex, 6);
     req.params[0] = sensor;
     req.params[1] = HIDPP_MSB(x);
     req.params[2] = HIDPP_LSB(x);
@@ -724,7 +704,7 @@ int hidpp_dpi_show(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 7);
+    make_packet(&req, dev, dpi->base.featIndex, 7);
     req.params[0] = sensor;
     req.params[1] = level;
     req.params[2] = hold;
@@ -751,7 +731,7 @@ int hidpp_dpi_calibration_info(
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 8);
+    make_packet(&req, dev, dpi->base.featIndex, 8);
     req.params[0] = sensor;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -789,7 +769,7 @@ int hidpp_dpi_start_calibration(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 9);
+    make_packet(&req, dev, dpi->base.featIndex, 9);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = sensor;
     req.params[1] = cal->direction;
@@ -824,7 +804,7 @@ int hidpp_dpi_set_calibration(
 
     uint16_t raw = (uint16_t)correction;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dpi->featIndex, 10);
+    make_packet(&req, dev, dpi->base.featIndex, 10);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = sensor;
     req.params[1] = direction;

@@ -72,6 +72,7 @@
 */
 
 #define HIRES_WHEEL_ID 0x2121
+#define RATCHET_ID 0x2130
 
 /* clang-format off */
 
@@ -87,10 +88,7 @@
 /* clang-format on */
 
 struct hidpp_feat_hires_wheel {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_wheel_info info;
 };
 
@@ -101,10 +99,12 @@ static void unpack_flags(struct hidpp_wheel_info *info) {
         && !!(info->flags & CAP_ANALYTICS_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_hires_wheel *hw) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_hires_wheel *hw = feat;
+    hw->info.version = hw->base.version;
     struct hidpp_wheel_info *info = &hw->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hw->featIndex, 0);
+    make_packet(&req, dev, hw->base.featIndex, 0);
 
     int rc;
 
@@ -127,49 +127,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_hires_wheel *hw) {
 static int ensure_init(
     struct hidpp_feat_hires_wheel **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_hires_wheel *hw;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    hw = dev->features[HIDPP_FEAT_HIRES_WHEEL];
-    *out = hw;
-
-    if (hw->initialized)
-        return hw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(hw, 0, sizeof(*hw));
-    int featIndex = feature_lookup(dev, HIRES_WHEEL_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    hw->featIndex = (uint8_t)featIndex;
-    hw->unsupported = featIndex == 0;
-
-    if (!hw->unsupported) {
-        hw->info.version = feature_version(dev, HIRES_WHEEL_ID);
-
-        if ((rc = query_info(dev, hw)))
-            return rc;
-    }
-
-    hw->initialized = HIDPP_TRUE;
-
-    return hw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_hires_wheel *hw = feat;
-    (void)dev;
-    hw->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_hires_wheel *hw;
-    (void)feat;
-    ensure_init(&hw, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_HIRES_WHEEL, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -177,15 +138,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, hw->initialized);
-    SAVE_BYTE(b, hw->unsupported);
-
-    if (!hw->initialized || hw->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, hw->featIndex);
     SAVE_BYTE(b, hw->info.initialized);
-    SAVE_BYTE(b, hw->info.version);
     SAVE_BYTE(b, hw->info.multiplier);
     SAVE_BYTE(b, hw->info.flags);
     SAVE_BYTE(b, hw->info.ratchetsPerRotation);
@@ -199,15 +152,8 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    hw->initialized = LOAD_BYTE(b);
-    hw->unsupported = LOAD_BYTE(b);
-
-    if (!hw->initialized || hw->unsupported)
-        return b - start;
-
-    hw->featIndex = LOAD_BYTE(b);
     hw->info.initialized = LOAD_BYTE(b);
-    hw->info.version = LOAD_BYTE(b);
+    hw->info.version = hw->base.version;
     hw->info.multiplier = LOAD_BYTE(b);
     hw->info.flags = LOAD_BYTE(b);
     hw->info.ratchetsPerRotation = LOAD_BYTE(b);
@@ -217,15 +163,52 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+/*  The ratchet notifications of the older ratchet wheel feature (0x2130)
+    are decoded here too, it has no object of its own. */
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id == RATCHET_ID && func == 0) {
+        e->type = HIDPP_EVENT_RATCHET;
+        e->as.ratchet.deltaV = (int8_t)p[0];
+        e->as.ratchet.deltaH = (int8_t)p[1];
+        return HIDPP_OK;
+    }
+
+    if (id != HIRES_WHEEL_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_WHEEL;
+        e->as.wheel.flags = p[0];
+        e->as.wheel.delta = (int16_t)HIDPP_WORD(p[1], p[2]);
+        e->as.wheel.highRes = !!(p[0] & 0x10);
+        e->as.wheel.periods = HIDPP_LSN(p[0]);
+        return HIDPP_OK;
+    } else if (func == 1) {
+        e->type = HIDPP_EVENT_RATCHET_SWITCH;
+        e->as.ratchetSwitch = p[0];
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_hires_wheel_vt = {
-    .size = sizeof(struct hidpp_feat_hires_wheel),
-    .alignment = _Alignof(struct hidpp_feat_hires_wheel),
-    .maxCacheSize = sizeof(struct hidpp_feat_hires_wheel),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_hires_wheel),
+    .ids = { HIRES_WHEEL_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_wheel_info *hidpp_wheel_info(hidpp_device_t *dev) {
@@ -248,7 +231,7 @@ int hidpp_wheel_get_mode(hidpp_device_t *dev, struct hidpp_wheel_mode *out) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hw->featIndex, 1);
+    make_packet(&req, dev, hw->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -278,7 +261,7 @@ int hidpp_wheel_set_mode(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hw->featIndex, 2);
+    make_packet(&req, dev, hw->base.featIndex, 2);
     req.params[0] |= mode->diverted ? MODE_TARGET_FLAG : 0;
     req.params[0] |= mode->highRes ? MODE_RESOLUTION_FLAG : 0;
     req.params[0] |= mode->inverted ? MODE_INVERT_FLAG : 0;
@@ -298,7 +281,7 @@ int hidpp_wheel_ratchet(hidpp_device_t *dev) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hw->featIndex, 3);
+    make_packet(&req, dev, hw->base.featIndex, 3);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -320,7 +303,7 @@ int hidpp_wheel_analytics(hidpp_device_t *dev, uint8_t *out, size_t size) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hw->featIndex, 4);
+    make_packet(&req, dev, hw->base.featIndex, 4);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;

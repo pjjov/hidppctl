@@ -55,97 +55,40 @@
 #define MAX_LEVEL 100
 
 struct hidpp_feat_sidetone {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
-    uint8_t version;
+    struct hidpp_feat_base base;
 };
 
 static int ensure_init(struct hidpp_feat_sidetone **out, hidpp_device_t *dev) {
-    struct hidpp_feat_sidetone *st;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    st = dev->features[HIDPP_FEAT_SIDETONE];
-    *out = st;
-
-    if (st->initialized)
-        return st->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(st, 0, sizeof(*st));
-    int featIndex = feature_lookup(dev, SIDETONE_ID);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    st->featIndex = (uint8_t)featIndex;
-    st->unsupported = featIndex == 0;
-
-    if (!st->unsupported)
-        st->version = feature_version(dev, SIDETONE_ID);
-
-    st->initialized = HIDPP_TRUE;
-
-    return st->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_SIDETONE, &feat);
+    *out = feat;
+    return rc;
 }
 
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_sidetone *st = feat;
-    (void)dev;
-    st->initialized = HIDPP_FALSE;
-}
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    (void)dev, (void)feat;
 
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_sidetone *st;
-    (void)feat;
-    ensure_init(&st, dev);
-}
+    if (id != SIDETONE_ID || func != 0)
+        return HIDPP_ENOENT;
 
-static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
-    struct hidpp_feat_sidetone *st = feat;
-    uint8_t *start = b;
-    (void)dev;
-
-    SAVE_BYTE(b, st->initialized);
-    SAVE_BYTE(b, st->unsupported);
-
-    if (!st->initialized || st->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, st->featIndex);
-    SAVE_BYTE(b, st->version);
-
-    return b - start;
-}
-
-static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
-    struct hidpp_feat_sidetone *st = feat;
-    uint8_t *start = b;
-    (void)dev;
-
-    st->initialized = LOAD_BYTE(b);
-    st->unsupported = LOAD_BYTE(b);
-
-    if (!st->initialized || st->unsupported)
-        return b - start;
-
-    st->featIndex = LOAD_BYTE(b);
-    st->version = LOAD_BYTE(b);
-
-    return b - start;
+    e->type = HIDPP_EVENT_SIDETONE;
+    e->as.sidetone.channel = pkt->params[0];
+    e->as.sidetone.level = pkt->params[1];
+    e->as.sidetone.mute = pkt->params[2];
+    return HIDPP_OK;
 }
 
 const struct hidpp_feat_vt hidpp_feat_sidetone_vt = {
-    .size = sizeof(struct hidpp_feat_sidetone),
-    .alignment = _Alignof(struct hidpp_feat_sidetone),
-    .maxCacheSize = sizeof(struct hidpp_feat_sidetone),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
-    .saveCache = save_cache,
-    .loadCache = load_cache,
-    .clearCache = clear_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_sidetone),
+    .ids = { SIDETONE_ID },
+    .parseEvent = parse_event,
 };
 
 static int ensure_mute(struct hidpp_feat_sidetone **st, hidpp_device_t *dev) {
@@ -154,7 +97,7 @@ static int ensure_mute(struct hidpp_feat_sidetone **st, hidpp_device_t *dev) {
     if ((rc = ensure_init(st, dev)))
         return rc;
 
-    return (*st)->version >= 1 ? HIDPP_OK : HIDPP_ENOSYS;
+    return (*st)->base.version >= 1 ? HIDPP_OK : HIDPP_ENOSYS;
 }
 
 int hidpp_sidetone_get(hidpp_device_t *dev) {
@@ -165,7 +108,7 @@ int hidpp_sidetone_get(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, st->featIndex, 0);
+    make_packet(&req, dev, st->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -184,7 +127,7 @@ int hidpp_sidetone_set(hidpp_device_t *dev, uint8_t level) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, st->featIndex, 1);
+    make_packet(&req, dev, st->base.featIndex, 1);
     req.params[0] = level;
 
     return hidpp_device_request(dev, &req, &res);
@@ -198,7 +141,7 @@ int hidpp_sidetone_mute(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, st->featIndex, 2);
+    make_packet(&req, dev, st->base.featIndex, 2);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -214,7 +157,7 @@ int hidpp_sidetone_set_mute(hidpp_device_t *dev, uint8_t mask, uint8_t mute) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, st->featIndex, 3);
+    make_packet(&req, dev, st->base.featIndex, 3);
     req.params[0] = mask;
     req.params[1] = mute & mask;
 

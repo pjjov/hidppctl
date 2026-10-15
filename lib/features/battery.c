@@ -40,10 +40,7 @@
 #define IS_RECHARGABLE_FLAG 0x4
 
 struct hidpp_feat_battery {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_battery_info info;
     struct hidpp_battery_status status;
 };
@@ -123,61 +120,27 @@ static int query_battery_status(
     return HIDPP_OK;
 }
 
-static int ensure_init(struct hidpp_feat_battery **out, hidpp_device_t *dev) {
-    struct hidpp_feat_battery *bat;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    bat = dev->features[HIDPP_FEAT_BATTERY];
-    *out = bat;
-
-    if (bat->initialized)
-        return bat->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    bat->info.initialized = HIDPP_FALSE;
-    int featIndex = feature_lookup(dev, 0x1000);
-
-    if (featIndex < 0)
-        return featIndex; /* not known yet, ask again next time */
-
-    bat->featIndex = featIndex;
-    bat->unsupported = featIndex == 0;
-
-    if (!bat->unsupported) {
-        int rc = query_battery_info(dev, bat->featIndex, &bat->info);
-
-        if (rc && is_transient(dev, rc))
-            return rc;
-    }
-
-    bat->initialized = HIDPP_TRUE;
-
-    return bat->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
+static int query_info(hidpp_device_t *dev, void *feat) {
     struct hidpp_feat_battery *bat = feat;
-    bat->initialized = HIDPP_FALSE;
+    int rc = query_battery_info(dev, bat->base.featIndex, &bat->info);
+
+    /* information the device refuses for good stays uninitialized */
+    return rc && is_transient(dev, rc) ? rc : HIDPP_OK;
 }
 
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_battery *bat;
-    (void)feat;
-    ensure_init(&bat, dev);
+static int ensure_init(struct hidpp_feat_battery **out, hidpp_device_t *dev) {
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_BATTERY, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_battery *bat = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    SAVE_BYTE(b, bat->initialized);
-    SAVE_BYTE(b, bat->unsupported);
-
-    if (!bat->initialized || bat->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, bat->featIndex);
+    SAVE_BYTE(b, bat->info.initialized);
     SAVE_BYTE(b, bat->info.levelCount);
     SAVE_BYTE(b, bat->info.flags);
     SAVE_WORD(b, bat->info.nominalLife);
@@ -189,33 +152,46 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_battery *bat = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    bat->initialized = LOAD_BYTE(b);
-    bat->unsupported = LOAD_BYTE(b);
-
-    if (!bat->initialized || bat->unsupported)
-        return b - start;
-
-    bat->featIndex = LOAD_BYTE(b);
+    bat->info.initialized = LOAD_BYTE(b);
     bat->info.levelCount = LOAD_BYTE(b);
     bat->info.flags = LOAD_BYTE(b);
     bat->info.nominalLife = LOAD_WORD(b);
     bat->info.criticalLevel = LOAD_BYTE(b);
-    bat->info.initialized = HIDPP_TRUE;
     unpack_flags(&bat->info);
 
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    (void)dev, (void)feat;
+
+    if (id != 0x1000 || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_BATTERY;
+    e->as.battery.chargeState = pkt->params[0];
+    e->as.battery.batteryLevel = pkt->params[1];
+    e->as.battery.chargeStatus = pkt->params[2];
+    e->as.battery.externalPower = pkt->params[3];
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_battery_vt = {
-    .size = sizeof(struct hidpp_feat_battery),
-    .alignment = _Alignof(struct hidpp_feat_battery),
-    .maxCacheSize = sizeof(struct hidpp_feat_battery),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_battery),
+    .ids = { 0x1000 },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_battery_info *hidpp_battery_info(hidpp_device_t *dev) {
@@ -236,7 +212,7 @@ struct hidpp_battery_status *hidpp_battery_status(hidpp_device_t *dev) {
 
     status = &bat->status;
 
-    if (query_battery_status(dev, bat->featIndex, status))
+    if (query_battery_status(dev, bat->base.featIndex, status))
         return NULL;
 
     return status;

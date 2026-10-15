@@ -76,27 +76,27 @@
 
 #define USAGES_PER_CALL (HIDPP_LEN_LONG - 4)
 
-struct hidpp_feat_disable_keys {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
+/* positions of the features in the ids of the vtable */
+enum { KEYS, USAGES };
 
-    uint8_t keysIndex;   /* 0 if 0x4521 is not implemented */
-    uint8_t usagesIndex; /* 0 if 0x4522 is not implemented */
+struct hidpp_feat_disable_keys {
+    struct hidpp_feat_base base;
     struct hidpp_disable_keys_info info;
 };
 
 static void unpack_flags(struct hidpp_feat_disable_keys *dk) {
-    dk->info.hasKeys = dk->keysIndex != 0;
-    dk->info.hasUsages = dk->usagesIndex != 0;
+    dk->info.hasKeys = dk->base.indexes[KEYS] != 0;
+    dk->info.hasUsages = dk->base.indexes[USAGES] != 0;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_disable_keys *dk) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_disable_keys *dk = feat;
     struct hidpp_disable_keys_info *info = &dk->info;
     hidpp_packet_t req, res;
     int rc;
 
-    if (dk->keysIndex) {
-        make_packet(&req, dev, dk->keysIndex, 0);
+    if (dk->base.indexes[KEYS]) {
+        make_packet(&req, dev, dk->base.indexes[KEYS], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res)))
             info->keys = res.params[0];
@@ -104,8 +104,8 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_disable_keys *dk) {
             return rc;
     }
 
-    if (dk->usagesIndex) {
-        make_packet(&req, dev, dk->usagesIndex, 0);
+    if (dk->base.indexes[USAGES]) {
+        make_packet(&req, dev, dk->base.indexes[USAGES], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res)))
             info->maxUsages = res.params[0];
@@ -121,48 +121,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_disable_keys *dk) {
 static int ensure_init(
     struct hidpp_feat_disable_keys **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_disable_keys *dk;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    dk = dev->features[HIDPP_FEAT_DISABLE_KEYS];
-    *out = dk;
-
-    if (dk->initialized)
-        return dk->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(dk, 0, sizeof(*dk));
-
-    int keys = feature_lookup(dev, DISABLE_KEYS_ID);
-    int usages = feature_lookup(dev, DISABLE_USAGES_ID);
-    int rc;
-
-    if (keys < 0 || usages < 0)
-        return keys < 0 ? keys : usages;
-
-    dk->keysIndex = (uint8_t)keys;
-    dk->usagesIndex = (uint8_t)usages;
-    dk->unsupported = !dk->keysIndex && !dk->usagesIndex;
-
-    if (!dk->unsupported && (rc = query_info(dev, dk)))
-        return rc;
-
-    dk->initialized = HIDPP_TRUE;
-
-    return dk->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_disable_keys *dk = feat;
-    (void)dev;
-    dk->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_disable_keys *dk;
-    (void)feat;
-    ensure_init(&dk, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_DISABLE_KEYS, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -170,14 +132,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, dk->initialized);
-    SAVE_BYTE(b, dk->unsupported);
-
-    if (!dk->initialized || dk->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, dk->keysIndex);
-    SAVE_BYTE(b, dk->usagesIndex);
     SAVE_BYTE(b, dk->info.initialized);
     SAVE_BYTE(b, dk->info.keys);
     SAVE_BYTE(b, dk->info.maxUsages);
@@ -190,14 +144,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    dk->initialized = LOAD_BYTE(b);
-    dk->unsupported = LOAD_BYTE(b);
-
-    if (!dk->initialized || dk->unsupported)
-        return b - start;
-
-    dk->keysIndex = LOAD_BYTE(b);
-    dk->usagesIndex = LOAD_BYTE(b);
     dk->info.initialized = LOAD_BYTE(b);
     dk->info.keys = LOAD_BYTE(b);
     dk->info.maxUsages = LOAD_BYTE(b);
@@ -207,14 +153,12 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_disable_keys_vt = {
-    .size = sizeof(struct hidpp_feat_disable_keys),
-    .alignment = _Alignof(struct hidpp_feat_disable_keys),
-    .maxCacheSize = sizeof(struct hidpp_feat_disable_keys),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_disable_keys),
+    .ids = { DISABLE_KEYS_ID, DISABLE_USAGES_ID },
+    .allIds = HIDPP_TRUE,
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 static int ensure_keys(
@@ -225,7 +169,7 @@ static int ensure_keys(
     if ((rc = ensure_init(dk, dev)))
         return rc;
 
-    return (*dk)->keysIndex ? HIDPP_OK : HIDPP_ENOSYS;
+    return (*dk)->base.indexes[KEYS] ? HIDPP_OK : HIDPP_ENOSYS;
 }
 
 static int ensure_usages(
@@ -236,7 +180,7 @@ static int ensure_usages(
     if ((rc = ensure_init(dk, dev)))
         return rc;
 
-    return (*dk)->usagesIndex ? HIDPP_OK : HIDPP_ENOSYS;
+    return (*dk)->base.indexes[USAGES] ? HIDPP_OK : HIDPP_ENOSYS;
 }
 
 struct hidpp_disable_keys_info *hidpp_disable_keys_info(hidpp_device_t *dev) {
@@ -256,7 +200,7 @@ int hidpp_disable_keys_get(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dk->keysIndex, 1);
+    make_packet(&req, dev, dk->base.indexes[KEYS], 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -276,7 +220,7 @@ int hidpp_disable_keys_set(hidpp_device_t *dev, uint8_t mask) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dk->keysIndex, 2);
+    make_packet(&req, dev, dk->base.indexes[KEYS], 2);
     req.params[0] = mask;
 
     return hidpp_device_request(dev, &req, &res);
@@ -307,7 +251,7 @@ static int send_usages(
         if (n > USAGES_PER_CALL)
             n = USAGES_PER_CALL;
 
-        make_packet(&req, dev, dk->usagesIndex, func);
+        make_packet(&req, dev, dk->base.indexes[USAGES], func);
         req.kind = HIDPP_KIND_LONG;
         memcpy(req.params, &usages[start], n);
 
@@ -338,7 +282,7 @@ int hidpp_enable_all_usages(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, dk->usagesIndex, 3);
+    make_packet(&req, dev, dk->base.indexes[USAGES], 3);
 
     return hidpp_device_request(dev, &req, &res);
 }

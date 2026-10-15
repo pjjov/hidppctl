@@ -47,12 +47,11 @@
 #define SCROLLING_ID 0x2100
 #define HIGHRES_ID 0x2120
 
-struct hidpp_feat_scrolling {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
+/* positions of the features in the ids of the vtable */
+enum { ROLLER, HIGHRES };
 
-    uint8_t rollerIndex;  /* 0 if 0x2100 is not implemented */
-    uint8_t highresIndex; /* 0 if 0x2120 is not implemented */
+struct hidpp_feat_scrolling {
+    struct hidpp_feat_base base;
     struct hidpp_scroll_info info;
 };
 
@@ -70,17 +69,18 @@ static const char *roller_type_name(uint8_t type) {
 }
 
 static void unpack_flags(struct hidpp_feat_scrolling *sc) {
-    sc->info.hasHighRes = sc->highresIndex != 0;
+    sc->info.hasHighRes = sc->base.indexes[HIGHRES] != 0;
     sc->info.rollerTypeName = roller_type_name(sc->info.rollerType);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_scrolling *sc) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_scrolling *sc = feat;
     struct hidpp_scroll_info *info = &sc->info;
     hidpp_packet_t req, res;
     int rc;
 
-    if (sc->rollerIndex) {
-        make_packet(&req, dev, sc->rollerIndex, 0);
+    if (sc->base.indexes[ROLLER]) {
+        make_packet(&req, dev, sc->base.indexes[ROLLER], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res))) {
             info->rollerType = res.params[0];
@@ -93,8 +93,8 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_scrolling *sc) {
     }
 
     /* the multiplier does not change with the mode */
-    if (sc->highresIndex) {
-        make_packet(&req, dev, sc->highresIndex, 0);
+    if (sc->base.indexes[HIGHRES]) {
+        make_packet(&req, dev, sc->base.indexes[HIGHRES], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res)))
             info->multiplier = res.params[1];
@@ -108,48 +108,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_scrolling *sc) {
 }
 
 static int ensure_init(struct hidpp_feat_scrolling **out, hidpp_device_t *dev) {
-    struct hidpp_feat_scrolling *sc;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    sc = dev->features[HIDPP_FEAT_SCROLLING];
-    *out = sc;
-
-    if (sc->initialized)
-        return sc->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(sc, 0, sizeof(*sc));
-
-    int roller = feature_lookup(dev, SCROLLING_ID);
-    int highres = feature_lookup(dev, HIGHRES_ID);
-    int rc;
-
-    if (roller < 0 || highres < 0)
-        return roller < 0 ? roller : highres;
-
-    sc->rollerIndex = (uint8_t)roller;
-    sc->highresIndex = (uint8_t)highres;
-    sc->unsupported = !sc->rollerIndex && !sc->highresIndex;
-
-    if (!sc->unsupported && (rc = query_info(dev, sc)))
-        return rc;
-
-    sc->initialized = HIDPP_TRUE;
-
-    return sc->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_scrolling *sc = feat;
-    (void)dev;
-    sc->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_scrolling *sc;
-    (void)feat;
-    ensure_init(&sc, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_SCROLLING, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -157,14 +119,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, sc->initialized);
-    SAVE_BYTE(b, sc->unsupported);
-
-    if (!sc->initialized || sc->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, sc->rollerIndex);
-    SAVE_BYTE(b, sc->highresIndex);
     SAVE_BYTE(b, sc->info.initialized);
     SAVE_BYTE(b, sc->info.hasRollerInfo);
     SAVE_BYTE(b, sc->info.rollerType);
@@ -180,14 +134,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    sc->initialized = LOAD_BYTE(b);
-    sc->unsupported = LOAD_BYTE(b);
-
-    if (!sc->initialized || sc->unsupported)
-        return b - start;
-
-    sc->rollerIndex = LOAD_BYTE(b);
-    sc->highresIndex = LOAD_BYTE(b);
     sc->info.initialized = LOAD_BYTE(b);
     sc->info.hasRollerInfo = LOAD_BYTE(b);
     sc->info.rollerType = LOAD_BYTE(b);
@@ -200,14 +146,12 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_scrolling_vt = {
-    .size = sizeof(struct hidpp_feat_scrolling),
-    .alignment = _Alignof(struct hidpp_feat_scrolling),
-    .maxCacheSize = sizeof(struct hidpp_feat_scrolling),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_scrolling),
+    .ids = { SCROLLING_ID, HIGHRES_ID },
+    .allIds = HIDPP_TRUE,
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 static int ensure_highres(
@@ -218,7 +162,7 @@ static int ensure_highres(
     if ((rc = ensure_init(sc, dev)))
         return rc;
 
-    return (*sc)->highresIndex ? HIDPP_OK : HIDPP_ENOSYS;
+    return (*sc)->base.indexes[HIGHRES] ? HIDPP_OK : HIDPP_ENOSYS;
 }
 
 struct hidpp_scroll_info *hidpp_scroll_info(hidpp_device_t *dev) {
@@ -238,7 +182,7 @@ int hidpp_scroll_highres(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, sc->highresIndex, 0);
+    make_packet(&req, dev, sc->base.indexes[HIGHRES], 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -254,7 +198,7 @@ int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, sc->highresIndex, 1);
+    make_packet(&req, dev, sc->base.indexes[HIGHRES], 1);
     req.params[0] = enabled ? 1 : 0;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))

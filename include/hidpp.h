@@ -198,7 +198,40 @@ enum hidpp_event_type {
     HIDPP_EVENT_TOUCH_MOUSE_STATUS,
     HIDPP_EVENT_BACKLIGHT,
     HIDPP_EVENT_ILLUMINATION,
+    HIDPP_EVENT_WIRELESS_STATUS,
+    HIDPP_EVENT_THUMBWHEEL,
+    HIDPP_EVENT_DPI,
+    HIDPP_EVENT_DPI_CALIBRATION,
+    HIDPP_EVENT_FN_INVERSION,
+    HIDPP_EVENT_SOLAR,
+    HIDPP_EVENT_PLATFORM,
+    HIDPP_EVENT_CROWN,
+    HIDPP_EVENT_BRIGHTNESS,
+    HIDPP_EVENT_REPORT_RATE,
+    HIDPP_EVENT_LED,
+    HIDPP_EVENT_MODE_STATUS,
+    HIDPP_EVENT_SIDETONE,
     HIDPP__EVENT_MAX,
+};
+
+/** Kinds of `HIDPP_EVENT_SOLAR` events (see `as.solar.kind`). */
+enum hidpp_solar_event {
+    HIDPP_SOLAR_EVENT_BATTERY, /* periodic battery broadcast */
+    HIDPP_SOLAR_EVENT_MEASURE, /* requested by hidpp_solar_measure() */
+    HIDPP_SOLAR_EVENT_BUTTON,  /* the light check button was pressed */
+};
+
+/** Kinds of `HIDPP_EVENT_BRIGHTNESS` events (see `as.brightness.kind`). */
+enum hidpp_brightness_event {
+    HIDPP_BRIGHTNESS_EVENT_VALUE, /* `value` is the brightness */
+    HIDPP_BRIGHTNESS_EVENT_STATE, /* `value` is 0 (off) or 1 (on) */
+};
+
+/** Kinds of `HIDPP_EVENT_LED` events (see `as.led.kind`). */
+enum hidpp_led_event {
+    HIDPP_LED_EVENT_SYNC,     /* `zone` and `counter` are valid */
+    HIDPP_LED_EVENT_ACTIVITY, /* `activity` is valid */
+    HIDPP_LED_EVENT_CHANGED,  /* everything but `counter` and `activity` */
 };
 
 /** Kinds of `HIDPP_EVENT_ILLUMINATION` events (see `as.illumination.kind`). */
@@ -241,6 +274,8 @@ struct hidpp_event {
         struct {
             uint8_t flags;
             int16_t delta;
+            hidpp_bool_t highRes;
+            uint8_t periods; /* sampling periods combined in this report */
         } wheel;
 
         uint8_t ratchetSwitch;
@@ -290,6 +325,97 @@ struct hidpp_event {
                 uint8_t finger;
             } data[2];
         } touchPadPoints;
+
+        struct {
+            uint8_t status;  /* 0 = unknown, 1 = reconnection */
+            uint8_t request; /* 1 = software reconfiguration needed */
+            uint8_t reason;  /* 1 = power switch activated */
+        } wirelessStatus;
+
+        struct {
+            int16_t rotation;
+            uint16_t timestamp; /* in units of `timeUnit` */
+            uint8_t status;     /* enum hidpp_rotation_state */
+            hidpp_bool_t touch;
+            hidpp_bool_t proxy;
+            hidpp_bool_t singleTap;
+        } thumbwheel;
+
+        struct {
+            uint8_t sensor;
+            uint16_t x;
+            uint16_t y;
+            uint8_t lod; /* enum hidpp_dpi_lod */
+        } dpi;
+
+        struct {
+            uint8_t sensor;
+            uint8_t direction; /* 0 = X, 1 = Y */
+            int16_t correction;
+            int16_t delta; /* displacement in the perpendicular direction */
+        } dpiCalibration;
+
+        struct {
+            uint8_t host;
+            hidpp_bool_t enabled;
+            hidpp_bool_t defaultEnabled;
+            hidpp_bool_t hasFnLock;
+        } fnInversion;
+
+        struct {
+            uint8_t kind;    /* enum hidpp_solar_event */
+            uint8_t battery; /* percent */
+            uint16_t lux;
+        } solar;
+
+        struct {
+            uint8_t host;
+            uint8_t platform;
+            uint8_t source;
+        } platform;
+
+        struct {
+            uint8_t rotation; /* enum hidpp_rotation_state */
+            int8_t slots;
+            int8_t ratchets;
+            uint8_t proximity; /* enum hidpp_rotation_state */
+            uint8_t touch;     /* enum hidpp_rotation_state */
+            uint8_t gesture;   /* 0 = none, 1 = tap, 2 = double tap */
+            uint8_t button;    /* enum hidpp_crown_button */
+            int16_t speed;     /* slots per second */
+        } crown;
+
+        struct {
+            uint8_t kind; /* enum hidpp_brightness_event */
+            uint16_t value;
+        } brightness;
+
+        struct {
+            uint8_t connection; /* enum hidpp_connection */
+            uint16_t rate;      /* report interval in microseconds */
+        } reportRate;
+
+        struct {
+            uint8_t kind; /* enum hidpp_led_event */
+            uint8_t zone;
+            uint8_t effect;      /* index of the effect within the zone */
+            uint8_t activity;    /* 0 = timeout reached, 1 = user activity */
+            uint16_t counter;    /* ms elapsed in the current effect period */
+            uint8_t persistence; /* enum hidpp_led_persistence */
+            uint8_t powerMode;
+            uint8_t params[10];
+        } led;
+
+        struct {
+            uint16_t status;  /* bit mask of enum hidpp_mode_status */
+            uint16_t changed; /* bits of `status` which have changed */
+        } modeStatus;
+
+        struct {
+            uint8_t channel; /* 1-8 if `level` changed, 0 otherwise */
+            uint8_t level;
+            uint8_t mute; /* bit N is set if channel N + 1 is muted */
+        } sidetone;
     } as;
 };
 

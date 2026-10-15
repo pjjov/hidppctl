@@ -71,10 +71,7 @@
 #define MAX_TORQUE 100
 
 struct hidpp_feat_smartshift {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t capabilities;
     struct hidpp_smartshift_info info;
 };
@@ -84,12 +81,14 @@ static void unpack_flags(struct hidpp_feat_smartshift *ss) {
         && !!(ss->capabilities & CAP_TUNABLE_TORQUE_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_smartshift *ss) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_smartshift *ss = feat;
+    ss->info.isEnhanced = ss->base.which == 0; /* 0x2111 */
     struct hidpp_smartshift_info *info = &ss->info;
 
     if (info->isEnhanced) {
         hidpp_packet_t req, res;
-        make_packet(&req, dev, ss->featIndex, 0);
+        make_packet(&req, dev, ss->base.featIndex, 0);
 
         int rc;
 
@@ -110,50 +109,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_smartshift *ss) {
 static int ensure_init(
     struct hidpp_feat_smartshift **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_smartshift *ss;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    ss = dev->features[HIDPP_FEAT_SMARTSHIFT];
-    *out = ss;
-
-    if (ss->initialized)
-        return ss->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(ss, 0, sizeof(*ss));
-    int featIndex = feature_lookup(dev, ENHANCED_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    ss->info.isEnhanced = featIndex != 0;
-
-    if (featIndex == 0 && (featIndex = feature_lookup(dev, SMARTSHIFT_ID)) < 0)
-        return featIndex;
-
-    ss->featIndex = (uint8_t)featIndex;
-    ss->unsupported = featIndex == 0;
-
-    if (!ss->unsupported && (rc = query_info(dev, ss)))
-        return rc;
-
-    ss->initialized = HIDPP_TRUE;
-
-    return ss->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_smartshift *ss = feat;
-    (void)dev;
-    ss->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_smartshift *ss;
-    (void)feat;
-    ensure_init(&ss, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_SMARTSHIFT, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -161,16 +120,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, ss->initialized);
-    SAVE_BYTE(b, ss->unsupported);
-
-    if (!ss->initialized || ss->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, ss->featIndex);
     SAVE_BYTE(b, ss->capabilities);
     SAVE_BYTE(b, ss->info.initialized);
-    SAVE_BYTE(b, ss->info.isEnhanced);
     SAVE_BYTE(b, ss->info.defaultAutoDisengage);
     SAVE_BYTE(b, ss->info.defaultTorque);
     SAVE_WORD(b, ss->info.maxForce);
@@ -183,16 +134,9 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    ss->initialized = LOAD_BYTE(b);
-    ss->unsupported = LOAD_BYTE(b);
-
-    if (!ss->initialized || ss->unsupported)
-        return b - start;
-
-    ss->featIndex = LOAD_BYTE(b);
     ss->capabilities = LOAD_BYTE(b);
     ss->info.initialized = LOAD_BYTE(b);
-    ss->info.isEnhanced = LOAD_BYTE(b);
+    ss->info.isEnhanced = ss->base.which == 0; /* 0x2111 */
     ss->info.defaultAutoDisengage = LOAD_BYTE(b);
     ss->info.defaultTorque = LOAD_BYTE(b);
     ss->info.maxForce = LOAD_WORD(b);
@@ -202,14 +146,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_smartshift_vt = {
-    .size = sizeof(struct hidpp_feat_smartshift),
-    .alignment = _Alignof(struct hidpp_feat_smartshift),
-    .maxCacheSize = sizeof(struct hidpp_feat_smartshift),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_smartshift),
+    .ids = { ENHANCED_ID, SMARTSHIFT_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 struct hidpp_smartshift_info *hidpp_smartshift_info(hidpp_device_t *dev) {
@@ -232,7 +173,7 @@ int hidpp_smartshift_get(hidpp_device_t *dev, struct hidpp_smartshift *out) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ss->featIndex, ss->info.isEnhanced ? 1 : 0);
+    make_packet(&req, dev, ss->base.featIndex, ss->info.isEnhanced ? 1 : 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -277,7 +218,7 @@ int hidpp_smartshift_set(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ss->featIndex, info->isEnhanced ? 2 : 1);
+    make_packet(&req, dev, ss->base.featIndex, info->isEnhanced ? 2 : 1);
     req.params[0] = cfg->wheelMode;
     req.params[1] = cfg->autoDisengage;
     req.params[2] = info->isEnhanced ? cfg->torque : cfg->autoDisengageDefault;

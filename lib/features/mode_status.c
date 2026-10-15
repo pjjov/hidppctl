@@ -57,10 +57,7 @@
 #define CAP_SW_SWITCH_FLAG 0x0002
 
 struct hidpp_feat_mode_status {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_mode_status_info info;
 };
 
@@ -70,12 +67,14 @@ static void unpack_flags(struct hidpp_mode_status_info *info) {
     info->hasSwSwitch = !!(info->capabilities & CAP_SW_SWITCH_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_mode_status *ms) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_mode_status *ms = feat;
+    ms->info.version = ms->base.version;
     struct hidpp_mode_status_info *info = &ms->info;
 
     if (info->version >= 1) {
         hidpp_packet_t req, res;
-        make_packet(&req, dev, ms->featIndex, 2);
+        make_packet(&req, dev, ms->base.featIndex, 2);
 
         int rc;
 
@@ -93,49 +92,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_mode_status *ms) {
 static int ensure_init(
     struct hidpp_feat_mode_status **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_mode_status *ms;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    ms = dev->features[HIDPP_FEAT_MODE_STATUS];
-    *out = ms;
-
-    if (ms->initialized)
-        return ms->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(ms, 0, sizeof(*ms));
-    int featIndex = feature_lookup(dev, MODE_STATUS_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    ms->featIndex = (uint8_t)featIndex;
-    ms->unsupported = featIndex == 0;
-
-    if (!ms->unsupported) {
-        ms->info.version = feature_version(dev, MODE_STATUS_ID);
-
-        if ((rc = query_info(dev, ms)))
-            return rc;
-    }
-
-    ms->initialized = HIDPP_TRUE;
-
-    return ms->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_mode_status *ms = feat;
-    (void)dev;
-    ms->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_mode_status *ms;
-    (void)feat;
-    ensure_init(&ms, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_MODE_STATUS, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -143,15 +103,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, ms->initialized);
-    SAVE_BYTE(b, ms->unsupported);
-
-    if (!ms->initialized || ms->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, ms->featIndex);
     SAVE_BYTE(b, ms->info.initialized);
-    SAVE_BYTE(b, ms->info.version);
     SAVE_WORD(b, ms->info.capabilities);
 
     return b - start;
@@ -162,30 +114,42 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    ms->initialized = LOAD_BYTE(b);
-    ms->unsupported = LOAD_BYTE(b);
-
-    if (!ms->initialized || ms->unsupported)
-        return b - start;
-
-    ms->featIndex = LOAD_BYTE(b);
     ms->info.initialized = LOAD_BYTE(b);
-    ms->info.version = LOAD_BYTE(b);
+    ms->info.version = ms->base.version;
     ms->info.capabilities = LOAD_WORD(b);
     unpack_flags(&ms->info);
 
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != MODE_STATUS_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    /* the first byte holds the lowest bits */
+    e->type = HIDPP_EVENT_MODE_STATUS;
+    e->as.modeStatus.status = HIDPP_WORD(p[1], p[0]);
+    e->as.modeStatus.changed = HIDPP_WORD(p[3], p[2]);
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_mode_status_vt = {
-    .size = sizeof(struct hidpp_feat_mode_status),
-    .alignment = _Alignof(struct hidpp_feat_mode_status),
-    .maxCacheSize = sizeof(struct hidpp_feat_mode_status),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_mode_status),
+    .ids = { MODE_STATUS_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_mode_status_info *hidpp_mode_status_info(hidpp_device_t *dev) {
@@ -205,7 +169,7 @@ int hidpp_mode_status_get(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ms->featIndex, 0);
+    make_packet(&req, dev, ms->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -230,7 +194,7 @@ int hidpp_mode_status_set(hidpp_device_t *dev, uint16_t status, uint16_t mask) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ms->featIndex, 1);
+    make_packet(&req, dev, ms->base.featIndex, 1);
     req.params[0] = HIDPP_LSB(status & mask);
     req.params[1] = HIDPP_MSB(status & mask);
     req.params[2] = HIDPP_LSB(mask);

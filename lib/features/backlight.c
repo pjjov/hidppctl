@@ -107,10 +107,7 @@
 /* clang-format on */
 
 struct hidpp_feat_backlight {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t supported; /* the "supported" byte of getBacklightConfig */
     struct hidpp_backlight_info info;
 };
@@ -168,13 +165,15 @@ static void unpack_flags(struct hidpp_feat_backlight *bl) {
     info->supportsPermManualMode = !!(bl->supported & SUP_PERM_MANUAL_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_backlight *bl) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_backlight *bl = feat;
+    bl->info.version = bl->base.version;
     struct hidpp_backlight_info *info = &bl->info;
     hidpp_packet_t req, res;
 
     int rc;
 
-    make_packet(&req, dev, bl->featIndex, 0);
+    make_packet(&req, dev, bl->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return is_transient(dev, rc) ? rc : HIDPP_OK;
@@ -184,7 +183,7 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_backlight *bl) {
     if (info->version >= 2)
         info->effectList = HIDPP_WORD(res.params[4], res.params[3]);
 
-    make_packet(&req, dev, bl->featIndex, 2);
+    make_packet(&req, dev, bl->base.featIndex, 2);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return is_transient(dev, rc) ? rc : HIDPP_OK;
@@ -203,53 +202,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_backlight *bl) {
 }
 
 static int ensure_init(struct hidpp_feat_backlight **out, hidpp_device_t *dev) {
-    struct hidpp_feat_backlight *bl;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    bl = dev->features[HIDPP_FEAT_BACKLIGHT];
-    *out = bl;
-
-    if (bl->initialized)
-        return bl->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(bl, 0, sizeof(*bl));
-    int featIndex = feature_lookup(dev, BACKLIGHT_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    bl->featIndex = (uint8_t)featIndex;
-    bl->unsupported = featIndex == 0;
-
-    if (!bl->unsupported) {
-        struct hidpp_feature_info *feat = hidpp_feature_info(dev, BACKLIGHT_ID);
-
-        /*  Newer versions only append to the older ones, so everything
-            above the last known version is handled like it. */
-        bl->info.version = feat ? feat->version : 0;
-
-        if ((rc = query_info(dev, bl)))
-            return rc;
-    }
-
-    bl->initialized = HIDPP_TRUE;
-
-    return bl->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_backlight *bl = feat;
-    (void)dev;
-    bl->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_backlight *bl;
-    (void)feat;
-    ensure_init(&bl, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_BACKLIGHT, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -257,16 +213,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, bl->initialized);
-    SAVE_BYTE(b, bl->unsupported);
-
-    if (!bl->initialized || bl->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, bl->featIndex);
     SAVE_BYTE(b, bl->supported);
     SAVE_BYTE(b, bl->info.initialized);
-    SAVE_BYTE(b, bl->info.version);
     SAVE_BYTE(b, bl->info.levelCount);
     SAVE_WORD(b, bl->info.effectList);
     SAVE_WORD(b, bl->info.defaultDurationHandsOut);
@@ -281,16 +229,9 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    bl->initialized = LOAD_BYTE(b);
-    bl->unsupported = LOAD_BYTE(b);
-
-    if (!bl->initialized || bl->unsupported)
-        return b - start;
-
-    bl->featIndex = LOAD_BYTE(b);
     bl->supported = LOAD_BYTE(b);
     bl->info.initialized = LOAD_BYTE(b);
-    bl->info.version = LOAD_BYTE(b);
+    bl->info.version = bl->base.version;
     bl->info.levelCount = LOAD_BYTE(b);
     bl->info.effectList = LOAD_WORD(b);
     bl->info.defaultDurationHandsOut = LOAD_WORD(b);
@@ -301,15 +242,35 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != BACKLIGHT_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_BACKLIGHT;
+    e->as.backlight.levelCount = p[0];
+    e->as.backlight.level = p[1];
+    e->as.backlight.status = p[2];
+    e->as.backlight.effect = p[3];
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_backlight_vt = {
-    .size = sizeof(struct hidpp_feat_backlight),
-    .alignment = _Alignof(struct hidpp_feat_backlight),
-    .maxCacheSize = sizeof(struct hidpp_feat_backlight),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_backlight),
+    .ids = { BACKLIGHT_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 /* Effects are numbered like the bits of the effect list. */
@@ -404,7 +365,7 @@ int hidpp_backlight_get(
 
     const struct hidpp_backlight_info *info = &bl->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, bl->featIndex, 0);
+    make_packet(&req, dev, bl->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -454,7 +415,7 @@ int hidpp_backlight_set(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, bl->featIndex, 1);
+    make_packet(&req, dev, bl->base.featIndex, 1);
 
     uint8_t options = 0;
     options |= cfg->wow ? OPT_WOW_FLAG : 0;
@@ -490,7 +451,7 @@ int hidpp_backlight_state(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, bl->featIndex, 2);
+    make_packet(&req, dev, bl->base.featIndex, 2);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -519,7 +480,7 @@ int hidpp_backlight_set_effect(hidpp_device_t *dev, uint8_t effect) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, bl->featIndex, 3);
+    make_packet(&req, dev, bl->base.featIndex, 3);
     req.params[0] = effect;
 
     return hidpp_device_request(dev, &req, &res);

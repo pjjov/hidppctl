@@ -40,10 +40,7 @@
 #define MAX_NAME_LEN 256
 
 struct hidpp_feat_device_name {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t deviceType;
     uint8_t nameLength;
     char name[MAX_NAME_LEN + 1];
@@ -108,76 +105,41 @@ static int query_device_name(
     return rc;
 }
 
+/* Answers the device refuses for good are left empty. */
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_device_name *dn = feat;
+    uint8_t index = dn->base.featIndex;
+    int rc;
+
+    rc = query_device_type(dev, index, &dn->deviceType);
+
+    if (rc && is_transient(dev, rc))
+        return rc;
+
+    rc = query_name_length(dev, index, &dn->nameLength);
+
+    if (rc && is_transient(dev, rc))
+        return rc;
+
+    rc = query_device_name(dev, index, dn->nameLength, dn->name);
+
+    return rc && is_transient(dev, rc) ? rc : HIDPP_OK;
+}
+
 static int ensure_init(
     struct hidpp_feat_device_name **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_device_name *dn;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    dn = dev->features[HIDPP_FEAT_DEVICE_NAME];
-    *out = dn;
-
-    if (dn->initialized)
-        return dn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(dn->name, 0, sizeof(dn->name));
-    int featIndex = feature_lookup(dev, 0x0005);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    dn->featIndex = featIndex;
-    dn->unsupported = featIndex == 0;
-
-    if (!dn->unsupported) {
-        int rc;
-
-        /* answers the device refuses for good are left empty */
-        rc = query_device_type(dev, dn->featIndex, &dn->deviceType);
-
-        if (rc && is_transient(dev, rc))
-            return rc;
-
-        rc = query_name_length(dev, dn->featIndex, &dn->nameLength);
-
-        if (rc && is_transient(dev, rc))
-            return rc;
-
-        rc = query_device_name(dev, dn->featIndex, dn->nameLength, dn->name);
-
-        if (rc && is_transient(dev, rc))
-            return rc;
-    }
-
-    dn->initialized = HIDPP_TRUE;
-
-    return dn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_device_name *dn = feat;
-    dn->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_device_name *dn;
-    (void)feat;
-    ensure_init(&dn, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_DEVICE_NAME, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_device_name *dn = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    SAVE_BYTE(b, dn->initialized);
-    SAVE_BYTE(b, dn->unsupported);
-
-    if (!dn->initialized || dn->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, dn->featIndex);
     SAVE_BYTE(b, dn->deviceType);
     SAVE_BYTE(b, dn->nameLength);
     SAVE_BYTES(b, dn->name, MAX_NAME_LEN);
@@ -188,14 +150,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_device_name *dn = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    dn->initialized = LOAD_BYTE(b);
-    dn->unsupported = LOAD_BYTE(b);
-
-    if (!dn->initialized || dn->unsupported)
-        return b - start;
-
-    dn->featIndex = LOAD_BYTE(b);
     dn->deviceType = LOAD_BYTE(b);
     dn->nameLength = LOAD_BYTE(b);
     LOAD_BYTES(b, dn->name, MAX_NAME_LEN);
@@ -205,14 +161,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_device_name_vt = {
-    .size = sizeof(struct hidpp_feat_device_name),
-    .alignment = _Alignof(struct hidpp_feat_device_name),
-    .maxCacheSize = sizeof(struct hidpp_feat_device_name),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_device_name),
+    .ids = { 0x0005 },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 int hidpp_device_type(hidpp_device_t *dev) {

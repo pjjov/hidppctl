@@ -93,10 +93,7 @@
 /* clang-format on */
 
 struct hidpp_feat_crown {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_crown_info info;
 };
 
@@ -115,10 +112,11 @@ static void unpack_flags(struct hidpp_crown_info *info) {
     info->hasDoubleTap = !!(caps & CAP_DOUBLE_TAP_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_crown *cr) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_crown *cr = feat;
     struct hidpp_crown_info *info = &cr->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, cr->featIndex, 0);
+    make_packet(&req, dev, cr->base.featIndex, 0);
 
     int rc;
 
@@ -134,45 +132,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_crown *cr) {
 }
 
 static int ensure_init(struct hidpp_feat_crown **out, hidpp_device_t *dev) {
-    struct hidpp_feat_crown *cr;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    cr = dev->features[HIDPP_FEAT_CROWN];
-    *out = cr;
-
-    if (cr->initialized)
-        return cr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(cr, 0, sizeof(*cr));
-    int featIndex = feature_lookup(dev, CROWN_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    cr->featIndex = (uint8_t)featIndex;
-    cr->unsupported = featIndex == 0;
-
-    if (!cr->unsupported && (rc = query_info(dev, cr)))
-        return rc;
-
-    cr->initialized = HIDPP_TRUE;
-
-    return cr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_crown *cr = feat;
-    (void)dev;
-    cr->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_crown *cr;
-    (void)feat;
-    ensure_init(&cr, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_CROWN, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -180,13 +143,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, cr->initialized);
-    SAVE_BYTE(b, cr->unsupported);
-
-    if (!cr->initialized || cr->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, cr->featIndex);
     SAVE_BYTE(b, cr->info.initialized);
     SAVE_WORD(b, cr->info.capabilities);
     SAVE_WORD(b, cr->info.slots);
@@ -200,13 +156,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    cr->initialized = LOAD_BYTE(b);
-    cr->unsupported = LOAD_BYTE(b);
-
-    if (!cr->initialized || cr->unsupported)
-        return b - start;
-
-    cr->featIndex = LOAD_BYTE(b);
     cr->info.initialized = LOAD_BYTE(b);
     cr->info.capabilities = LOAD_WORD(b);
     cr->info.slots = LOAD_WORD(b);
@@ -216,15 +165,39 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != CROWN_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_CROWN;
+    e->as.crown.rotation = p[0];
+    e->as.crown.slots = (int8_t)p[1];
+    e->as.crown.ratchets = (int8_t)p[2];
+    e->as.crown.proximity = p[3];
+    e->as.crown.touch = p[4];
+    e->as.crown.gesture = p[5];
+    e->as.crown.button = p[6];
+    e->as.crown.speed = (int16_t)HIDPP_WORD(p[14], p[15]);
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_crown_vt = {
-    .size = sizeof(struct hidpp_feat_crown),
-    .alignment = _Alignof(struct hidpp_feat_crown),
-    .maxCacheSize = sizeof(struct hidpp_feat_crown),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_crown),
+    .ids = { CROWN_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 /* A zero time is left unchanged, others must be configurable. */
@@ -258,7 +231,7 @@ int hidpp_crown_get(hidpp_device_t *dev, struct hidpp_crown_mode *out) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, cr->featIndex, 1);
+    make_packet(&req, dev, cr->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -305,7 +278,7 @@ int hidpp_crown_set(hidpp_device_t *dev, const struct hidpp_crown_mode *mode) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, cr->featIndex, 2);
+    make_packet(&req, dev, cr->base.featIndex, 2);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = mode->reporting;
     req.params[1] = mode->ratchet;

@@ -138,11 +138,7 @@ enum {
 };
 
 struct hidpp_feat_illumination {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
-    uint8_t version;
+    struct hidpp_feat_base base;
     struct hidpp_illumination_info controls[CONTROL_COUNT];
 };
 
@@ -154,7 +150,7 @@ static void unpack_flags(
     info->hasEvents = !!(info->flags & CAP_EVENTS_FLAG);
     info->hasLinearLevels = !!(info->flags & CAP_LINEAR_FLAG);
     info->hasNonLinearLevels = !!(info->flags & CAP_NON_LINEAR_FLAG);
-    info->hasDynamicMaximum = ill->version >= 1
+    info->hasDynamicMaximum = ill->base.version >= 1
         && control == HIDPP_ILLUMINATION_BRIGHTNESS
         && !!(info->flags & CAP_DYNAMIC_MAX_FLAG);
     info->isSettable = info->min != info->max;
@@ -167,7 +163,7 @@ static int query_control_info(
     hidpp_packet_t req, res;
 
     make_packet(
-        &req, dev, ill->featIndex, control_functions[control] + FUNC_INFO
+        &req, dev, ill->base.featIndex, control_functions[control] + FUNC_INFO
     );
 
     int rc;
@@ -186,73 +182,29 @@ static int query_control_info(
     return HIDPP_OK;
 }
 
+static int query_info(hidpp_device_t *dev, void *feat) {
+    int rc;
+
+    for (int i = 0; i < CONTROL_COUNT; i++)
+        if ((rc = query_control_info(dev, feat, i)))
+            return rc;
+
+    return HIDPP_OK;
+}
+
 static int ensure_init(
     struct hidpp_feat_illumination **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_illumination *ill;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    ill = dev->features[HIDPP_FEAT_ILLUMINATION];
-    *out = ill;
-
-    if (ill->initialized)
-        return ill->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(ill, 0, sizeof(*ill));
-    int featIndex = feature_lookup(dev, ILLUMINATION_ID);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    ill->featIndex = (uint8_t)featIndex;
-    ill->unsupported = featIndex == 0;
-
-    if (!ill->unsupported) {
-        struct hidpp_feature_info *feat = hidpp_feature_info(
-            dev, ILLUMINATION_ID
-        );
-        ill->version = feat ? feat->version : 0;
-
-        for (int i = 0; i < CONTROL_COUNT; i++) {
-            int rc = query_control_info(dev, ill, i);
-
-            if (rc)
-                return rc;
-        }
-    }
-
-    ill->initialized = HIDPP_TRUE;
-
-    return ill->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_illumination *ill = feat;
-    (void)dev;
-    ill->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_illumination *ill;
-    (void)feat;
-    ensure_init(&ill, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_ILLUMINATION, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_illumination *ill = feat;
     uint8_t *start = b;
     (void)dev;
-
-    SAVE_BYTE(b, ill->initialized);
-    SAVE_BYTE(b, ill->unsupported);
-
-    if (!ill->initialized || ill->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, ill->featIndex);
-    SAVE_BYTE(b, ill->version);
 
     for (int i = 0; i < CONTROL_COUNT; i++) {
         struct hidpp_illumination_info *info = &ill->controls[i];
@@ -272,15 +224,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    ill->initialized = LOAD_BYTE(b);
-    ill->unsupported = LOAD_BYTE(b);
-
-    if (!ill->initialized || ill->unsupported)
-        return b - start;
-
-    ill->featIndex = LOAD_BYTE(b);
-    ill->version = LOAD_BYTE(b);
-
     for (int i = 0; i < CONTROL_COUNT; i++) {
         struct hidpp_illumination_info *info = &ill->controls[i];
         info->initialized = LOAD_BYTE(b);
@@ -295,15 +238,49 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    static const uint8_t kinds[] = {
+        HIDPP_ILLUMINATION_EVENT_STATE,
+        HIDPP_ILLUMINATION_EVENT_BRIGHTNESS,
+        HIDPP_ILLUMINATION_EVENT_COLOR_TEMPERATURE,
+        HIDPP_ILLUMINATION_EVENT_BRIGHTNESS_MAX,
+        HIDPP_ILLUMINATION_EVENT_CLAMPED,
+    };
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != ILLUMINATION_ID)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_ILLUMINATION;
+    e->as.illumination.kind = kinds[func < 4 ? func : 4];
+
+    if (func == 0)
+        e->as.illumination.state = p[0] & 1;
+    else if (func <= 3)
+        e->as.illumination.value = HIDPP_WORD(p[0], p[1]);
+    else {
+        e->as.illumination.source = p[0];
+        e->as.illumination.value = HIDPP_WORD(p[1], p[2]);
+    }
+
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_illumination_vt = {
-    .size = sizeof(struct hidpp_feat_illumination),
-    .alignment = _Alignof(struct hidpp_feat_illumination),
-    .maxCacheSize = sizeof(struct hidpp_feat_illumination),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_illumination),
+    .ids = { ILLUMINATION_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 /* Looks the feature up and checks that `control` exists on the device. */
@@ -361,7 +338,7 @@ int hidpp_illumination_get(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ill->featIndex, 0);
+    make_packet(&req, dev, ill->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -377,7 +354,7 @@ int hidpp_illumination_set(hidpp_device_t *dev, int state) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ill->featIndex, 1);
+    make_packet(&req, dev, ill->base.featIndex, 1);
     req.params[0] = state ? 1 : 0;
 
     return hidpp_device_request(dev, &req, &res);
@@ -393,7 +370,7 @@ int hidpp_illumination_value(hidpp_device_t *dev, int control) {
 
     hidpp_packet_t req, res;
     make_packet(
-        &req, dev, ill->featIndex, control_functions[control] + FUNC_GET
+        &req, dev, ill->base.featIndex, control_functions[control] + FUNC_GET
     );
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -421,7 +398,7 @@ int hidpp_illumination_set_value(
 
     hidpp_packet_t req, res;
     make_packet(
-        &req, dev, ill->featIndex, control_functions[control] + FUNC_SET
+        &req, dev, ill->base.featIndex, control_functions[control] + FUNC_SET
     );
     req.params[0] = HIDPP_MSB(value);
     req.params[1] = HIDPP_LSB(value);
@@ -438,7 +415,10 @@ static int query_levels_chunk(
 ) {
     hidpp_packet_t req;
     make_packet(
-        &req, dev, ill->featIndex, control_functions[control] + FUNC_GET_LEVELS
+        &req,
+        dev,
+        ill->base.featIndex,
+        control_functions[control] + FUNC_GET_LEVELS
     );
     req.params[0] = (uint8_t)(startIndex << 4);
 
@@ -567,7 +547,7 @@ int hidpp_illumination_set_levels(
     uint8_t func = control_functions[control] + FUNC_SET_LEVELS;
 
     if (levels->linear) {
-        make_packet(&req, dev, ill->featIndex, func);
+        make_packet(&req, dev, ill->base.featIndex, func);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = LEVELS_LINEAR_FLAG;
         req.params[2] = HIDPP_MSB(levels->min);
@@ -588,7 +568,7 @@ int hidpp_illumination_set_levels(
         if (valid > LEVELS_PER_CALL)
             valid = LEVELS_PER_CALL;
 
-        make_packet(&req, dev, ill->featIndex, func);
+        make_packet(&req, dev, ill->base.featIndex, func);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = (uint8_t)(valid << LEVELS_COUNT_SHIFT);
         req.params[1] = (uint8_t)((start << 4) | (start + valid));
@@ -618,7 +598,10 @@ int hidpp_illumination_reset_levels(hidpp_device_t *dev, int control) {
 
     hidpp_packet_t req, res;
     make_packet(
-        &req, dev, ill->featIndex, control_functions[control] + FUNC_SET_LEVELS
+        &req,
+        dev,
+        ill->base.featIndex,
+        control_functions[control] + FUNC_SET_LEVELS
     );
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = LEVELS_RESET_FLAG;
@@ -638,7 +621,7 @@ int hidpp_illumination_effective_max(hidpp_device_t *dev) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ill->featIndex, EFFECTIVE_MAX_FUNC);
+    make_packet(&req, dev, ill->base.featIndex, EFFECTIVE_MAX_FUNC);
 
     if ((rc = hidpp_device_request(dev, &req, &res))) {
         /* the device is still busy testing itself */

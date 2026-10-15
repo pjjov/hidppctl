@@ -279,7 +279,6 @@ const struct hidpp_feat_vt hidpp_feat_root_vt = {
     .size = sizeof(struct hidpp_feat_root),
     .alignment = _Alignof(struct hidpp_feat_root),
     .maxCacheSize = sizeof(struct hidpp_feat_root),
-    .minCacheSize = sizeof(uint8_t),
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,

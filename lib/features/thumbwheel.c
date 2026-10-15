@@ -77,10 +77,7 @@
 /* clang-format on */
 
 struct hidpp_feat_thumbwheel {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_thumbwheel_info info;
 };
 
@@ -91,10 +88,11 @@ static void unpack_flags(struct hidpp_thumbwheel_info *info) {
     info->hasSingleTap = !!(info->capabilities & CAP_SINGLE_TAP_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_thumbwheel *tw) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_thumbwheel *tw = feat;
     struct hidpp_thumbwheel_info *info = &tw->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tw->featIndex, 0);
+    make_packet(&req, dev, tw->base.featIndex, 0);
 
     int rc;
 
@@ -114,45 +112,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_thumbwheel *tw) {
 static int ensure_init(
     struct hidpp_feat_thumbwheel **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_thumbwheel *tw;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    tw = dev->features[HIDPP_FEAT_THUMBWHEEL];
-    *out = tw;
-
-    if (tw->initialized)
-        return tw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(tw, 0, sizeof(*tw));
-    int featIndex = feature_lookup(dev, THUMBWHEEL_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    tw->featIndex = (uint8_t)featIndex;
-    tw->unsupported = featIndex == 0;
-
-    if (!tw->unsupported && (rc = query_info(dev, tw)))
-        return rc;
-
-    tw->initialized = HIDPP_TRUE;
-
-    return tw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_thumbwheel *tw = feat;
-    (void)dev;
-    tw->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_thumbwheel *tw;
-    (void)feat;
-    ensure_init(&tw, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_THUMBWHEEL, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -160,13 +123,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, tw->initialized);
-    SAVE_BYTE(b, tw->unsupported);
-
-    if (!tw->initialized || tw->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, tw->featIndex);
     SAVE_BYTE(b, tw->info.initialized);
     SAVE_WORD(b, tw->info.nativeResolution);
     SAVE_WORD(b, tw->info.divertedResolution);
@@ -182,13 +138,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    tw->initialized = LOAD_BYTE(b);
-    tw->unsupported = LOAD_BYTE(b);
-
-    if (!tw->initialized || tw->unsupported)
-        return b - start;
-
-    tw->featIndex = LOAD_BYTE(b);
     tw->info.initialized = LOAD_BYTE(b);
     tw->info.nativeResolution = LOAD_WORD(b);
     tw->info.divertedResolution = LOAD_WORD(b);
@@ -200,15 +149,37 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != THUMBWHEEL_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_THUMBWHEEL;
+    e->as.thumbwheel.rotation = (int16_t)HIDPP_WORD(p[0], p[1]);
+    e->as.thumbwheel.timestamp = HIDPP_WORD(p[2], p[3]);
+    e->as.thumbwheel.status = p[4];
+    e->as.thumbwheel.touch = !!(p[5] & 0x01);
+    e->as.thumbwheel.proxy = !!(p[5] & 0x02);
+    e->as.thumbwheel.singleTap = !!(p[5] & 0x04);
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_thumbwheel_vt = {
-    .size = sizeof(struct hidpp_feat_thumbwheel),
-    .alignment = _Alignof(struct hidpp_feat_thumbwheel),
-    .maxCacheSize = sizeof(struct hidpp_feat_thumbwheel),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_thumbwheel),
+    .ids = { THUMBWHEEL_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_thumbwheel_info *hidpp_thumbwheel_info(hidpp_device_t *dev) {
@@ -233,7 +204,7 @@ int hidpp_thumbwheel_status(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tw->featIndex, 1);
+    make_packet(&req, dev, tw->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -253,7 +224,7 @@ int hidpp_thumbwheel_set(hidpp_device_t *dev, int diverted, int inverted) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tw->featIndex, 2);
+    make_packet(&req, dev, tw->base.featIndex, 2);
     req.params[0] = diverted ? 1 : 0;
     req.params[1] = inverted ? 1 : 0;
 

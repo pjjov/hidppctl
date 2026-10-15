@@ -99,11 +99,8 @@
 /* clang-format on */
 
 struct hidpp_keymap_t {
+    struct hidpp_feat_base base;
     hidpp_device_t *device;
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
     uint8_t featVersion;
 
     uint8_t ctrlCount;
@@ -127,35 +124,9 @@ static void unpack_flags(struct hidpp_keymap_info *out) {
     out->isMouseButton = !!(out->flags & IS_MOUSE_BUTTON_FLAG);
 }
 
-/*  Returns HIDPP_OK, HIDPP_ENOSYS if the device has neither feature (which
-    is final) or the error that kept the lookup from finishing. */
-static int query_keymap_version(hidpp_keymap_t *map) {
-    int version = 4, result;
-
-    if ((result = feature_lookup(map->device, 0x1B04)) < 0)
-        return result;
-
-    if (result == 0) {
-        version = 1;
-
-        if ((result = feature_lookup(map->device, 0x1B00)) < 0)
-            return result;
-    }
-
-    if (result == 0) {
-        map->initialized = HIDPP_TRUE;
-        map->unsupported = HIDPP_TRUE;
-        return HIDPP_ENOSYS;
-    }
-
-    map->featIndex = result;
-    map->featVersion = version;
-    return HIDPP_OK;
-}
-
 static int query_control_count(hidpp_keymap_t *map) {
     hidpp_packet_t req, res;
-    make_packet(&req, map->device, map->featIndex, 0);
+    make_packet(&req, map->device, map->base.featIndex, 0);
 
     int rc;
 
@@ -169,7 +140,7 @@ static int query_control_info(
     struct hidpp_keymap_info *out, hidpp_keymap_t *map, uint8_t ctrlIndex
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, map->device, map->featIndex, 1);
+    make_packet(&req, map->device, map->base.featIndex, 1);
     req.params[0] = ctrlIndex;
 
     int rc;
@@ -195,19 +166,12 @@ static int query_control_info(
     return HIDPP_OK;
 }
 
-static int ensure_init(hidpp_keymap_t *map) {
-    if (map->initialized)
-        return map->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    /* the device pointer is set once at creation and must survive this */
-    hidpp_device_t *dev = map->device;
-    memset(map, 0, sizeof(*map));
-    map->device = dev;
-
+static int query_info(hidpp_device_t *dev, void *feat) {
+    hidpp_keymap_t *map = feat;
     int rc;
 
-    if ((rc = query_keymap_version(map)))
-        return rc;
+    /* 0x1B04 is preferred over 0x1B00 */
+    map->featVersion = map->base.which == 0 ? 4 : 1;
 
     if ((rc = query_control_count(map)) < 0) {
         if (is_transient(dev, rc))
@@ -226,32 +190,19 @@ static int ensure_init(hidpp_keymap_t *map) {
             return rc;
     }
 
-    map->initialized = HIDPP_TRUE;
-
     return HIDPP_OK;
 }
 
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    hidpp_keymap_t *map = feat;
-    map->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    (void)dev;
-    ensure_init(feat);
+static int ensure_init(hidpp_keymap_t *map) {
+    void *feat;
+    return hidpp__feature_init(map->device, HIDPP_FEAT_KEYMAP, &feat);
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     hidpp_keymap_t *map = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    SAVE_BYTE(b, map->initialized);
-    SAVE_BYTE(b, map->unsupported);
-
-    if (!map->initialized || map->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, map->featIndex);
     SAVE_BYTE(b, map->featVersion);
     SAVE_BYTE(b, map->ctrlCount);
 
@@ -274,14 +225,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     hidpp_keymap_t *map = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    map->initialized = LOAD_BYTE(b);
-    map->unsupported = LOAD_BYTE(b);
-
-    if (!map->initialized || map->unsupported)
-        return b - start;
-
-    map->featIndex = LOAD_BYTE(b);
     map->featVersion = LOAD_BYTE(b);
     map->ctrlCount = LOAD_BYTE(b);
 
@@ -297,7 +242,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         info->groupMask = LOAD_BYTE(b);
         info->rawXY = LOAD_BYTE(b);
 
-        if (map->initialized && !map->unsupported && info->initialized) {
+        if (info->initialized) {
             unpack_flags(info);
             info->name = hidpp_keymap_name(info->id);
             info->remapName = NULL;
@@ -310,16 +255,46 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+/* Diverted controls of every remappable controls feature, 0x1B02 too. */
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != 0x1B00 && id != 0x1B02 && id != 0x1B04)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_BUTTON;
+
+        for (int i = 0; i < 4; i++)
+            e->as.buttons[i] = HIDPP_WORD(p[2 * i], p[2 * i + 1]);
+
+        return HIDPP_OK;
+    } else if (func == 1) {
+        e->type = HIDPP_EVENT_MOUSE;
+        e->as.mouse[0] = HIDPP_WORD(p[0], p[1]);
+        e->as.mouse[1] = HIDPP_WORD(p[2], p[3]);
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_keymap_vt = {
+    FEAT_VT_SIZE(struct hidpp_keymap_t),
+    .ids = { 0x1B04, 0x1B00 },
     .init = init_feature,
-    .size = sizeof(hidpp_keymap_t),
-    .alignment = _Alignof(hidpp_keymap_t),
-    .maxCacheSize = sizeof(hidpp_keymap_t),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 hidpp_keymap_t *hidpp_keymap(hidpp_device_t *dev) {
@@ -382,7 +357,7 @@ int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req = { 0 };
-    make_packet(&req, map->device, map->featIndex, 3);
+    make_packet(&req, map->device, map->base.featIndex, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
     /* bit 1 (dvalid) tells the device to apply bit 0 (divert) */
@@ -398,7 +373,7 @@ int hidpp_keymap_remap(hidpp_keymap_t *map, uint16_t id, uint16_t remap) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req = { 0 };
-    make_packet(&req, map->device, map->featIndex, 3);
+    make_packet(&req, map->device, map->base.featIndex, 3);
     req.kind = HIDPP_KIND_LONG; /* short reports only carry 3 parameters */
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
@@ -417,7 +392,7 @@ int hidpp_keymap_state(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, map->device, map->featIndex, 2);
+    make_packet(&req, map->device, map->base.featIndex, 2);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
 

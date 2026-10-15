@@ -73,22 +73,62 @@ enum {
     HIDPP_FEAT_MODE_STATUS,
     HIDPP_FEAT_SIDETONE,
     HIDPP_FEAT_EQUALIZER,
+    HIDPP_FEAT_WIRELESS_STATUS,
     hidpp_feat_max,
-    hidpp_feat_sentinel = 5,
+    hidpp_feat_sentinel = 6,
+};
+
+#define FEAT_MAX_IDS 3
+
+/*  State every feature object starts with, managed by hidpp__feature_init(). */
+struct hidpp_feat_base {
+    hidpp_bool_t initialized;
+    hidpp_bool_t unsupported;
+    uint8_t featIndex; /* index of the first of the vtable's ids found */
+    uint8_t which;     /* position of that id in the vtable's ids */
+    uint8_t version;   /* version of that feature on the device */
+    uint8_t indexes[FEAT_MAX_IDS]; /* index of every id looked up, or 0 */
 };
 
 struct hidpp_feat_vt {
     size_t size;
     size_t alignment;
-    size_t minCacheSize;
     size_t maxCacheSize;
+
+    /*  Feature ids resolved by hidpp__feature_init(), in order of preference. The
+        lookup stops at the first one the device has, unless `allIds` is
+        set. Objects without ids manage their state themselves (the root),
+        and the cache hooks are then responsible for everything. */
+    uint16_t ids[FEAT_MAX_IDS];
+    hidpp_bool_t allIds;
+
+    /* Called after allocation and whenever the object is reset. */
     int (*init)(hidpp_device_t *dev, void *feat);
+    /*  Fills in what is cached once the feature was found. Errors are only
+        returned if they are transient, the object stays uninitialized. */
+    int (*query)(hidpp_device_t *dev, void *feat);
+    /* Prefetches what is cached but not queried by the initialization. */
     void (*collectCache)(hidpp_device_t *dev, void *feat);
+    /* Serialize what follows the base, which is handled by feature.c. */
     size_t (*saveCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
     size_t (*loadCache)(hidpp_device_t *dev, void *feat, uint8_t *buffer);
     void (*clearCache)(hidpp_device_t *dev, void *feat);
     void (*free)(hidpp_device_t *dev, void *feat);
+    /*  Decodes a notification of feature `id`, returns HIDPP_ENOENT if it
+        is not one of the object's events. Must not send requests. */
+    int (*parseEvent)(
+        hidpp_device_t *dev,
+        void *feat,
+        uint16_t id,
+        uint8_t func,
+        const hidpp_packet_t *pkt,
+        struct hidpp_event *out
+    );
 };
+
+#define FEAT_VT_SIZE(type)                             \
+    .size = sizeof(type), .alignment = _Alignof(type), \
+    .maxCacheSize = sizeof(type)
 
 struct hidpp_device_t {
     hidpp_receiver_t *receiver;
@@ -159,6 +199,25 @@ static inline uint8_t feature_version(hidpp_device_t *dev, uint16_t id) {
     struct hidpp_feature_info *feat = hidpp_feature_info(dev, id);
     return feat ? feat->version : 0;
 }
+
+/*  Initializes the feature object `kind` (see struct hidpp_feat_vt) and
+    stores it in `out`. Returns HIDPP_ENOSYS if the device has none of its
+    features, or the error that kept the initialization from finishing. */
+int hidpp__feature_init(hidpp_device_t *dev, int kind, void **out);
+
+/* Cache operations of the feature object `kind`. */
+void hidpp__feature_collect(hidpp_device_t *dev, int kind);
+size_t hidpp__feature_save(hidpp_device_t *dev, int kind, uint8_t *buffer);
+size_t hidpp__feature_load(hidpp_device_t *dev, int kind, uint8_t *buffer);
+void hidpp__feature_clear(hidpp_device_t *dev, int kind);
+
+/* Lets the feature objects decode a notification of feature `id`. */
+int hidpp__feature_parse_event(
+    hidpp_device_t *dev,
+    uint16_t id,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *out
+);
 
 static inline size_t packet_length(int kind) {
     switch (kind) {

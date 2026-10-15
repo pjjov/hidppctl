@@ -111,9 +111,8 @@ void hidpp_cache_collect(hidpp_device_t *dev) {
     if (!dev)
         return;
 
-    for (size_t i = 0; i < hidpp_feat_max; i++)
-        if (hidpp_feat_vtables[i]->collectCache)
-            hidpp_feat_vtables[i]->collectCache(dev, dev->features[i]);
+    for (int i = 0; i < hidpp_feat_max; i++)
+        hidpp__feature_collect(dev, i);
 }
 
 int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size) {
@@ -128,19 +127,12 @@ int hidpp_cache_save(hidpp_device_t *dev, void *buffer, size_t *size) {
     if (max < req)
         return HIDPP_ENOMEM;
 
-    const struct hidpp_feat_vt *vt;
     size_t offset = CACHE_HEADER_SIZE;
 
     write_header(dev, buffer);
 
-    for (size_t i = 0; i < hidpp_feat_max; i++) {
-        vt = hidpp_feat_vtables[i];
-        if (vt->saveCache) {
-            offset += vt->saveCache(
-                dev, dev->features[i], PF_OFFSET(buffer, offset)
-            );
-        }
-    }
+    for (int i = 0; i < hidpp_feat_max; i++)
+        offset += hidpp__feature_save(dev, i, PF_OFFSET(buffer, offset));
 
     save_dword((uint8_t *)buffer + CACHE_USED_OFFSET, (uint32_t)offset);
     *size = offset;
@@ -174,17 +166,10 @@ int hidpp_cache_load(hidpp_device_t *dev, const void *buffer, size_t size) {
     if ((rc = check_header(dev, buffer, size)))
         return rc;
 
-    const struct hidpp_feat_vt *vt;
     size_t offset = CACHE_HEADER_SIZE;
 
-    for (size_t i = 0; i < hidpp_feat_max; i++) {
-        vt = hidpp_feat_vtables[i];
-        if (vt->loadCache) {
-            offset += vt->loadCache(
-                dev, dev->features[i], PF_OFFSET(buffer, offset)
-            );
-        }
-    }
+    for (int i = 0; i < hidpp_feat_max; i++)
+        offset += hidpp__feature_load(dev, i, PF_OFFSET(buffer, offset));
 
     return HIDPP_OK;
 }
@@ -193,7 +178,6 @@ void hidpp_cache_clear(hidpp_device_t *dev) {
     if (!dev)
         return;
 
-    for (size_t i = 0; i < hidpp_feat_max; i++)
-        if (hidpp_feat_vtables[i]->clearCache)
-            hidpp_feat_vtables[i]->clearCache(dev, dev->features[i]);
+    for (int i = 0; i < hidpp_feat_max; i++)
+        hidpp__feature_clear(dev, i);
 }

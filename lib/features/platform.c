@@ -117,10 +117,7 @@
 /* clang-format on */
 
 struct hidpp_feat_platform {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_platform_info info;
     struct hidpp_platform_descriptor descriptors[MAX_DESCRIPTORS];
 };
@@ -143,7 +140,7 @@ static int query_descriptor(
     struct hidpp_platform_descriptor *out
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, dev, pl->featIndex, 1);
+    make_packet(&req, dev, pl->base.featIndex, 1);
     req.params[0] = index;
 
     int rc;
@@ -161,12 +158,14 @@ static int query_descriptor(
     return HIDPP_OK;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_platform *pl) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_platform *pl = feat;
+    pl->info.isMultiPlatform = pl->base.which == 0; /* 0x4531 */
     struct hidpp_platform_info *info = &pl->info;
 
     if (info->isMultiPlatform) {
         hidpp_packet_t req, res;
-        make_packet(&req, dev, pl->featIndex, 0);
+        make_packet(&req, dev, pl->base.featIndex, 0);
 
         int rc;
 
@@ -200,51 +199,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_platform *pl) {
 }
 
 static int ensure_init(struct hidpp_feat_platform **out, hidpp_device_t *dev) {
-    struct hidpp_feat_platform *pl;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    pl = dev->features[HIDPP_FEAT_PLATFORM];
-    *out = pl;
-
-    if (pl->initialized)
-        return pl->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(pl, 0, sizeof(*pl));
-    int featIndex = feature_lookup(dev, MULTI_PLATFORM_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    pl->info.isMultiPlatform = featIndex != 0;
-
-    if (featIndex == 0
-        && (featIndex = feature_lookup(dev, DUAL_PLATFORM_ID)) < 0)
-        return featIndex;
-
-    pl->featIndex = (uint8_t)featIndex;
-    pl->unsupported = featIndex == 0;
-
-    if (!pl->unsupported && (rc = query_info(dev, pl)))
-        return rc;
-
-    pl->initialized = HIDPP_TRUE;
-
-    return pl->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_platform *pl = feat;
-    (void)dev;
-    pl->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_platform *pl;
-    (void)feat;
-    ensure_init(&pl, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_PLATFORM, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -252,15 +210,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, pl->initialized);
-    SAVE_BYTE(b, pl->unsupported);
-
-    if (!pl->initialized || pl->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, pl->featIndex);
     SAVE_BYTE(b, pl->info.initialized);
-    SAVE_BYTE(b, pl->info.isMultiPlatform);
     SAVE_WORD(b, pl->info.capabilities);
     SAVE_BYTE(b, pl->info.platformCount);
     SAVE_BYTE(b, pl->info.hostCount);
@@ -284,15 +234,8 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    pl->initialized = LOAD_BYTE(b);
-    pl->unsupported = LOAD_BYTE(b);
-
-    if (!pl->initialized || pl->unsupported)
-        return b - start;
-
-    pl->featIndex = LOAD_BYTE(b);
     pl->info.initialized = LOAD_BYTE(b);
-    pl->info.isMultiPlatform = LOAD_BYTE(b);
+    pl->info.isMultiPlatform = pl->base.which == 0; /* 0x4531 */
     pl->info.capabilities = LOAD_WORD(b);
     pl->info.platformCount = LOAD_BYTE(b);
     pl->info.hostCount = LOAD_BYTE(b);
@@ -317,15 +260,43 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (func != 0)
+        return HIDPP_ENOENT;
+
+    if (id == DUAL_PLATFORM_ID) {
+        e->type = HIDPP_EVENT_PLATFORM;
+        e->as.platform.host = HIDPP_HOST_CURRENT;
+        e->as.platform.platform = p[0];
+        return HIDPP_OK;
+    } else if (id == MULTI_PLATFORM_ID) {
+        e->type = HIDPP_EVENT_PLATFORM;
+        e->as.platform.host = p[0];
+        e->as.platform.platform = p[1];
+        e->as.platform.source = p[2];
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_platform_vt = {
-    .size = sizeof(struct hidpp_feat_platform),
-    .alignment = _Alignof(struct hidpp_feat_platform),
-    .maxCacheSize = sizeof(struct hidpp_feat_platform),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_platform),
+    .ids = { MULTI_PLATFORM_ID, DUAL_PLATFORM_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 static int check_host(const struct hidpp_feat_platform *pl, uint8_t host) {
@@ -392,7 +363,7 @@ int hidpp_platform_get(
     memset(out, 0, sizeof(*out));
 
     if (!pl->info.isMultiPlatform) {
-        make_packet(&req, dev, pl->featIndex, 0);
+        make_packet(&req, dev, pl->base.featIndex, 0);
 
         if ((rc = hidpp_device_request(dev, &req, &res)))
             return rc;
@@ -402,7 +373,7 @@ int hidpp_platform_get(
         return HIDPP_OK;
     }
 
-    make_packet(&req, dev, pl->featIndex, 2);
+    make_packet(&req, dev, pl->base.featIndex, 2);
     req.params[0] = host;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -439,10 +410,10 @@ int hidpp_platform_set(hidpp_device_t *dev, uint8_t host, uint8_t platform) {
     hidpp_packet_t req, res;
 
     if (!pl->info.isMultiPlatform) {
-        make_packet(&req, dev, pl->featIndex, 1);
+        make_packet(&req, dev, pl->base.featIndex, 1);
         req.params[0] = platform;
     } else {
-        make_packet(&req, dev, pl->featIndex, 3);
+        make_packet(&req, dev, pl->base.featIndex, 3);
         req.params[0] = host;
         req.params[1] = platform;
     }

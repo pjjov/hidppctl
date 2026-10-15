@@ -92,10 +92,7 @@
 #define STATUS_REMAPPED_FLAG 0x01
 
 struct hidpp_feat_action {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_action_info info;
     uint16_t controls[MAX_CONTROLS];
 };
@@ -140,20 +137,21 @@ static void unpack_flags(struct hidpp_action_info *info) {
     info->canPower = supports_type(info, HIDPP_ACTION_POWER);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_action *act) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_action *act = feat;
     struct hidpp_action_info *info = &act->info;
     hidpp_packet_t req, res;
 
     int rc;
 
-    make_packet(&req, dev, act->featIndex, 0);
+    make_packet(&req, dev, act->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return is_transient(dev, rc) ? rc : HIDPP_OK;
 
     info->flags = HIDPP_WORD(res.params[0], res.params[1]);
 
-    make_packet(&req, dev, act->featIndex, 1);
+    make_packet(&req, dev, act->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return is_transient(dev, rc) ? rc : HIDPP_OK;
@@ -162,7 +160,7 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_action *act) {
     info->hostCount = res.params[1];
 
     /* the table does not depend on the host, so the current one is used */
-    make_packet(&req, dev, act->featIndex, 2);
+    make_packet(&req, dev, act->base.featIndex, 2);
     req.params[1] = HIDPP_HOST_CURRENT;
 
     for (size_t i = 0; i < info->count; i++) {
@@ -184,45 +182,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_action *act) {
 }
 
 static int ensure_init(struct hidpp_feat_action **out, hidpp_device_t *dev) {
-    struct hidpp_feat_action *act;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    act = dev->features[HIDPP_FEAT_ACTION];
-    *out = act;
-
-    if (act->initialized)
-        return act->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(act, 0, sizeof(*act));
-    int featIndex = feature_lookup(dev, ACTION_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    act->featIndex = (uint8_t)featIndex;
-    act->unsupported = featIndex == 0;
-
-    if (!act->unsupported && (rc = query_info(dev, act)))
-        return rc;
-
-    act->initialized = HIDPP_TRUE;
-
-    return act->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_action *act = feat;
-    (void)dev;
-    act->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_action *act;
-    (void)feat;
-    ensure_init(&act, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_ACTION, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -230,13 +193,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, act->initialized);
-    SAVE_BYTE(b, act->unsupported);
-
-    if (!act->initialized || act->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, act->featIndex);
     SAVE_BYTE(b, act->info.initialized);
     SAVE_WORD(b, act->info.flags);
     SAVE_BYTE(b, act->info.count);
@@ -253,13 +209,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    act->initialized = LOAD_BYTE(b);
-    act->unsupported = LOAD_BYTE(b);
-
-    if (!act->initialized || act->unsupported)
-        return b - start;
-
-    act->featIndex = LOAD_BYTE(b);
     act->info.initialized = LOAD_BYTE(b);
     act->info.flags = LOAD_WORD(b);
     act->info.count = LOAD_BYTE(b);
@@ -274,14 +223,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_action_vt = {
-    .size = sizeof(struct hidpp_feat_action),
-    .alignment = _Alignof(struct hidpp_feat_action),
-    .maxCacheSize = sizeof(struct hidpp_feat_action),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_action),
+    .ids = { ACTION_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 static int has_control(const struct hidpp_feat_action *act, uint16_t id) {
@@ -371,7 +317,7 @@ int hidpp_action_get(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, act->featIndex, 3);
+    make_packet(&req, dev, act->base.featIndex, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
     req.params[2] = host;
@@ -428,7 +374,7 @@ int hidpp_action_set(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, act->featIndex, 4);
+    make_packet(&req, dev, act->base.featIndex, 4);
     req.kind = HIDPP_KIND_LONG; /* 7 parameters */
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
@@ -450,7 +396,7 @@ int hidpp_action_reset(hidpp_device_t *dev, uint16_t id, uint8_t host) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, act->featIndex, 5);
+    make_packet(&req, dev, act->base.featIndex, 5);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
     req.params[2] = host;
@@ -469,7 +415,7 @@ int hidpp_action_reset_all(hidpp_device_t *dev, uint8_t hostMask) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, act->featIndex, 6);
+    make_packet(&req, dev, act->base.featIndex, 6);
     req.params[0] = hostMask;
 
     return hidpp_device_request(dev, &req, &res);

@@ -86,28 +86,27 @@
 #define MS 1000
 
 struct hidpp_feat_report_rate {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t basicRates;                   /* 0x8060 */
     uint16_t supported[CONNECTION_COUNT]; /* 0x8061 */
     struct hidpp_report_rate_info info;
 };
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_report_rate *rr) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_report_rate *rr = feat;
+    rr->info.isExtended = rr->base.which == 0; /* 0x8061 */
     hidpp_packet_t req, res;
     int rc;
 
     if (!rr->info.isExtended) {
-        make_packet(&req, dev, rr->featIndex, 0);
+        make_packet(&req, dev, rr->base.featIndex, 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res)))
             rr->basicRates = res.params[0];
         else if (is_transient(dev, rc))
             return rc;
     } else {
-        make_packet(&req, dev, rr->featIndex, 0);
+        make_packet(&req, dev, rr->base.featIndex, 0);
 
         /* unsupported connection types are refused for good */
         for (uint8_t c = 0; c < CONNECTION_COUNT; c++) {
@@ -127,50 +126,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_report_rate *rr) {
 static int ensure_init(
     struct hidpp_feat_report_rate **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_report_rate *rr;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    rr = dev->features[HIDPP_FEAT_REPORT_RATE];
-    *out = rr;
-
-    if (rr->initialized)
-        return rr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(rr, 0, sizeof(*rr));
-    int featIndex = feature_lookup(dev, EXTENDED_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    rr->info.isExtended = featIndex != 0;
-
-    if (featIndex == 0 && (featIndex = feature_lookup(dev, REPORT_RATE_ID)) < 0)
-        return featIndex;
-
-    rr->featIndex = (uint8_t)featIndex;
-    rr->unsupported = featIndex == 0;
-
-    if (!rr->unsupported && (rc = query_info(dev, rr)))
-        return rc;
-
-    rr->initialized = HIDPP_TRUE;
-
-    return rr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_report_rate *rr = feat;
-    (void)dev;
-    rr->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_report_rate *rr;
-    (void)feat;
-    ensure_init(&rr, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_REPORT_RATE, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -178,15 +137,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, rr->initialized);
-    SAVE_BYTE(b, rr->unsupported);
-
-    if (!rr->initialized || rr->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, rr->featIndex);
     SAVE_BYTE(b, rr->info.initialized);
-    SAVE_BYTE(b, rr->info.isExtended);
     SAVE_BYTE(b, rr->basicRates);
 
     for (int c = 0; c < CONNECTION_COUNT; c++)
@@ -200,15 +151,8 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    rr->initialized = LOAD_BYTE(b);
-    rr->unsupported = LOAD_BYTE(b);
-
-    if (!rr->initialized || rr->unsupported)
-        return b - start;
-
-    rr->featIndex = LOAD_BYTE(b);
     rr->info.initialized = LOAD_BYTE(b);
-    rr->info.isExtended = LOAD_BYTE(b);
+    rr->info.isExtended = rr->base.which == 0; /* 0x8061 */
     rr->basicRates = LOAD_BYTE(b);
 
     for (int c = 0; c < CONNECTION_COUNT; c++)
@@ -217,21 +161,40 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
-const struct hidpp_feat_vt hidpp_feat_report_rate_vt = {
-    .size = sizeof(struct hidpp_feat_report_rate),
-    .alignment = _Alignof(struct hidpp_feat_report_rate),
-    .maxCacheSize = sizeof(struct hidpp_feat_report_rate),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
-    .saveCache = save_cache,
-    .loadCache = load_cache,
-    .clearCache = clear_cache,
-};
-
 /* Rate N of 0x8061 halves the interval N times. */
 static uint16_t extended_interval(uint8_t rate) {
     return (uint16_t)(SLOWEST_INTERVAL >> rate);
 }
+
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != EXTENDED_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_REPORT_RATE;
+    e->as.reportRate.connection = p[0];
+    e->as.reportRate.rate = p[1] < EXTENDED_RATE_COUNT ? extended_interval(p[1])
+                                                       : 0;
+    return HIDPP_OK;
+}
+
+const struct hidpp_feat_vt hidpp_feat_report_rate_vt = {
+    FEAT_VT_SIZE(struct hidpp_feat_report_rate),
+    .ids = { EXTENDED_ID, REPORT_RATE_ID },
+    .query = query_info,
+    .saveCache = save_cache,
+    .loadCache = load_cache,
+    .parseEvent = parse_event,
+};
 
 static int extended_rate(uint16_t interval) {
     for (uint8_t rate = 0; rate < EXTENDED_RATE_COUNT; rate++)
@@ -306,7 +269,7 @@ int hidpp_report_rate_list(
 
     /* what the current connection allows can change at any time */
     hidpp_packet_t req, res;
-    make_packet(&req, dev, rr->featIndex, 1);
+    make_packet(&req, dev, rr->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -327,7 +290,7 @@ int hidpp_report_rate_get(hidpp_device_t *dev, uint8_t connection) {
         if (connection != HIDPP_CONNECTION_CURRENT)
             return HIDPP_EINVAL;
 
-        make_packet(&req, dev, rr->featIndex, 1);
+        make_packet(&req, dev, rr->base.featIndex, 1);
 
         if ((rc = hidpp_device_request(dev, &req, &res)))
             return rc;
@@ -341,7 +304,7 @@ int hidpp_report_rate_get(hidpp_device_t *dev, uint8_t connection) {
     if (connection >= CONNECTION_COUNT)
         return HIDPP_EINVAL;
 
-    make_packet(&req, dev, rr->featIndex, 2);
+    make_packet(&req, dev, rr->base.featIndex, 2);
     req.params[0] = connection;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -370,7 +333,7 @@ int hidpp_report_rate_set(hidpp_device_t *dev, uint16_t interval) {
         if (rr->basicRates && !(rr->basicRates & (1u << (ms - 1))))
             return HIDPP_EINVAL;
 
-        make_packet(&req, dev, rr->featIndex, 2);
+        make_packet(&req, dev, rr->base.featIndex, 2);
         req.params[0] = ms;
         return hidpp_device_request(dev, &req, &res);
     }
@@ -386,7 +349,7 @@ int hidpp_report_rate_set(hidpp_device_t *dev, uint16_t interval) {
     if (known && !(known & (1u << rate)))
         return HIDPP_EINVAL;
 
-    make_packet(&req, dev, rr->featIndex, 3);
+    make_packet(&req, dev, rr->base.featIndex, 3);
     req.params[0] = (uint8_t)rate;
     return hidpp_device_request(dev, &req, &res);
 }

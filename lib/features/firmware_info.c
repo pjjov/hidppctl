@@ -45,10 +45,8 @@
 #define SUPPORTS_BT_FLAG 0x1
 
 struct hidpp_feat_firmware_info {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
+    struct hidpp_feat_base base;
     hidpp_bool_t hasSerialNumber;
-    uint8_t featIndex;
     uint8_t entityCount;
 
     char serialNumber[SERIAL_NUM_LEN + 1];
@@ -170,79 +168,47 @@ static int query_serial_number(
 static int ensure_init(
     struct hidpp_feat_firmware_info **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_firmware_info *fw;
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_FIRMWARE_INFO, &feat);
+    *out = feat;
+    return rc;
+}
 
-    if (!out || !dev)
-        return HIDPP_EINVAL;
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_firmware_info *fw = feat;
+    uint8_t index = fw->base.featIndex;
+    int rc = query_firmware_info(dev, index, &fw->info);
 
-    fw = dev->features[HIDPP_FEAT_FIRMWARE_INFO];
-    *out = fw;
+    if (rc && is_transient(dev, rc))
+        return rc;
 
-    if (fw->initialized)
-        return fw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(fw->serialNumber, 0, sizeof(fw->serialNumber));
-    memset(&fw->info, 0, sizeof(fw->info));
-    memset(fw->entities, 0, sizeof(fw->entities));
-    int featIndex = feature_lookup(dev, 0x0003);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    fw->featIndex = featIndex;
-    fw->hasSerialNumber = HIDPP_FALSE;
-    fw->unsupported = featIndex == 0;
-
-    if (!fw->unsupported) {
-        int rc = query_firmware_info(dev, fw->featIndex, &fw->info);
-
-        if (rc && is_transient(dev, rc))
-            return rc;
-
-        fw->entityCount = rc == 0 ? fw->info.entityCount : 0;
-        fw->hasSerialNumber = fw->info.hasSerialNumber;
-    }
+    fw->entityCount = rc == 0 ? fw->info.entityCount : 0;
+    fw->hasSerialNumber = fw->info.hasSerialNumber;
 
     if (fw->hasSerialNumber) {
-        int rc = query_serial_number(dev, fw->featIndex, fw->serialNumber);
+        rc = query_serial_number(dev, index, fw->serialNumber);
 
         if (rc && is_transient(dev, rc))
             return rc;
     }
 
-    fw->initialized = HIDPP_TRUE;
-
-    return fw->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
+    return HIDPP_OK;
 }
 
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_firmware_info *fw = feat;
-    fw->initialized = HIDPP_FALSE;
-}
-
+/* Entities are only queried when needed, unless the cache is collected. */
 static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_firmware_info *fw;
-    (void)feat;
-
-    if (ensure_init(&fw, dev))
-        return;
+    struct hidpp_feat_firmware_info *fw = feat;
 
     for (size_t id = 0; id < fw->entityCount; id++)
         if (!fw->entities[id].initialized)
-            query_entity_info(&fw->entities[id], dev, fw->featIndex, id);
+            query_entity_info(&fw->entities[id], dev, fw->base.featIndex, id);
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_firmware_info *fw = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    SAVE_BYTE(b, fw->initialized);
-    SAVE_BYTE(b, fw->unsupported);
-
-    if (!fw->initialized || fw->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, fw->featIndex);
     SAVE_BYTE(b, fw->entityCount);
     SAVE_BYTE(b, fw->hasSerialNumber);
 
@@ -274,14 +240,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_firmware_info *fw = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    fw->initialized = LOAD_BYTE(b);
-    fw->unsupported = LOAD_BYTE(b);
-
-    if (!fw->initialized || fw->unsupported)
-        return b - start;
-
-    fw->featIndex = LOAD_BYTE(b);
     fw->entityCount = LOAD_BYTE(b);
     fw->hasSerialNumber = LOAD_BYTE(b);
 
@@ -308,7 +268,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         info->reserved = LOAD_BYTE(b);
         LOAD_BYTES(b, (char *)info->specificInfo, sizeof(info->specificInfo));
 
-        if (fw->initialized && !fw->unsupported && info->initialized) {
+        if (info->initialized) {
             info->typeName = get_type_name(info->type);
         } else {
             info->typeName = NULL;
@@ -319,14 +279,12 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_firmware_info_vt = {
-    .size = sizeof(struct hidpp_feat_firmware_info),
-    .alignment = _Alignof(struct hidpp_feat_firmware_info),
-    .maxCacheSize = sizeof(struct hidpp_feat_firmware_info),
-    .minCacheSize = 2 * sizeof(uint8_t),
+    FEAT_VT_SIZE(struct hidpp_feat_firmware_info),
+    .ids = { 0x0003 },
+    .query = query_info,
     .collectCache = collect_cache,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 struct hidpp_firmware_info *hidpp_firmware_info(hidpp_device_t *dev) {
@@ -352,7 +310,8 @@ struct hidpp_firmware_entity *hidpp_firmware_entity(
 
     info = &fw->entities[id];
 
-    if (!info->initialized && query_entity_info(info, dev, fw->featIndex, id))
+    if (!info->initialized
+        && query_entity_info(info, dev, fw->base.featIndex, id))
         return NULL;
 
     return info;

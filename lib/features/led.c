@@ -353,10 +353,7 @@ struct led_zone {
 };
 
 struct hidpp_feat_led {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_led_info info;
     struct led_zone zones[MAX_ZONES];
     struct hidpp_led_effect_info allZones[MAX_EFFECTS]; /* 0x8071 */
@@ -438,7 +435,7 @@ static void make_info_request(
     uint8_t effect,
     uint8_t type
 ) {
-    make_packet(req, dev, led->featIndex, 0);
+    make_packet(req, dev, led->base.featIndex, 0);
     req->kind = HIDPP_KIND_LONG;
     req->params[0] = zone;
     req->params[1] = effect;
@@ -458,7 +455,7 @@ static int query_effect(
     if (led->info.isRgbEffects) {
         make_info_request(&req, dev, led, zone, index, INFO_GENERAL);
     } else {
-        make_packet(&req, dev, led->featIndex, 2);
+        make_packet(&req, dev, led->base.featIndex, 2);
         req.params[0] = zone;
         req.params[1] = index;
     }
@@ -488,7 +485,7 @@ static int query_zone(
     if (led->info.isRgbEffects) {
         make_info_request(&req, dev, led, index, 0xFF, INFO_GENERAL);
     } else {
-        make_packet(&req, dev, led->featIndex, 1);
+        make_packet(&req, dev, led->base.featIndex, 1);
         req.params[0] = index;
     }
 
@@ -520,7 +517,10 @@ static int query_zone(
     return HIDPP_OK;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_led *led) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_led *led = feat;
+    led->info.isRgbEffects = led->base.which == 0; /* 0x8071 */
+    led->info.version = led->base.version;
     struct hidpp_led_info *info = &led->info;
     hidpp_packet_t req, res;
     int rc;
@@ -528,7 +528,7 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_led *led) {
     if (info->isRgbEffects)
         make_info_request(&req, dev, led, 0xFF, 0xFF, INFO_GENERAL);
     else
-        make_packet(&req, dev, led->featIndex, 0);
+        make_packet(&req, dev, led->base.featIndex, 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return is_transient(dev, rc) ? rc : HIDPP_OK;
@@ -565,59 +565,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_led *led) {
 }
 
 static int ensure_init(struct hidpp_feat_led **out, hidpp_device_t *dev) {
-    struct hidpp_feat_led *led;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    led = dev->features[HIDPP_FEAT_LED];
-    *out = led;
-
-    if (led->initialized)
-        return led->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(led, 0, sizeof(*led));
-    int featIndex = feature_lookup(dev, RGB_EFFECTS_ID);
-    uint16_t id = RGB_EFFECTS_ID;
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    led->info.isRgbEffects = featIndex != 0;
-
-    if (featIndex == 0) {
-        id = COLOR_LED_ID;
-
-        if ((featIndex = feature_lookup(dev, id)) < 0)
-            return featIndex;
-    }
-
-    led->featIndex = (uint8_t)featIndex;
-    led->unsupported = featIndex == 0;
-
-    if (!led->unsupported) {
-        led->info.version = feature_version(dev, id);
-
-        if ((rc = query_info(dev, led)))
-            return rc;
-    }
-
-    led->initialized = HIDPP_TRUE;
-
-    return led->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_led *led = feat;
-    (void)dev;
-    led->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_led *led;
-    (void)feat;
-    ensure_init(&led, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_LED, &feat);
+    *out = feat;
+    return rc;
 }
 
 static uint8_t *save_effects(
@@ -659,16 +610,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, led->initialized);
-    SAVE_BYTE(b, led->unsupported);
-
-    if (!led->initialized || led->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, led->featIndex);
     SAVE_BYTE(b, info->initialized);
-    SAVE_BYTE(b, info->isRgbEffects);
-    SAVE_BYTE(b, info->version);
     SAVE_BYTE(b, info->zoneCount);
     SAVE_WORD(b, info->nvCapabilities);
     SAVE_WORD(b, info->extCapabilities);
@@ -695,16 +637,9 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    led->initialized = LOAD_BYTE(b);
-    led->unsupported = LOAD_BYTE(b);
-
-    if (!led->initialized || led->unsupported)
-        return b - start;
-
-    led->featIndex = LOAD_BYTE(b);
     info->initialized = LOAD_BYTE(b);
-    info->isRgbEffects = LOAD_BYTE(b);
-    info->version = LOAD_BYTE(b);
+    info->isRgbEffects = led->base.which == 0; /* 0x8071 */
+    info->version = led->base.version;
     info->zoneCount = LOAD_BYTE(b);
     info->nvCapabilities = LOAD_WORD(b);
     info->extCapabilities = LOAD_WORD(b);
@@ -740,15 +675,58 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != COLOR_LED_ID && id != RGB_EFFECTS_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_LED;
+        e->as.led.kind = HIDPP_LED_EVENT_SYNC;
+        e->as.led.zone = p[0];
+        e->as.led.counter = HIDPP_WORD(p[1], p[2]);
+        return HIDPP_OK;
+    }
+
+    /* 0x8070 has a single event */
+    if (id != RGB_EFFECTS_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 1) {
+        e->type = HIDPP_EVENT_LED;
+        e->as.led.kind = HIDPP_LED_EVENT_ACTIVITY;
+        e->as.led.activity = p[0];
+        return HIDPP_OK;
+    } else if (func == 2) {
+        e->type = HIDPP_EVENT_LED;
+        e->as.led.kind = HIDPP_LED_EVENT_CHANGED;
+        e->as.led.zone = p[0];
+        e->as.led.effect = p[1];
+        memcpy(e->as.led.params, &p[2], PARAM_COUNT);
+        e->as.led.persistence = p[12] & PERSISTENCE_MASK;
+        e->as.led.powerMode = (p[12] >> POWER_MODE_SHIFT) & 0x03;
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_led_vt = {
-    .size = sizeof(struct hidpp_feat_led),
-    .alignment = _Alignof(struct hidpp_feat_led),
-    .maxCacheSize = sizeof(struct hidpp_feat_led),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_led),
+    .ids = { RGB_EFFECTS_ID, COLOR_LED_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 /* Restricts the call to one of the two features. */
@@ -1036,7 +1014,7 @@ int hidpp_led_set_effect(
         if (e->powerMode)
             return HIDPP_EINVAL;
 
-        make_packet(&req, dev, led->featIndex, 3);
+        make_packet(&req, dev, led->base.featIndex, 3);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = e->zone;
         req.params[1] = e->index;
@@ -1055,7 +1033,7 @@ int hidpp_led_set_effect(
         && !(zone->effectPersistency & EFFECT_PERSISTENCY_FLAG))
         return HIDPP_EINVAL;
 
-    make_packet(&req, dev, led->featIndex, 1);
+    make_packet(&req, dev, led->base.featIndex, 1);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = e->zone;
     req.params[1] = e->index;
@@ -1091,7 +1069,7 @@ int hidpp_led_get_effect(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 14);
+    make_packet(&req, dev, led->base.featIndex, 14);
     req.params[0] = zone;
     req.params[1] = persistence == HIDPP_LED_NON_VOLATILE;
 
@@ -1139,7 +1117,7 @@ int hidpp_led_nv_get(
     out->capability = capability;
 
     if (!led->info.isRgbEffects) {
-        make_packet(&req, dev, led->featIndex, 4);
+        make_packet(&req, dev, led->base.featIndex, 4);
         req.params[0] = HIDPP_MSB(capability);
         req.params[1] = HIDPP_LSB(capability);
 
@@ -1152,7 +1130,7 @@ int hidpp_led_nv_get(
         return HIDPP_OK;
     }
 
-    make_packet(&req, dev, led->featIndex, 3);
+    make_packet(&req, dev, led->base.featIndex, 3);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = GET;
     req.params[1] = HIDPP_MSB(capability);
@@ -1186,7 +1164,7 @@ int hidpp_led_nv_set(hidpp_device_t *dev, const struct hidpp_led_nv *cfg) {
             if (cfg->params[i])
                 return HIDPP_EINVAL;
 
-        make_packet(&req, dev, led->featIndex, 5);
+        make_packet(&req, dev, led->base.featIndex, 5);
         req.params[0] = HIDPP_MSB(cfg->capability);
         req.params[1] = HIDPP_LSB(cfg->capability);
         req.params[2] = cfg->state;
@@ -1196,7 +1174,7 @@ int hidpp_led_nv_set(hidpp_device_t *dev, const struct hidpp_led_nv *cfg) {
         return hidpp_device_request(dev, &req, &res);
     }
 
-    make_packet(&req, dev, led->featIndex, 3);
+    make_packet(&req, dev, led->base.featIndex, 3);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = SET;
     req.params[1] = HIDPP_MSB(cfg->capability);
@@ -1220,7 +1198,7 @@ int hidpp_led_sw_control_get(
         return rc;
 
     if (!led->info.isRgbEffects) {
-        make_packet(&req, dev, led->featIndex, 7);
+        make_packet(&req, dev, led->base.featIndex, 7);
 
         if ((rc = hidpp_device_request(dev, &req, &res)))
             return rc;
@@ -1230,7 +1208,7 @@ int hidpp_led_sw_control_get(
         return HIDPP_OK;
     }
 
-    make_packet(&req, dev, led->featIndex, 5);
+    make_packet(&req, dev, led->base.featIndex, 5);
     req.params[0] = GET;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -1262,13 +1240,13 @@ int hidpp_led_sw_control_set(
         return HIDPP_EINVAL;
 
     if (!rgb) {
-        make_packet(&req, dev, led->featIndex, 8);
+        make_packet(&req, dev, led->base.featIndex, 8);
         req.params[0] = control;
         req.params[1] = notifications;
         return hidpp_device_request(dev, &req, &res);
     }
 
-    make_packet(&req, dev, led->featIndex, 5);
+    make_packet(&req, dev, led->base.featIndex, 5);
     req.params[0] = SET;
     req.params[1] = control;
     req.params[2] = notifications;
@@ -1302,7 +1280,7 @@ int hidpp_led_bin_get(
         if (backup)
             return HIDPP_ENOSYS;
 
-        make_packet(&req, dev, led->featIndex, 6);
+        make_packet(&req, dev, led->base.featIndex, 6);
         req.params[0] = zone;
         req.params[1] = binIndex;
 
@@ -1313,7 +1291,7 @@ int hidpp_led_bin_get(
         return HIDPP_OK;
     }
 
-    make_packet(&req, dev, led->featIndex, 4);
+    make_packet(&req, dev, led->base.featIndex, 4);
     req.params[0] = backup ? GET_BACKUP : GET;
     req.params[1] = zone;
     req.params[2] = binIndex;
@@ -1343,7 +1321,7 @@ int hidpp_led_bin_set(hidpp_device_t *dev, const struct hidpp_led_bin *bin) {
         if (!led->info.canSetBin)
             return HIDPP_ENOSYS;
 
-        make_packet(&req, dev, led->featIndex, 15);
+        make_packet(&req, dev, led->base.featIndex, 15);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = bin->zone;
         req.params[1] = bin->binIndex;
@@ -1351,7 +1329,7 @@ int hidpp_led_bin_set(hidpp_device_t *dev, const struct hidpp_led_bin *bin) {
         return hidpp_device_request(dev, &req, &res);
     }
 
-    make_packet(&req, dev, led->featIndex, 4);
+    make_packet(&req, dev, led->base.featIndex, 4);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = SET;
     req.params[1] = bin->zone;
@@ -1375,7 +1353,9 @@ int hidpp_led_sync(hidpp_device_t *dev, uint8_t zone, int16_t drift) {
 
     uint16_t raw = (uint16_t)drift;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, led->info.isRgbEffects ? 6 : 13);
+    make_packet(
+        &req, dev, led->base.featIndex, led->info.isRgbEffects ? 6 : 13
+    );
     req.params[0] = zone;
     req.params[2] = HIDPP_MSB(raw);
     req.params[3] = HIDPP_LSB(raw);
@@ -1409,7 +1389,7 @@ int hidpp_led_settings(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 9);
+    make_packet(&req, dev, led->base.featIndex, 9);
     req.params[0] = zone;
     req.params[1] = persistence == HIDPP_LED_NON_VOLATILE;
 
@@ -1436,7 +1416,7 @@ int hidpp_led_clear_settings(hidpp_device_t *dev, uint8_t zone) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 10);
+    make_packet(&req, dev, led->base.featIndex, 10);
     req.params[0] = zone;
     return hidpp_device_request(dev, &req, &res);
 }
@@ -1449,7 +1429,7 @@ int hidpp_led_cycling_direction(hidpp_device_t *dev, int direction) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 11);
+    make_packet(&req, dev, led->base.featIndex, 11);
     req.params[0] = direction ? 1 : 0;
     return hidpp_device_request(dev, &req, &res);
 }
@@ -1468,7 +1448,7 @@ int hidpp_led_current_color(hidpp_device_t *dev, uint8_t zone, uint8_t rgb[3]) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 12);
+    make_packet(&req, dev, led->base.featIndex, 12);
     req.params[0] = zone;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -1494,7 +1474,7 @@ int hidpp_led_set_pattern(hidpp_device_t *dev, uint8_t zone, uint8_t pattern) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 2);
+    make_packet(&req, dev, led->base.featIndex, 2);
     req.params[0] = zone;
     req.params[1] = pattern;
     return hidpp_device_request(dev, &req, &res);
@@ -1513,7 +1493,7 @@ int hidpp_led_power_config_get(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 7);
+    make_packet(&req, dev, led->base.featIndex, 7);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = GET;
 
@@ -1539,7 +1519,7 @@ int hidpp_led_power_config_set(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 7);
+    make_packet(&req, dev, led->base.featIndex, 7);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = SET;
     req.params[1] = HIDPP_MSB(cfg->flags);
@@ -1559,7 +1539,7 @@ int hidpp_led_power_mode(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 8);
+    make_packet(&req, dev, led->base.featIndex, 8);
     req.params[0] = GET;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -1579,7 +1559,7 @@ int hidpp_led_set_power_mode(hidpp_device_t *dev, uint8_t mode) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 8);
+    make_packet(&req, dev, led->base.featIndex, 8);
     req.params[0] = SET;
     req.params[1] = mode;
     return hidpp_device_request(dev, &req, &res);
@@ -1596,7 +1576,7 @@ int hidpp_led_shutdown(hidpp_device_t *dev) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, led->featIndex, 9);
+    make_packet(&req, dev, led->base.featIndex, 9);
     return hidpp_device_request(dev, &req, &res);
 }
 

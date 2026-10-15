@@ -37,10 +37,7 @@
 /* clang-format on */
 
 struct hidpp_feat_pointer {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_pointer_info info;
 };
 
@@ -50,10 +47,11 @@ static void unpack_flags(struct hidpp_pointer_info *info) {
     info->suggestVerticalTuning = !!(info->flags & VERTICAL_TUNING_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_pointer *ptr) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_pointer *ptr = feat;
     struct hidpp_pointer_info *info = &ptr->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, ptr->featIndex, 0);
+    make_packet(&req, dev, ptr->base.featIndex, 0);
 
     int rc;
 
@@ -68,45 +66,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_pointer *ptr) {
 }
 
 static int ensure_init(struct hidpp_feat_pointer **out, hidpp_device_t *dev) {
-    struct hidpp_feat_pointer *ptr;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    ptr = dev->features[HIDPP_FEAT_POINTER];
-    *out = ptr;
-
-    if (ptr->initialized)
-        return ptr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(ptr, 0, sizeof(*ptr));
-    int featIndex = feature_lookup(dev, POINTER_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    ptr->featIndex = (uint8_t)featIndex;
-    ptr->unsupported = featIndex == 0;
-
-    if (!ptr->unsupported && (rc = query_info(dev, ptr)))
-        return rc;
-
-    ptr->initialized = HIDPP_TRUE;
-
-    return ptr->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_pointer *ptr = feat;
-    (void)dev;
-    ptr->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_pointer *ptr;
-    (void)feat;
-    ensure_init(&ptr, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_POINTER, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -114,13 +77,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, ptr->initialized);
-    SAVE_BYTE(b, ptr->unsupported);
-
-    if (!ptr->initialized || ptr->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, ptr->featIndex);
     SAVE_BYTE(b, ptr->info.initialized);
     SAVE_WORD(b, ptr->info.resolution);
     SAVE_BYTE(b, ptr->info.flags);
@@ -133,13 +89,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    ptr->initialized = LOAD_BYTE(b);
-    ptr->unsupported = LOAD_BYTE(b);
-
-    if (!ptr->initialized || ptr->unsupported)
-        return b - start;
-
-    ptr->featIndex = LOAD_BYTE(b);
     ptr->info.initialized = LOAD_BYTE(b);
     ptr->info.resolution = LOAD_WORD(b);
     ptr->info.flags = LOAD_BYTE(b);
@@ -149,14 +98,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_pointer_vt = {
-    .size = sizeof(struct hidpp_feat_pointer),
-    .alignment = _Alignof(struct hidpp_feat_pointer),
-    .maxCacheSize = sizeof(struct hidpp_feat_pointer),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_pointer),
+    .ids = { POINTER_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 struct hidpp_pointer_info *hidpp_pointer_info(hidpp_device_t *dev) {

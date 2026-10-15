@@ -73,10 +73,7 @@
 #define LOCATION_RAM 1
 
 struct hidpp_feat_equalizer {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     int8_t rawMin; /* as reported, 0 means -dbRange */
     int8_t rawMax;
     struct hidpp_eq_info info;
@@ -98,7 +95,7 @@ static int query_frequencies(
     hidpp_packet_t req, res;
     int rc;
 
-    make_packet(&req, dev, eq->featIndex, 1);
+    make_packet(&req, dev, eq->base.featIndex, 1);
 
     for (uint8_t start = 0; start < info->bandCount;
          start += FREQUENCIES_PER_CALL) {
@@ -118,10 +115,12 @@ static int query_frequencies(
     return HIDPP_OK;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_equalizer *eq) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_equalizer *eq = feat;
+    eq->info.version = eq->base.version;
     struct hidpp_eq_info *info = &eq->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, eq->featIndex, 0);
+    make_packet(&req, dev, eq->base.featIndex, 0);
 
     int rc;
 
@@ -150,49 +149,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_equalizer *eq) {
 }
 
 static int ensure_init(struct hidpp_feat_equalizer **out, hidpp_device_t *dev) {
-    struct hidpp_feat_equalizer *eq;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    eq = dev->features[HIDPP_FEAT_EQUALIZER];
-    *out = eq;
-
-    if (eq->initialized)
-        return eq->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(eq, 0, sizeof(*eq));
-    int featIndex = feature_lookup(dev, EQUALIZER_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    eq->featIndex = (uint8_t)featIndex;
-    eq->unsupported = featIndex == 0;
-
-    if (!eq->unsupported) {
-        eq->info.version = feature_version(dev, EQUALIZER_ID);
-
-        if ((rc = query_info(dev, eq)))
-            return rc;
-    }
-
-    eq->initialized = HIDPP_TRUE;
-
-    return eq->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_equalizer *eq = feat;
-    (void)dev;
-    eq->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_equalizer *eq;
-    (void)feat;
-    ensure_init(&eq, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_EQUALIZER, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -200,15 +160,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, eq->initialized);
-    SAVE_BYTE(b, eq->unsupported);
-
-    if (!eq->initialized || eq->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, eq->featIndex);
     SAVE_BYTE(b, eq->info.initialized);
-    SAVE_BYTE(b, eq->info.version);
     SAVE_BYTE(b, eq->info.bandCount);
     SAVE_BYTE(b, eq->info.dbRange);
     SAVE_BYTE(b, eq->info.capabilities);
@@ -226,15 +178,8 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    eq->initialized = LOAD_BYTE(b);
-    eq->unsupported = LOAD_BYTE(b);
-
-    if (!eq->initialized || eq->unsupported)
-        return b - start;
-
-    eq->featIndex = LOAD_BYTE(b);
     eq->info.initialized = LOAD_BYTE(b);
-    eq->info.version = LOAD_BYTE(b);
+    eq->info.version = eq->base.version;
     eq->info.bandCount = LOAD_BYTE(b);
     eq->info.dbRange = LOAD_BYTE(b);
     eq->info.capabilities = LOAD_BYTE(b);
@@ -253,14 +198,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_equalizer_vt = {
-    .size = sizeof(struct hidpp_feat_equalizer),
-    .alignment = _Alignof(struct hidpp_feat_equalizer),
-    .maxCacheSize = sizeof(struct hidpp_feat_equalizer),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_equalizer),
+    .ids = { EQUALIZER_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 static int ensure_noise_reduction(
@@ -303,7 +245,7 @@ int hidpp_eq_get(hidpp_device_t *dev, int active, int8_t *out, size_t max) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, eq->featIndex, 2);
+    make_packet(&req, dev, eq->base.featIndex, 2);
     req.params[0] = active ? LOCATION_RAM : LOCATION_EEPROM;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -337,7 +279,7 @@ int hidpp_eq_set(
             return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, eq->featIndex, 3);
+    make_packet(&req, dev, eq->base.featIndex, 3);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = persistence;
 
@@ -355,7 +297,7 @@ int hidpp_eq_noise_reduction(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, eq->featIndex, 4);
+    make_packet(&req, dev, eq->base.featIndex, 4);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -371,7 +313,7 @@ int hidpp_eq_set_noise_reduction(hidpp_device_t *dev, int enabled) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, eq->featIndex, 5);
+    make_packet(&req, dev, eq->base.featIndex, 5);
     req.params[0] = enabled ? 1 : 0;
 
     return hidpp_device_request(dev, &req, &res);

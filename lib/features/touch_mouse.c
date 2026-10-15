@@ -61,17 +61,15 @@
 #define TOUCH_MOUSE_ID 0x6110
 
 struct hidpp_feat_touch_mouse {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_touch_mouse_info info;
 };
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_touch_mouse *tm) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_touch_mouse *tm = feat;
     struct hidpp_touch_mouse_info *info = &tm->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tm->featIndex, 0);
+    make_packet(&req, dev, tm->base.featIndex, 0);
 
     int rc;
 
@@ -91,45 +89,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_touch_mouse *tm) {
 static int ensure_init(
     struct hidpp_feat_touch_mouse **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_touch_mouse *tm;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    tm = dev->features[HIDPP_FEAT_TOUCH_MOUSE];
-    *out = tm;
-
-    if (tm->initialized)
-        return tm->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(tm, 0, sizeof(*tm));
-    int featIndex = feature_lookup(dev, TOUCH_MOUSE_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    tm->featIndex = (uint8_t)featIndex;
-    tm->unsupported = featIndex == 0;
-
-    if (!tm->unsupported && (rc = query_info(dev, tm)))
-        return rc;
-
-    tm->initialized = HIDPP_TRUE;
-
-    return tm->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_touch_mouse *tm = feat;
-    (void)dev;
-    tm->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_touch_mouse *tm;
-    (void)feat;
-    ensure_init(&tm, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_TOUCH_MOUSE, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -137,13 +100,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, tm->initialized);
-    SAVE_BYTE(b, tm->unsupported);
-
-    if (!tm->initialized || tm->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, tm->featIndex);
     SAVE_BYTE(b, tm->info.initialized);
     SAVE_WORD(b, tm->info.xMax);
     SAVE_WORD(b, tm->info.yMax);
@@ -160,13 +116,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    tm->initialized = LOAD_BYTE(b);
-    tm->unsupported = LOAD_BYTE(b);
-
-    if (!tm->initialized || tm->unsupported)
-        return b - start;
-
-    tm->featIndex = LOAD_BYTE(b);
     tm->info.initialized = LOAD_BYTE(b);
     tm->info.xMax = LOAD_WORD(b);
     tm->info.yMax = LOAD_WORD(b);
@@ -178,15 +127,53 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    (void)dev, (void)feat;
+
+    if (id != TOUCH_MOUSE_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_TOUCH_MOUSE_POINTS;
+
+        /*  4 bytes per point: x and y bits 11-4, their low nibbles (y in
+            the high one) and the contact size (wy high) */
+        for (int i = 0; i < 4; i++) {
+            struct hidpp_touch_mouse_point *pt = &e->as.touchMousePoints[i];
+            const uint8_t *params = &pkt->params[i * 4];
+
+            pt->x = (uint16_t)((params[0] << 4) | HIDPP_LSN(params[2]));
+            pt->y = (uint16_t)((params[1] << 4) | HIDPP_MSN(params[2]));
+            pt->wx = HIDPP_LSN(params[3]);
+            pt->wy = HIDPP_MSN(params[3]);
+        }
+
+        return HIDPP_OK;
+    } else if (func == 1) {
+        e->type = HIDPP_EVENT_TOUCH_MOUSE_STATUS;
+        e->as.touchMouseStatus.flags = pkt->params[0];
+        e->as.touchMouseStatus.mouseLifted = pkt->params[0] & 2;
+        e->as.touchMouseStatus.buttonDown = pkt->params[0] & 1;
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_touch_mouse_vt = {
-    .size = sizeof(struct hidpp_feat_touch_mouse),
-    .alignment = _Alignof(struct hidpp_feat_touch_mouse),
-    .maxCacheSize = sizeof(struct hidpp_feat_touch_mouse),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_touch_mouse),
+    .ids = { TOUCH_MOUSE_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_touch_mouse_info *hidpp_touch_mouse_info(hidpp_device_t *dev) {
@@ -206,7 +193,7 @@ int hidpp_touch_mouse_get_mode(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tm->featIndex, 1);
+    make_packet(&req, dev, tm->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -225,7 +212,7 @@ int hidpp_touch_mouse_set_mode(hidpp_device_t *dev, uint8_t mode) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tm->featIndex, 2);
+    make_packet(&req, dev, tm->base.featIndex, 2);
     req.params[0] = mode;
 
     return hidpp_device_request(dev, &req, &res);

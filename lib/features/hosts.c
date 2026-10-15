@@ -179,12 +179,11 @@
 
 /* clang-format on */
 
-struct hidpp_feat_hosts {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
+/* positions of the features in the ids of the vtable */
+enum { CHANGE_HOST, HOSTS_INFO };
 
-    uint8_t changeIndex; /* 0 if 0x1814 is not implemented */
-    uint8_t infoIndex;   /* 0 if 0x1815 is not implemented */
+struct hidpp_feat_hosts {
+    struct hidpp_feat_base base;
     struct hidpp_host_info info;
 };
 
@@ -206,8 +205,8 @@ static void unpack_flags(struct hidpp_feat_hosts *hosts) {
     struct hidpp_host_info *info = &hosts->info;
     uint16_t caps = info->capabilities;
 
-    info->canSwitch = hosts->changeIndex != 0;
-    info->hasHostInfo = hosts->infoIndex != 0;
+    info->canSwitch = hosts->base.indexes[CHANGE_HOST] != 0;
+    info->hasHostInfo = hosts->base.indexes[HOSTS_INFO] != 0;
     info->canGetName = !!(caps & CAP_GET_NAME);
     info->canSetName = !!(caps & CAP_SET_NAME);
     info->canMove = !!(caps & CAP_MOVE);
@@ -219,14 +218,15 @@ static void unpack_flags(struct hidpp_feat_hosts *hosts) {
     info->hasBLEDescriptor = !!(caps & CAP_BLE_DESC);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_hosts *hosts) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_hosts *hosts = feat;
     struct hidpp_host_info *info = &hosts->info;
     hidpp_packet_t req, res;
     hidpp_bool_t answered = HIDPP_FALSE;
     int rc;
 
-    if (hosts->infoIndex) {
-        make_packet(&req, dev, hosts->infoIndex, 0);
+    if (hosts->base.indexes[HOSTS_INFO]) {
+        make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res))) {
             info->capabilities = HIDPP_WORD(res.params[1], res.params[0]);
@@ -238,8 +238,8 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_hosts *hosts) {
     }
 
     /* the older feature is only needed for what the newer one lacks */
-    if (hosts->changeIndex && (!answered || info->count == 0)) {
-        make_packet(&req, dev, hosts->changeIndex, 0);
+    if (hosts->base.indexes[CHANGE_HOST] && (!answered || info->count == 0)) {
+        make_packet(&req, dev, hosts->base.indexes[CHANGE_HOST], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res))) {
             info->count = res.params[0];
@@ -255,48 +255,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_hosts *hosts) {
 }
 
 static int ensure_init(struct hidpp_feat_hosts **out, hidpp_device_t *dev) {
-    struct hidpp_feat_hosts *hosts;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    hosts = dev->features[HIDPP_FEAT_HOSTS];
-    *out = hosts;
-
-    if (hosts->initialized)
-        return hosts->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(hosts, 0, sizeof(*hosts));
-
-    int change = feature_lookup(dev, CHANGE_HOST_ID);
-    int info = feature_lookup(dev, HOSTS_INFO_ID);
-    int rc;
-
-    if (change < 0 || info < 0)
-        return change < 0 ? change : info; /* ask again next time */
-
-    hosts->changeIndex = (uint8_t)change;
-    hosts->infoIndex = (uint8_t)info;
-    hosts->unsupported = !hosts->changeIndex && !hosts->infoIndex;
-
-    if (!hosts->unsupported && (rc = query_info(dev, hosts)))
-        return rc;
-
-    hosts->initialized = HIDPP_TRUE;
-
-    return hosts->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_hosts *hosts = feat;
-    (void)dev;
-    hosts->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_hosts *hosts;
-    (void)feat;
-    ensure_init(&hosts, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_HOSTS, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -304,14 +266,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, hosts->initialized);
-    SAVE_BYTE(b, hosts->unsupported);
-
-    if (!hosts->initialized || hosts->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, hosts->changeIndex);
-    SAVE_BYTE(b, hosts->infoIndex);
     SAVE_BYTE(b, hosts->info.initialized);
     SAVE_BYTE(b, hosts->info.count);
     SAVE_WORD(b, hosts->info.capabilities);
@@ -324,14 +278,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    hosts->initialized = LOAD_BYTE(b);
-    hosts->unsupported = LOAD_BYTE(b);
-
-    if (!hosts->initialized || hosts->unsupported)
-        return b - start;
-
-    hosts->changeIndex = LOAD_BYTE(b);
-    hosts->infoIndex = LOAD_BYTE(b);
     hosts->info.initialized = LOAD_BYTE(b);
     hosts->info.count = LOAD_BYTE(b);
     hosts->info.capabilities = LOAD_WORD(b);
@@ -341,20 +287,18 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_hosts_vt = {
-    .size = sizeof(struct hidpp_feat_hosts),
-    .alignment = _Alignof(struct hidpp_feat_hosts),
-    .maxCacheSize = sizeof(struct hidpp_feat_hosts),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_hosts),
+    .ids = { CHANGE_HOST_ID, HOSTS_INFO_ID },
+    .allIds = HIDPP_TRUE,
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 /*  Feature 0x1815 is needed and the device must announce `cap`.
     A zero `cap` only requires the feature. */
 static int require_info(struct hidpp_feat_hosts *hosts, uint16_t cap) {
-    if (!hosts->infoIndex)
+    if (!hosts->base.indexes[HOSTS_INFO])
         return HIDPP_ENOSYS;
 
     if (cap && !(hosts->info.capabilities & cap))
@@ -379,7 +323,7 @@ static int query_host_status(
     struct hidpp_host_status *out
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 1);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 1);
     req.params[0] = host;
 
     int rc;
@@ -419,17 +363,17 @@ int hidpp_host_current(hidpp_device_t *dev) {
     if ((rc = ensure_init(&hosts, dev)))
         return rc;
 
-    if (hosts->changeIndex) {
-        make_packet(&req, dev, hosts->changeIndex, 0);
+    if (hosts->base.indexes[CHANGE_HOST]) {
+        make_packet(&req, dev, hosts->base.indexes[CHANGE_HOST], 0);
 
         if (!(rc = hidpp_device_request(dev, &req, &res)))
             return res.params[1];
 
-        if (!hosts->infoIndex)
+        if (!hosts->base.indexes[HOSTS_INFO])
             return rc;
     }
 
-    make_packet(&req, dev, hosts->infoIndex, 0);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 0);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -444,14 +388,14 @@ int hidpp_host_switch(hidpp_device_t *dev, uint8_t host) {
     if ((rc = ensure_init(&hosts, dev)))
         return rc;
 
-    if (!hosts->changeIndex)
+    if (!hosts->base.indexes[CHANGE_HOST])
         return HIDPP_ENOSYS;
 
     if ((rc = check_host(hosts, host, HIDPP_FALSE)))
         return rc;
 
     hidpp_packet_t req;
-    make_packet(&req, dev, hosts->changeIndex, 1);
+    make_packet(&req, dev, hosts->base.indexes[CHANGE_HOST], 1);
     req.params[0] = host;
 
     /*  The device resets or drops the connection instead of answering,
@@ -497,7 +441,7 @@ int hidpp_host_name(hidpp_device_t *dev, uint8_t host, char *out, size_t size) {
         length = size - 1;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 3);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 3);
     req.params[0] = host;
 
     size_t read = 0;
@@ -563,7 +507,7 @@ int hidpp_host_set_name(hidpp_device_t *dev, uint8_t host, const char *name) {
         if (chunk > NAME_CHUNK_SIZE)
             chunk = NAME_CHUNK_SIZE;
 
-        make_packet(&req, dev, hosts->infoIndex, 4);
+        make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 4);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = host;
         req.params[1] = (uint8_t)written;
@@ -588,7 +532,7 @@ int hidpp_host_move(hidpp_device_t *dev, uint8_t host, uint8_t newIndex) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 5);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 5);
     req.params[0] = host;
     req.params[1] = newIndex;
 
@@ -605,7 +549,7 @@ int hidpp_host_delete(hidpp_device_t *dev, uint8_t host) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 6);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 6);
     req.params[0] = host;
 
     return hidpp_device_request(dev, &req, &res);
@@ -626,7 +570,7 @@ int hidpp_host_os(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 7);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 7);
     req.params[0] = host;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
@@ -658,7 +602,7 @@ int hidpp_host_set_os(
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 8);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 8);
     req.kind = HIDPP_KIND_LONG; /* 7 parameters */
     req.params[0] = host;
     req.params[1] = os->type;
@@ -694,7 +638,7 @@ int hidpp_host_descriptor(
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->infoIndex, 2);
+    make_packet(&req, dev, hosts->base.indexes[HOSTS_INFO], 2);
     req.params[0] = host;
     req.params[1] = page;
 
@@ -715,7 +659,7 @@ int hidpp_host_descriptor(
 static int resolve_cookie_host(
     hidpp_device_t *dev, struct hidpp_feat_hosts *hosts, uint8_t host
 ) {
-    if (!hosts->changeIndex)
+    if (!hosts->base.indexes[CHANGE_HOST])
         return HIDPP_ENOSYS;
 
     if (host == HIDPP_HOST_CURRENT) {
@@ -742,7 +686,7 @@ int hidpp_host_cookie(hidpp_device_t *dev, uint8_t host) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->changeIndex, 2);
+    make_packet(&req, dev, hosts->base.indexes[CHANGE_HOST], 2);
 
     int index = rc;
 
@@ -761,7 +705,7 @@ int hidpp_host_set_cookie(hidpp_device_t *dev, uint8_t host, uint8_t cookie) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, hosts->changeIndex, 3);
+    make_packet(&req, dev, hosts->base.indexes[CHANGE_HOST], 3);
     req.params[0] = (uint8_t)rc;
     req.params[1] = cookie;
 

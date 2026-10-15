@@ -23,6 +23,19 @@ const char *hidppctl_event_names[HIDPP__EVENT_MAX] = {
     "TOUCH_MOUSE_STATUS",
     "BACKLIGHT",
     "ILLUMINATION",
+    "WIRELESS_STATUS",
+    "THUMBWHEEL",
+    "DPI",
+    "DPI_CALIBRATION",
+    "FN_INVERSION",
+    "SOLAR",
+    "PLATFORM",
+    "CROWN",
+    "BRIGHTNESS",
+    "REPORT_RATE",
+    "LED",
+    "MODE_STATUS",
+    "SIDETONE",
 };
 
 int cmd_list_events(hidppctl_t *ctl) {

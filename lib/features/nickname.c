@@ -65,10 +65,7 @@
 #define DEFAULT_CYCLE_DURATION (5 * 60)
 
 struct hidpp_feat_nickname {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t maxNameLength;
 
     time_t cycleDuration;
@@ -84,7 +81,7 @@ static int query_name_length(
     hidpp_device_t *dev, struct hidpp_feat_nickname *nick
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, dev, nick->featIndex, 0);
+    make_packet(&req, dev, nick->base.featIndex, 0);
 
     int rc;
 
@@ -178,7 +175,9 @@ static void query_uncached_name(
         return;
 
     if (query_name_length(dev, nick)
-        || query_name(dev, nick->featIndex, 1, nick->nameLength, nick->name)) {
+        || query_name(
+            dev, nick->base.featIndex, 1, nick->nameLength, nick->name
+        )) {
         nick->name[0] = '\0';
         nick->nameLength = 0;
     }
@@ -186,83 +185,49 @@ static void query_uncached_name(
     nick->lastUpdated = time(NULL);
 }
 
-static int ensure_init(struct hidpp_feat_nickname **out, hidpp_device_t *dev) {
-    struct hidpp_feat_nickname *nick;
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_nickname *nick = feat;
+    int rc;
 
-    if (!out || !dev)
-        return HIDPP_EINVAL;
+    /* a device that refuses even the lengths has no usable nickname */
+    if ((rc = query_name_length(dev, nick))) {
+        if (is_transient(dev, rc))
+            return rc;
 
-    nick = dev->features[HIDPP_FEAT_NICKNAME];
-    *out = nick;
-
-    if (nick->initialized)
-        return nick->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(nick, 0, sizeof(*nick));
-    int featIndex = feature_lookup(dev, 0x0007);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    nick->featIndex = featIndex;
-    nick->unsupported = featIndex == 0;
-
-    if (!nick->unsupported) {
-        int rc;
-
-        if ((rc = query_name_length(dev, nick))) {
-            if (is_transient(dev, rc))
-                return rc;
-
-            nick->unsupported = HIDPP_TRUE;
-        } else if (
-            (rc = query_name(
-                 dev,
-                 nick->featIndex,
-                 2,
-                 nick->defaultNameLength,
-                 nick->defaultName
-             ))
-        ) {
-            if (is_transient(dev, rc))
-                return rc;
-
-            nick->defaultName[0] = '\0';
-            nick->defaultNameLength = 0;
-        }
-
-        nick->cycleDuration = DEFAULT_CYCLE_DURATION;
-        nick->lastUpdated = 0;
-        nick->name[0] = '\0';
+        nick->base.unsupported = HIDPP_TRUE;
+        return HIDPP_OK;
     }
 
-    nick->initialized = HIDPP_TRUE;
+    rc = query_name(
+        dev, nick->base.featIndex, 2, nick->defaultNameLength, nick->defaultName
+    );
 
-    return nick->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
+    if (rc) {
+        if (is_transient(dev, rc))
+            return rc;
+
+        nick->defaultName[0] = '\0';
+        nick->defaultNameLength = 0;
+    }
+
+    nick->cycleDuration = DEFAULT_CYCLE_DURATION;
+    nick->lastUpdated = 0;
+    nick->name[0] = '\0';
+    return HIDPP_OK;
 }
 
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_nickname *nick = feat;
-    nick->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_nickname *nick;
-    (void)feat;
-    ensure_init(&nick, dev);
+static int ensure_init(struct hidpp_feat_nickname **out, hidpp_device_t *dev) {
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_NICKNAME, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_nickname *nick = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    SAVE_BYTE(b, nick->initialized);
-    SAVE_BYTE(b, nick->unsupported);
-
-    if (!nick->initialized || nick->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, nick->featIndex);
     SAVE_BYTE(b, nick->maxNameLength);
     SAVE_BYTE(b, nick->defaultNameLength);
     SAVE_BYTES(b, nick->defaultName, MAX_NAME_LEN);
@@ -273,14 +238,8 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     struct hidpp_feat_nickname *nick = feat;
     uint8_t *start = b;
+    (void)dev;
 
-    nick->initialized = LOAD_BYTE(b);
-    nick->unsupported = LOAD_BYTE(b);
-
-    if (!nick->initialized || nick->unsupported)
-        return b - start;
-
-    nick->featIndex = LOAD_BYTE(b);
     nick->maxNameLength = LOAD_BYTE(b);
     nick->defaultNameLength = LOAD_BYTE(b);
     LOAD_BYTES(b, nick->defaultName, MAX_NAME_LEN);
@@ -296,14 +255,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_nickname_vt = {
-    .size = sizeof(struct hidpp_feat_nickname),
-    .alignment = _Alignof(struct hidpp_feat_nickname),
-    .maxCacheSize = sizeof(struct hidpp_feat_nickname),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_nickname),
+    .ids = { 0x0007 },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 const char *hidpp_nickname_get(hidpp_device_t *dev) {
@@ -331,7 +287,7 @@ int hidpp_nickname_set(hidpp_device_t *dev, const char *nickname) {
     if (len >= nick->maxNameLength)
         return HIDPP_ENOMEM;
 
-    if ((rc = set_name(dev, nick->featIndex, len + 1, nickname)))
+    if ((rc = set_name(dev, nick->base.featIndex, len + 1, nickname)))
         return rc;
 
     memcpy(nick->name, nickname, len + 1);
@@ -350,7 +306,7 @@ int hidpp_nickname_reset(hidpp_device_t *dev) {
     if ((rc = ensure_init(&nick, dev)))
         return rc;
 
-    if ((rc = reset_name(dev, nick->featIndex)))
+    if ((rc = reset_name(dev, nick->base.featIndex)))
         return rc;
 
     nick->lastUpdated = 0; /* force the next getter to re-read the name */

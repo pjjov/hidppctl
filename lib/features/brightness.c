@@ -78,10 +78,7 @@
 /* clang-format on */
 
 struct hidpp_feat_brightness {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     struct hidpp_brightness_info info;
 };
 
@@ -95,10 +92,12 @@ static void unpack_flags(struct hidpp_brightness_info *info) {
     info->isTransient = info->version >= 1 && !!(caps & CAP_TRANSIENT_FLAG);
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_brightness *br) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_brightness *br = feat;
+    br->info.version = br->base.version;
     struct hidpp_brightness_info *info = &br->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, br->featIndex, 0);
+    make_packet(&req, dev, br->base.featIndex, 0);
 
     int rc;
 
@@ -123,49 +122,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_brightness *br) {
 static int ensure_init(
     struct hidpp_feat_brightness **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_brightness *br;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    br = dev->features[HIDPP_FEAT_BRIGHTNESS];
-    *out = br;
-
-    if (br->initialized)
-        return br->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(br, 0, sizeof(*br));
-    int featIndex = feature_lookup(dev, BRIGHTNESS_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    br->featIndex = (uint8_t)featIndex;
-    br->unsupported = featIndex == 0;
-
-    if (!br->unsupported) {
-        br->info.version = feature_version(dev, BRIGHTNESS_ID);
-
-        if ((rc = query_info(dev, br)))
-            return rc;
-    }
-
-    br->initialized = HIDPP_TRUE;
-
-    return br->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_brightness *br = feat;
-    (void)dev;
-    br->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_brightness *br;
-    (void)feat;
-    ensure_init(&br, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_BRIGHTNESS, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -173,15 +133,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, br->initialized);
-    SAVE_BYTE(b, br->unsupported);
-
-    if (!br->initialized || br->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, br->featIndex);
     SAVE_BYTE(b, br->info.initialized);
-    SAVE_BYTE(b, br->info.version);
     SAVE_WORD(b, br->info.min);
     SAVE_WORD(b, br->info.max);
     SAVE_WORD(b, br->info.steps);
@@ -195,15 +147,8 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    br->initialized = LOAD_BYTE(b);
-    br->unsupported = LOAD_BYTE(b);
-
-    if (!br->initialized || br->unsupported)
-        return b - start;
-
-    br->featIndex = LOAD_BYTE(b);
     br->info.initialized = LOAD_BYTE(b);
-    br->info.version = LOAD_BYTE(b);
+    br->info.version = br->base.version;
     br->info.min = LOAD_WORD(b);
     br->info.max = LOAD_WORD(b);
     br->info.steps = LOAD_WORD(b);
@@ -213,15 +158,42 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
+
+    if (id != BRIGHTNESS_ID)
+        return HIDPP_ENOENT;
+
+    if (func == 0) {
+        e->type = HIDPP_EVENT_BRIGHTNESS;
+        e->as.brightness.kind = HIDPP_BRIGHTNESS_EVENT_VALUE;
+        e->as.brightness.value = HIDPP_WORD(p[0], p[1]);
+        return HIDPP_OK;
+    } else if (func == 1) {
+        e->type = HIDPP_EVENT_BRIGHTNESS;
+        e->as.brightness.kind = HIDPP_BRIGHTNESS_EVENT_STATE;
+        e->as.brightness.value = p[0] & 1;
+        return HIDPP_OK;
+    }
+
+    return HIDPP_ENOENT;
+}
+
 const struct hidpp_feat_vt hidpp_feat_brightness_vt = {
-    .size = sizeof(struct hidpp_feat_brightness),
-    .alignment = _Alignof(struct hidpp_feat_brightness),
-    .maxCacheSize = sizeof(struct hidpp_feat_brightness),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_brightness),
+    .ids = { BRIGHTNESS_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_brightness_info *hidpp_brightness_info(hidpp_device_t *dev) {
@@ -241,7 +213,7 @@ int hidpp_brightness_get(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, br->featIndex, 1);
+    make_packet(&req, dev, br->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -262,7 +234,7 @@ int hidpp_brightness_set(hidpp_device_t *dev, uint16_t value) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, br->featIndex, 2);
+    make_packet(&req, dev, br->base.featIndex, 2);
     req.params[0] = HIDPP_MSB(value);
     req.params[1] = HIDPP_LSB(value);
 
@@ -280,7 +252,7 @@ int hidpp_brightness_state(hidpp_device_t *dev) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, br->featIndex, 3);
+    make_packet(&req, dev, br->base.featIndex, 3);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -299,7 +271,7 @@ int hidpp_brightness_set_state(hidpp_device_t *dev, int on) {
         return HIDPP_ENOSYS;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, br->featIndex, 4);
+    make_packet(&req, dev, br->base.featIndex, 4);
     req.params[0] = on ? 1 : 0;
 
     return hidpp_device_request(dev, &req, &res);

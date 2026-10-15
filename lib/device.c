@@ -46,8 +46,9 @@ extern struct hidpp_feat_vt hidpp_feat_perkey_vt;
 extern struct hidpp_feat_vt hidpp_feat_mode_status_vt;
 extern struct hidpp_feat_vt hidpp_feat_sidetone_vt;
 extern struct hidpp_feat_vt hidpp_feat_equalizer_vt;
+extern struct hidpp_feat_vt hidpp_feat_wireless_status_vt;
 
-PF_ENUM_GUARD(hidpp_feat, 5)
+PF_ENUM_GUARD(hidpp_feat, 6)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ROOT] = &hidpp_feat_root_vt,
     [HIDPP_FEAT_KEYMAP] = &hidpp_feat_keymap_vt,
@@ -79,6 +80,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_MODE_STATUS] = &hidpp_feat_mode_status_vt,
     [HIDPP_FEAT_SIDETONE] = &hidpp_feat_sidetone_vt,
     [HIDPP_FEAT_EQUALIZER] = &hidpp_feat_equalizer_vt,
+    [HIDPP_FEAT_WIRELESS_STATUS] = &hidpp_feat_wireless_status_vt,
 };
 
 static int protocol_version(hidpp_device_t *dev) {

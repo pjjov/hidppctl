@@ -69,101 +69,50 @@
 #define CAP_FN_LOCK_FLAG 0x01
 
 struct hidpp_feat_fn_inversion {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
-    hidpp_bool_t isMultiHost;
+    struct hidpp_feat_base base;
 };
+
+/* 0x40A3 is preferred over 0x40A2. */
+static int is_multi_host(const struct hidpp_feat_fn_inversion *fn) {
+    return fn->base.which == 0;
+}
 
 static int ensure_init(
     struct hidpp_feat_fn_inversion **out, hidpp_device_t *dev
 ) {
-    struct hidpp_feat_fn_inversion *fn;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    fn = dev->features[HIDPP_FEAT_FN_INVERSION];
-    *out = fn;
-
-    if (fn->initialized)
-        return fn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(fn, 0, sizeof(*fn));
-    int featIndex = feature_lookup(dev, MULTI_HOST_ID);
-
-    if (featIndex < 0)
-        return featIndex;
-
-    fn->isMultiHost = featIndex != 0;
-
-    if (featIndex == 0
-        && (featIndex = feature_lookup(dev, FN_INVERSION_ID)) < 0)
-        return featIndex;
-
-    fn->featIndex = (uint8_t)featIndex;
-    fn->unsupported = featIndex == 0;
-    fn->initialized = HIDPP_TRUE;
-
-    return fn->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_FN_INVERSION, &feat);
+    *out = feat;
+    return rc;
 }
 
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_fn_inversion *fn = feat;
-    (void)dev;
-    fn->initialized = HIDPP_FALSE;
-}
+/* F-lock changes are only reported by 0x40A3. */
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    const uint8_t *p = pkt->params;
+    (void)dev, (void)feat;
 
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_fn_inversion *fn;
-    (void)feat;
-    ensure_init(&fn, dev);
-}
+    if (id != MULTI_HOST_ID || func != 0)
+        return HIDPP_ENOENT;
 
-static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
-    struct hidpp_feat_fn_inversion *fn = feat;
-    uint8_t *start = b;
-    (void)dev;
-
-    SAVE_BYTE(b, fn->initialized);
-    SAVE_BYTE(b, fn->unsupported);
-
-    if (!fn->initialized || fn->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, fn->featIndex);
-    SAVE_BYTE(b, fn->isMultiHost);
-
-    return b - start;
-}
-
-static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
-    struct hidpp_feat_fn_inversion *fn = feat;
-    uint8_t *start = b;
-    (void)dev;
-
-    fn->initialized = LOAD_BYTE(b);
-    fn->unsupported = LOAD_BYTE(b);
-
-    if (!fn->initialized || fn->unsupported)
-        return b - start;
-
-    fn->featIndex = LOAD_BYTE(b);
-    fn->isMultiHost = LOAD_BYTE(b);
-
-    return b - start;
+    e->type = HIDPP_EVENT_FN_INVERSION;
+    e->as.fnInversion.host = p[0];
+    e->as.fnInversion.enabled = !!(p[1] & STATE_FLAG);
+    e->as.fnInversion.defaultEnabled = !!(p[2] & STATE_FLAG);
+    e->as.fnInversion.hasFnLock = !!(p[3] & CAP_FN_LOCK_FLAG);
+    return HIDPP_OK;
 }
 
 const struct hidpp_feat_vt hidpp_feat_fn_inversion_vt = {
-    .size = sizeof(struct hidpp_feat_fn_inversion),
-    .alignment = _Alignof(struct hidpp_feat_fn_inversion),
-    .maxCacheSize = sizeof(struct hidpp_feat_fn_inversion),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
-    .saveCache = save_cache,
-    .loadCache = load_cache,
-    .clearCache = clear_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_fn_inversion),
+    .ids = { MULTI_HOST_ID, FN_INVERSION_ID },
+    .parseEvent = parse_event,
 };
 
 static void parse_state(
@@ -173,7 +122,7 @@ static void parse_state(
 ) {
     memset(out, 0, sizeof(*out));
 
-    if (fn->isMultiHost) {
+    if (is_multi_host(fn)) {
         out->host = res->params[0];
         out->enabled = !!(res->params[1] & STATE_FLAG);
         out->defaultEnabled = !!(res->params[2] & STATE_FLAG);
@@ -198,10 +147,10 @@ static int prepare(
         return rc;
 
     /* single host devices only know the current one */
-    if (!(*fn)->isMultiHost && host != HIDPP_HOST_CURRENT)
+    if (!is_multi_host(*fn) && host != HIDPP_HOST_CURRENT)
         return HIDPP_EINVAL;
 
-    make_packet(req, dev, (*fn)->featIndex, func);
+    make_packet(req, dev, (*fn)->base.featIndex, func);
     return HIDPP_OK;
 }
 
@@ -218,13 +167,14 @@ int hidpp_fn_inversion_get(
     if ((rc = prepare(dev, host, 0, &fn, &req)))
         return rc;
 
-    if (fn->isMultiHost)
+    if (is_multi_host(fn))
         req.params[0] = host;
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
 
-    if (fn->isMultiHost && host != HIDPP_HOST_CURRENT && res.params[0] != host)
+    if (is_multi_host(fn) && host != HIDPP_HOST_CURRENT
+        && res.params[0] != host)
         return HIDPP_EIO;
 
     parse_state(fn, &res, out);
@@ -239,7 +189,7 @@ int hidpp_fn_inversion_set(hidpp_device_t *dev, uint8_t host, int enabled) {
     if ((rc = prepare(dev, host, 1, &fn, &req)))
         return rc;
 
-    if (fn->isMultiHost) {
+    if (is_multi_host(fn)) {
         req.params[0] = host;
         req.params[1] = enabled ? 1 : 0;
     } else {

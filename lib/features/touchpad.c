@@ -61,10 +61,7 @@
 #define TOUCHPAD_ID 0x6100
 
 struct hidpp_feat_touchpad {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     uint8_t penSupport;
     struct hidpp_touchpad_info info;
 };
@@ -73,10 +70,11 @@ static void unpack_flags(struct hidpp_feat_touchpad *tp) {
     tp->info.hasPen = tp->penSupport == 1;
 }
 
-static int query_info(hidpp_device_t *dev, struct hidpp_feat_touchpad *tp) {
+static int query_info(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_touchpad *tp = feat;
     struct hidpp_touchpad_info *info = &tp->info;
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tp->featIndex, 0);
+    make_packet(&req, dev, tp->base.featIndex, 0);
 
     int rc;
 
@@ -99,45 +97,10 @@ static int query_info(hidpp_device_t *dev, struct hidpp_feat_touchpad *tp) {
 }
 
 static int ensure_init(struct hidpp_feat_touchpad **out, hidpp_device_t *dev) {
-    struct hidpp_feat_touchpad *tp;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    tp = dev->features[HIDPP_FEAT_TOUCHPAD];
-    *out = tp;
-
-    if (tp->initialized)
-        return tp->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(tp, 0, sizeof(*tp));
-    int featIndex = feature_lookup(dev, TOUCHPAD_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    tp->featIndex = (uint8_t)featIndex;
-    tp->unsupported = featIndex == 0;
-
-    if (!tp->unsupported && (rc = query_info(dev, tp)))
-        return rc;
-
-    tp->initialized = HIDPP_TRUE;
-
-    return tp->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_touchpad *tp = feat;
-    (void)dev;
-    tp->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_touchpad *tp;
-    (void)feat;
-    ensure_init(&tp, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_TOUCHPAD, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -145,13 +108,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, tp->initialized);
-    SAVE_BYTE(b, tp->unsupported);
-
-    if (!tp->initialized || tp->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, tp->featIndex);
     SAVE_BYTE(b, tp->info.initialized);
     SAVE_WORD(b, tp->info.width);
     SAVE_WORD(b, tp->info.height);
@@ -172,13 +128,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    tp->initialized = LOAD_BYTE(b);
-    tp->unsupported = LOAD_BYTE(b);
-
-    if (!tp->initialized || tp->unsupported)
-        return b - start;
-
-    tp->featIndex = LOAD_BYTE(b);
     tp->info.initialized = LOAD_BYTE(b);
     tp->info.width = LOAD_WORD(b);
     tp->info.height = LOAD_WORD(b);
@@ -195,15 +144,47 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     return b - start;
 }
 
+static int parse_event(
+    hidpp_device_t *dev,
+    void *feat,
+    uint16_t id,
+    uint8_t func,
+    const hidpp_packet_t *pkt,
+    struct hidpp_event *e
+) {
+    (void)dev, (void)feat;
+
+    if (id != TOUCHPAD_ID || func != 0)
+        return HIDPP_ENOENT;
+
+    e->type = HIDPP_EVENT_TOUCH_PAD_POINTS;
+    e->as.touchPadPoints.timestamp = HIDPP_WORD(pkt->params[0], pkt->params[1]);
+
+    /* 7 bytes per point after the time stamp */
+    for (int i = 0; i < 2; i++) {
+        struct hidpp_touch_pad_point *pt = &e->as.touchPadPoints.data[i];
+        const uint8_t *params = &pkt->params[i * 7 + 2];
+
+        pt->type = (params[0] & 0xC0) >> 6;
+        pt->status = (params[2] & 0xC0) >> 6;
+        pt->x = (uint16_t)(((params[0] & 0x3F) << 8) | params[1]);
+        pt->y = (uint16_t)(((params[2] & 0x3F) << 8) | params[3]);
+        pt->force = params[4];
+        pt->area = params[5];
+        pt->flags = params[6];
+        pt->finger = HIDPP_MSN(params[6]);
+    }
+
+    return HIDPP_OK;
+}
+
 const struct hidpp_feat_vt hidpp_feat_touchpad_vt = {
-    .size = sizeof(struct hidpp_feat_touchpad),
-    .alignment = _Alignof(struct hidpp_feat_touchpad),
-    .maxCacheSize = sizeof(struct hidpp_feat_touchpad),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_touchpad),
+    .ids = { TOUCHPAD_ID },
+    .query = query_info,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
+    .parseEvent = parse_event,
 };
 
 struct hidpp_touchpad_info *hidpp_touchpad_info(hidpp_device_t *dev) {
@@ -223,7 +204,7 @@ int hidpp_touchpad_get_mode(hidpp_device_t *dev) {
         return rc;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tp->featIndex, 1);
+    make_packet(&req, dev, tp->base.featIndex, 1);
 
     if ((rc = hidpp_device_request(dev, &req, &res)))
         return rc;
@@ -242,7 +223,7 @@ int hidpp_touchpad_set_mode(hidpp_device_t *dev, uint8_t mode) {
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, tp->featIndex, 2);
+    make_packet(&req, dev, tp->base.featIndex, 2);
     req.params[0] = mode;
 
     return hidpp_device_request(dev, &req, &res);

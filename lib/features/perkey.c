@@ -112,19 +112,17 @@ enum {
 };
 
 struct hidpp_feat_perkey {
-    hidpp_bool_t initialized;
-    hidpp_bool_t unsupported;
-
-    uint8_t featIndex;
+    struct hidpp_feat_base base;
     hidpp_bool_t hasPresence;
     uint8_t presence[32]; /* bit N of byte K - zone 8K + N */
 };
 
-static int query_presence(hidpp_device_t *dev, struct hidpp_feat_perkey *pk) {
+static int query_presence(hidpp_device_t *dev, void *feat) {
+    struct hidpp_feat_perkey *pk = feat;
     hidpp_packet_t req, res;
     int rc;
 
-    make_packet(&req, dev, pk->featIndex, FUNC_INFO);
+    make_packet(&req, dev, pk->base.featIndex, FUNC_INFO);
 
     for (uint8_t page = 0; page < PRESENCE_PAGES; page++) {
         req.params[1] = page;
@@ -145,45 +143,10 @@ static int query_presence(hidpp_device_t *dev, struct hidpp_feat_perkey *pk) {
 }
 
 static int ensure_init(struct hidpp_feat_perkey **out, hidpp_device_t *dev) {
-    struct hidpp_feat_perkey *pk;
-
-    if (!out || !dev)
-        return HIDPP_EINVAL;
-
-    pk = dev->features[HIDPP_FEAT_PERKEY];
-    *out = pk;
-
-    if (pk->initialized)
-        return pk->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-
-    memset(pk, 0, sizeof(*pk));
-    int featIndex = feature_lookup(dev, PERKEY_ID);
-    int rc;
-
-    if (featIndex < 0)
-        return featIndex;
-
-    pk->featIndex = (uint8_t)featIndex;
-    pk->unsupported = featIndex == 0;
-
-    if (!pk->unsupported && (rc = query_presence(dev, pk)))
-        return rc;
-
-    pk->initialized = HIDPP_TRUE;
-
-    return pk->unsupported ? HIDPP_ENOSYS : HIDPP_OK;
-}
-
-static void clear_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_perkey *pk = feat;
-    (void)dev;
-    pk->initialized = HIDPP_FALSE;
-}
-
-static void collect_cache(hidpp_device_t *dev, void *feat) {
-    struct hidpp_feat_perkey *pk;
-    (void)feat;
-    ensure_init(&pk, dev);
+    void *feat;
+    int rc = hidpp__feature_init(dev, HIDPP_FEAT_PERKEY, &feat);
+    *out = feat;
+    return rc;
 }
 
 static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
@@ -191,13 +154,6 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    SAVE_BYTE(b, pk->initialized);
-    SAVE_BYTE(b, pk->unsupported);
-
-    if (!pk->initialized || pk->unsupported)
-        return b - start;
-
-    SAVE_BYTE(b, pk->featIndex);
     SAVE_BYTE(b, pk->hasPresence);
     SAVE_BYTES(b, (const char *)pk->presence, sizeof(pk->presence));
 
@@ -209,13 +165,6 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
     uint8_t *start = b;
     (void)dev;
 
-    pk->initialized = LOAD_BYTE(b);
-    pk->unsupported = LOAD_BYTE(b);
-
-    if (!pk->initialized || pk->unsupported)
-        return b - start;
-
-    pk->featIndex = LOAD_BYTE(b);
     pk->hasPresence = LOAD_BYTE(b);
     LOAD_BYTES(b, (char *)pk->presence, sizeof(pk->presence));
 
@@ -223,14 +172,11 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
 }
 
 const struct hidpp_feat_vt hidpp_feat_perkey_vt = {
-    .size = sizeof(struct hidpp_feat_perkey),
-    .alignment = _Alignof(struct hidpp_feat_perkey),
-    .maxCacheSize = sizeof(struct hidpp_feat_perkey),
-    .minCacheSize = 2 * sizeof(uint8_t),
-    .collectCache = collect_cache,
+    FEAT_VT_SIZE(struct hidpp_feat_perkey),
+    .ids = { PERKEY_ID },
+    .query = query_presence,
     .saveCache = save_cache,
     .loadCache = load_cache,
-    .clearCache = clear_cache,
 };
 
 static int is_valid_zone(uint8_t id) {
@@ -300,7 +246,7 @@ static int send_individual(
     size_t count
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, dev, pk->featIndex, FUNC_INDIVIDUAL);
+    make_packet(&req, dev, pk->base.featIndex, FUNC_INDIVIDUAL);
     req.kind = HIDPP_KIND_LONG;
 
     /* unused entries stay zero, which ends the list */
@@ -353,7 +299,7 @@ static int send_consecutive(
     const struct hidpp_color *colors
 ) {
     hidpp_packet_t req, res;
-    make_packet(&req, dev, pk->featIndex, FUNC_CONSECUTIVE);
+    make_packet(&req, dev, pk->base.featIndex, FUNC_CONSECUTIVE);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = first;
 
@@ -440,7 +386,7 @@ int hidpp_perkey_set_range(
         return send_individual(dev, pk, &first, &color, 1);
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, pk->featIndex, FUNC_RANGE);
+    make_packet(&req, dev, pk->base.featIndex, FUNC_RANGE);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = first;
     req.params[1] = last;
@@ -478,7 +424,7 @@ int hidpp_perkey_set_color(
         if (n > SINGLE_PER_CALL)
             n = SINGLE_PER_CALL;
 
-        make_packet(&req, dev, pk->featIndex, FUNC_SINGLE);
+        make_packet(&req, dev, pk->base.featIndex, FUNC_SINGLE);
         req.kind = HIDPP_KIND_LONG;
         req.params[0] = color.red;
         req.params[1] = color.green;
@@ -559,7 +505,7 @@ static int send_delta(
 
     hidpp_packet_t req, res;
     make_packet(
-        &req, dev, pk->featIndex, bits == 4 ? FUNC_DELTA4 : FUNC_DELTA5
+        &req, dev, pk->base.featIndex, bits == 4 ? FUNC_DELTA4 : FUNC_DELTA5
     );
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = (uint8_t)(first + i);
@@ -663,7 +609,7 @@ int hidpp_perkey_frame_end(
         return HIDPP_EINVAL;
 
     hidpp_packet_t req, res;
-    make_packet(&req, dev, pk->featIndex, FUNC_FRAME_END);
+    make_packet(&req, dev, pk->base.featIndex, FUNC_FRAME_END);
     req.kind = HIDPP_KIND_LONG;
     req.params[0] = persistence;
     req.params[1] = HIDPP_MSB(frame);
