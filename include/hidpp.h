@@ -1360,6 +1360,49 @@ HIDPP_API int hidpp_wheel_analytics(
     hidpp_device_t *dev, uint8_t *out, size_t size
 );
 
+/** Thumbwheel capabilities (feature 0x2150). */
+struct hidpp_thumbwheel_info {
+    uint16_t nativeResolution;   /* ratchets per revolution (HID) */
+    uint16_t divertedResolution; /* increments per revolution (HID++) */
+    uint8_t defaultDirection;    /* 1 if positive is to the right or front */
+    uint8_t capabilities;
+    uint16_t timeUnit; /* unit of the event time stamps */
+
+    hidpp_bool_t hasTimestamp;
+    hidpp_bool_t hasTouch;
+    hidpp_bool_t hasProxy;
+    hidpp_bool_t hasSingleTap;
+    hidpp_bool_t initialized;
+};
+
+/** Thumbwheel state. */
+struct hidpp_thumbwheel_status {
+    hidpp_bool_t diverted; /* report through HID++ (HIDPP_EVENT_THUMBWHEEL) */
+    hidpp_bool_t inverted;
+    hidpp_bool_t touch;
+    hidpp_bool_t proxy;
+};
+
+/** Returns the thumbwheel capabilities.
+    Errors (as NULL): device has no thumbwheel.
+*/
+HIDPP_API struct hidpp_thumbwheel_info *hidpp_thumbwheel_info(
+    hidpp_device_t *dev
+);
+
+/** Reads the thumbwheel state.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_thumbwheel_status(
+    hidpp_device_t *dev, struct hidpp_thumbwheel_status *out
+);
+
+/** Changes how the thumbwheel reports its rotation.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_thumbwheel_set(
+    hidpp_device_t *dev, int diverted, int inverted
+);
 
 /** Pointer acceleration suggested by a device. */
 enum hidpp_pointer_acceleration {

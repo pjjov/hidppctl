@@ -34,6 +34,7 @@ lib_src = files(
   'features/sidetone.c',
   'features/smartshift.c',
   'features/solar.c',
+  'features/thumbwheel.c',
   'cache.c',
   'device.c',
   'input.c',
