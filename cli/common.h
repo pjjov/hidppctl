@@ -30,6 +30,7 @@ typedef struct pf_argparser pf_argparser_t;
 enum hidppctl_command {
     HIDPPCTL_NONE = 0,
     HIDPPCTL_ACTION,
+    HIDPPCTL_ALIAS,
     HIDPPCTL_BACKLIGHT,
     HIDPPCTL_BATTERY,
     HIDPPCTL_BRIGHTNESS,
@@ -90,6 +91,19 @@ struct hidppctl_command_spec {
 
 extern const struct hidppctl_command_spec hidppctl_commands[];
 
+#define HIDPPCTL_MAX_ALIASES 64
+
+/** A named group of the options which pick a device. -1 means not set. */
+struct hidppctl_alias {
+    char name[64];
+    char receiver[256]; /* empty if not set */
+    char socket[256];   /* empty if not set */
+    int device;
+    int interface;
+    int swid;
+    int timeout;
+};
+
 struct diversion {
     uint16_t ctrl;
     char state;
@@ -131,6 +145,9 @@ struct hidppctl_opt {
     int paramc;
 
     char *receiver;
+    char *aliasName;             /* --alias */
+    char *aliasFile;             /* --alias-file */
+    struct hidppctl_alias alias; /* the loaded --alias */
     uint8_t device;
     uint8_t swid;
     uint8_t host;   /* --host, HIDPP_HOST_CURRENT by default */
@@ -196,6 +213,21 @@ struct name_value {
     const char *name;
     int value;
 };
+
+/* Aliases (alias.c) */
+void hidppctl_alias_init(struct hidppctl_alias *alias, const char *name);
+const char *hidppctl_alias_set(
+    struct hidppctl_alias *alias, const char *key, const char *value
+);
+void hidppctl_alias_format(
+    const struct hidppctl_alias *alias, char *buf, size_t size
+);
+int hidppctl_alias_load(
+    hidppctl_t *ctl, struct hidppctl_alias *list, int max, int *count
+);
+int hidppctl_alias_save(
+    hidppctl_t *ctl, const struct hidppctl_alias *list, int count
+);
 
 /** Reports that `what` failed with the error `rc`; returns `rc`. */
 int cli_fail(hidppctl_t *ctl, int rc, const char *what);

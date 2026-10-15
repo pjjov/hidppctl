@@ -8,6 +8,7 @@
 
 cli_src = files(
   'commands/action.c',
+  'commands/alias.c',
   'commands/backlight.c',
   'commands/battery.c',
   'commands/brightness.c',
@@ -41,6 +42,7 @@ cli_src = files(
   'commands/thumbwheel.c',
   'commands/touch.c',
   'commands/wheel.c',
+  'alias.c',
   'args.c',
   'cache.c',
   'commands.c',

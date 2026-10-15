@@ -30,6 +30,8 @@ static const pf_cli_definition_t help_options[] = {
     { "--sensor", "Selects a motion sensor for the 'dpi' command." },
     { "--zone",
       "Selects a LED zone for the 'led' command (255 is all zones)." },
+    { "--alias", "Uses the options saved by the 'alias' command." },
+    { "--alias-file", "Reads and writes aliases to the given file." },
     { "--interface", "Specifies which HID interface to use." },
     { "--socket",
       "Uses a Unix socket path, a TCP port or <host>:<port> as a receiver." },
@@ -319,6 +321,8 @@ static void parse_args_option(
         opt->setSocket = HIDPP_TRUE;
     }
 
+    pf_option_string(p, "alias", 0, &opt->aliasName);
+    pf_option_string(p, "alias-file", 0, &opt->aliasFile);
     pf_option_string(p, "cache-path", 0, &opt->cache.path);
     pf_option_string(p, "log-path", 0, &opt->log.path);
     pf_option_bool(p, "no-cache", 0, &opt->cache.disabled);
@@ -507,6 +511,10 @@ static void propagate_requirements(
     if (opt->command == HIDPPCTL_DIVERT)
         ctl->requiresInput = opt->divert.needsInput;
 
+    /* Subcommands like 'alias' only read the options. */
+    if (hidppctl_commands[opt->command].needs == HIDPPCTL_NEEDS_NOTHING)
+        return;
+
     if (opt->setDevice)
         ctl->requiresDevice = HIDPP_TRUE;
 
@@ -523,6 +531,59 @@ static void propagate_requirements(
     if (ctl->requiresDevice)
         ctl->requiresLog = !opt->log.disabled
             && (opt->log.path || opt->verbose);
+}
+
+/* Fills in the options which were not given with the ones of the alias. */
+static int apply_alias(hidppctl_t *ctl, struct hidppctl_opt *opt) {
+    static struct hidppctl_alias list[HIDPPCTL_MAX_ALIASES];
+    struct hidppctl_alias *a = &opt->alias;
+    int count, i, receiverFromAlias = 0;
+
+    if (!opt->aliasName)
+        return HIDPP_OK;
+
+    if (hidppctl_alias_load(ctl, list, HIDPPCTL_MAX_ALIASES, &count))
+        return HIDPP_EINVAL;
+
+    for (i = 0; i < count; i++)
+        if (0 == strcmp(list[i].name, opt->aliasName))
+            break;
+
+    if (i == count) {
+        pf_cli_errorf(ctl->cli, "error: Unknown alias '%s'.\n", opt->aliasName);
+        return HIDPP_EINVAL;
+    }
+
+    *a = list[i];
+
+    if (!opt->setReceiver && !opt->setSocket) {
+        if (a->receiver[0]) {
+            opt->receiver = a->receiver;
+            opt->setReceiver = receiverFromAlias = HIDPP_TRUE;
+        } else if (a->socket[0]) {
+            opt->socket.value = a->socket;
+            opt->setSocket = HIDPP_TRUE;
+        }
+    }
+
+    if (!opt->setDevice && a->device >= 0) {
+        opt->device = (uint8_t)a->device;
+        opt->setDevice = HIDPP_TRUE;
+    }
+    if (!opt->setInterface && receiverFromAlias && a->interface >= 0) {
+        opt->interface = a->interface;
+        opt->setInterface = HIDPP_TRUE;
+    }
+    if (!opt->setSwid && a->swid >= 0) {
+        opt->swid = (uint8_t)a->swid;
+        opt->setSwid = HIDPP_TRUE;
+    }
+    if (!opt->setTimeout && a->timeout >= 0) {
+        opt->timeout = a->timeout;
+        opt->setTimeout = HIDPP_TRUE;
+    }
+
+    return HIDPP_OK;
 }
 
 static int parse_args_end(
@@ -549,6 +610,9 @@ static int parse_args_end(
         return HIDPP_OK;
 
     if (!check_param_count(p, opt))
+        return HIDPP_EINVAL;
+
+    if (apply_alias(ctl, opt))
         return HIDPP_EINVAL;
 
     if (!check_command_requirements(ctl, p, opt))

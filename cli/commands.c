@@ -10,6 +10,7 @@
 #include "common.h"
 
 extern int cmd_action(hidppctl_t *ctl);
+extern int cmd_alias(hidppctl_t *ctl);
 extern int cmd_backlight(hidppctl_t *ctl);
 extern int cmd_battery(hidppctl_t *ctl);
 extern int cmd_brightness(hidppctl_t *ctl);
@@ -64,6 +65,20 @@ const struct hidppctl_command_spec hidppctl_commands[hidppctl_command_max] = {
         "\nTypes: none, key, mouse-button, x, y, vertical-roller, horizontal-roller,"
         "\nconsumer, internal, power. Key actions take a HID usage as the value and"
         "\nan optional list of modifiers, for example 'lctrl,lshift'.",
+    },
+    [HIDPPCTL_ALIAS] = {
+        "alias", cmd_alias, HIDPPCTL_NEEDS_NOTHING, 0, -1,
+        "[list|show <name>|set <name> [<key>=<value>...]|remove <name>]",
+        "names groups of device picking options.",
+        "Saves the options which pick a device under a name. Use that name with"
+        "\n'--alias' instead of repeating the options:"
+        "\n    hidppctl -r 046d:c548 -d 1 --timeout 500 alias set mouse"
+        "\n    hidppctl --alias mouse dpi"
+        "\n"
+        "\n'set' saves the receiver, socket, device, interface, swid and timeout"
+        "\noptions given on the command line, and any <key>=<value> arguments."
+        "\nOptions given together with '--alias' override the alias. Aliases are"
+        "\nstored in a text file (see '--alias-file'), one per line.",
     },
     [HIDPPCTL_BACKLIGHT] = {
         "backlight", cmd_backlight, DEVICE, 0, 10,
