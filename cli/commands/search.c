@@ -168,7 +168,7 @@ static void handle_device(
         "  Receiver: %.4x:%.4x '%ls' (%s), interface %d, device %u\n",
         r->vendorId,
         r->productId,
-        r->product ? r->product : L"",
+        r->product,
         r->path,
         r->interfaceNumber,
         f->device.index
@@ -243,9 +243,6 @@ int cmd_search(hidppctl_t *ctl) {
 
         hidpp_close(rcv);
     }
-
-    for (size_t i = 0; i < count; i++)
-        hidpp_free_info(&all[i]);
 
     if (total == 0)
         pf_cli_printf(cli, "No HID++ devices found!\n");

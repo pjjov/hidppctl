@@ -50,9 +50,18 @@ lib_src = files(
 
 lib_src += tables_src
 
+lib_deps = [allocator_dep, cpolyfill_dep]
+lib_args = []
+
+if get_option('hidapi')
+  lib_deps += hidapi_dep
+  lib_args += '-DHIDPP_HAVE_HIDAPI'
+endif
+
 lib = library(
   'hidpp',
-  dependencies: [hidapi_dep, allocator_dep, cpolyfill_dep],
+  dependencies: lib_deps,
+  c_args: lib_args,
   install: true,
   include_directories: inc,
   sources: lib_src,

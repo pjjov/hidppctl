@@ -11,7 +11,9 @@
 
 #include <allocator.h>
 #include <allocator_std.h>
-#include <hidapi.h>
+#ifdef HIDPP_HAVE_HIDAPI
+    #include <hidapi.h>
+#endif
 #include <pf_macro.h>
 #include <pf_socket.h>
 
@@ -38,6 +40,7 @@ static void set_error(hidpp_receiver_t *rcv, const wchar_t *fmt, ...) {
     va_end(ap);
 }
 
+#ifdef HIDPP_HAVE_HIDAPI
 static void propagate_error(hidpp_receiver_t *rcv) {
     if (!rcv || rcv->type != RCV_HIDAPI)
         return;
@@ -50,13 +53,22 @@ static void propagate_error(hidpp_receiver_t *rcv) {
         wcsncpy(rcv->error, L"Unknown hidapi error", 255);
     rcv->error[255] = L'\0';
 }
+#endif
 
 int hidpp_init(allocator_t *alloc) {
     hidpp_allocator = alloc ? alloc : &standard_allocator;
+#ifdef HIDPP_HAVE_HIDAPI
     return hid_init();
+#else
+    return HIDPP_OK;
+#endif
 }
 
-void hidpp_exit(void) { hid_exit(); }
+void hidpp_exit(void) {
+#ifdef HIDPP_HAVE_HIDAPI
+    hid_exit();
+#endif
+}
 
 static hidpp_receiver_t *create_receiver(void) {
     hidpp_receiver_t *rcv;
@@ -71,6 +83,7 @@ static hidpp_receiver_t *create_receiver(void) {
     return rcv;
 }
 
+#ifdef HIDPP_HAVE_HIDAPI
 hidpp_receiver_t *hidpp_open(
     unsigned short vid, unsigned short pid, const wchar_t *serial
 ) {
@@ -120,6 +133,26 @@ hidpp_receiver_t *hidpp_open_interface(
     hid_free_enumeration(head);
     return rcv;
 }
+#else
+hidpp_receiver_t *hidpp_open(
+    unsigned short vid, unsigned short pid, const wchar_t *serial
+) {
+    (void)vid, (void)pid, (void)serial;
+    return NULL;
+}
+
+hidpp_receiver_t *hidpp_open_path(const char *path) {
+    (void)path;
+    return NULL;
+}
+
+hidpp_receiver_t *hidpp_open_interface(
+    unsigned short vid, unsigned short pid, int interfaceNumber
+) {
+    (void)vid, (void)pid, (void)interfaceNumber;
+    return NULL;
+}
+#endif
 
 hidpp_receiver_t *hidpp_open_socket(int fd) {
     if (fd < 0)
@@ -161,68 +194,43 @@ void hidpp_close(hidpp_receiver_t *rcv) {
         if (rcv->devices[i])
             hidpp_device_close(rcv->devices[i]);
 
+#ifdef HIDPP_HAVE_HIDAPI
     if (rcv->type == RCV_HIDAPI)
         hid_close(rcv->handle);
+#endif
     deallocate(hidpp_allocator, rcv, sizeof(*rcv));
 }
 
-static const char *copy_string(const char *str) {
-    if (!str)
-        return NULL;
+#ifdef HIDPP_HAVE_HIDAPI
+static void copy_string(char *dst, size_t size, const char *src) {
+    if (!src)
+        src = "";
 
-    size_t len = strlen(str) + 1;
-    char *out;
-
-    if (!(out = allocate(hidpp_allocator, len * sizeof(char))))
-        return NULL;
-
-    memcpy(out, str, len);
-    return out;
+    strncpy(dst, src, size - 1);
+    dst[size - 1] = '\0';
 }
 
-static const wchar_t *copy_wide_string(const wchar_t *str) {
-    if (!str)
-        return NULL;
+static void copy_wide_string(wchar_t *dst, size_t size, const wchar_t *src) {
+    if (!src)
+        src = L"";
 
-    size_t len = wcslen(str) + 1;
-    wchar_t *out;
-
-    if (!(out = allocate(hidpp_allocator, len * sizeof(wchar_t))))
-        return NULL;
-
-    wmemcpy(out, str, len);
-    return out;
+    wcsncpy(dst, src, size - 1);
+    dst[size - 1] = L'\0';
 }
 
-static void free_wide_string(const wchar_t *str) {
-    if (!str)
-        return;
-
-    deallocate(
-        hidpp_allocator, (void *)str, (wcslen(str) + 1) * sizeof(wchar_t)
-    );
-}
-
-void hidpp_free_info(struct hidpp_receiver_info *info) {
-    if (!info)
-        return;
-
-    if (info->path) {
-        deallocate(hidpp_allocator, (void *)info->path, strlen(info->path) + 1);
-    }
-
-    free_wide_string(info->serial);
-    free_wide_string(info->manufacturer);
-    free_wide_string(info->product);
-}
-
-static int convert_receiver_info(
-    struct hidpp_receiver_info *out, struct hid_device_info *info
+static void convert_receiver_info(
+    struct hidpp_receiver_info *out, const struct hid_device_info *info
 ) {
-    out->path = copy_string(info->path);
-    out->serial = copy_wide_string(info->serial_number);
-    out->manufacturer = copy_wide_string(info->manufacturer_string);
-    out->product = copy_wide_string(info->product_string);
+    copy_string(out->path, sizeof(out->path), info->path);
+    copy_wide_string(out->serial, PF_COUNTOF(out->serial), info->serial_number);
+    copy_wide_string(
+        out->manufacturer,
+        PF_COUNTOF(out->manufacturer),
+        info->manufacturer_string
+    );
+    copy_wide_string(
+        out->product, PF_COUNTOF(out->product), info->product_string
+    );
     out->vendorId = info->vendor_id;
     out->productId = info->product_id;
     out->releaseNumber = info->release_number;
@@ -230,26 +238,32 @@ static int convert_receiver_info(
     out->usage = info->usage;
     out->interfaceNumber = info->interface_number;
     out->busType = info->bus_type;
-
-    return HIDPP_OK;
 }
 
-int hidpp_receiver_info(
-    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
-) {
-    if (!rcv || !out)
-        return HIDPP_EINVAL;
+const struct hidpp_receiver_info *hidpp_receiver_info(hidpp_receiver_t *rcv) {
+    if (!rcv)
+        return NULL;
 
-    if (rcv->type != RCV_HIDAPI)
-        return HIDPP_ENOSYS;
+    if (rcv->type != RCV_HIDAPI) {
+        set_error(rcv, L"Receiver information is only available for hidapi");
+        return NULL;
+    }
 
-    struct hid_device_info *info;
-    if (!(info = hid_get_device_info(rcv->handle)))
-        return HIDPP_EIO;
+    const struct hid_device_info *info;
+    if (!(info = hid_get_device_info(rcv->handle))) {
+        propagate_error(rcv);
+        return NULL;
+    }
 
-    convert_receiver_info(out, info);
-    return HIDPP_OK;
+    convert_receiver_info(&rcv->info, info);
+    return &rcv->info;
 }
+#else
+const struct hidpp_receiver_info *hidpp_receiver_info(hidpp_receiver_t *rcv) {
+    set_error(rcv, L"Receiver information is only available for hidapi");
+    return NULL;
+}
+#endif
 
 hidpp_protocol_hook_fn *hidpp_set_protocol_hook(
     hidpp_receiver_t *rcv, hidpp_protocol_hook_fn *hook, void *user
@@ -265,8 +279,10 @@ hidpp_protocol_hook_fn *hidpp_set_protocol_hook(
 
 static int send_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
     switch (rcv->type) {
+#ifdef HIDPP_HAVE_HIDAPI
     case RCV_HIDAPI:
         return hid_write(rcv->handle, buf, len) < 0;
+#endif
     case RCV_CUSTOM:
         return rcv->customSend(rcv, (char *)buf, len, rcv->customUser);
     case RCV_SOCKET: {
@@ -352,10 +368,12 @@ static int socket_read_packet(int fd, unsigned char *buf, size_t max) {
 
 static int recv_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
     switch (rcv->type) {
+#ifdef HIDPP_HAVE_HIDAPI
     case RCV_HIDAPI:
         return rcv->nonblocking
             ? hid_read(rcv->handle, buf, len)
             : hid_read_timeout(rcv->handle, buf, len, rcv->timeout);
+#endif
     case RCV_CUSTOM:
         return rcv->customRecv(rcv, (char *)buf, len, rcv->customUser);
     case RCV_SOCKET:
@@ -379,10 +397,12 @@ int hidpp_receive(hidpp_receiver_t *rcv, hidpp_packet_t *out) {
         set_error(rcv, L"Packet reading timed out");
         return HIDPP_ETIMEDOUT;
     } else if (ret < 0) {
+#ifdef HIDPP_HAVE_HIDAPI
         if (rcv->type == RCV_HIDAPI) {
             propagate_error(rcv);
             return HIDPP_EIO;
         }
+#endif
 
         /* socket and custom receivers already report hidpp_error codes */
         set_error(rcv, L"Receiving a packet failed (%d)", ret);
@@ -526,10 +546,12 @@ int hidpp_set_nonblocking(hidpp_receiver_t *rcv, int nonblock) {
     if (rcv->type != RCV_HIDAPI)
         return HIDPP_ENOSYS;
 
+#ifdef HIDPP_HAVE_HIDAPI
     if (hid_set_nonblocking(rcv->handle, nonblock ? 1 : 0) < 0) {
         propagate_error(rcv);
         return HIDPP_EIO;
     }
+#endif
 
     rcv->nonblocking = nonblock ? 1 : 0;
     return HIDPP_OK;
@@ -544,7 +566,8 @@ int hidpp_set_swid(hidpp_receiver_t *rcv, uint8_t swid) {
     return HIDPP_OK;
 }
 
-#define LOGITECH_VENDOR_ID 0x046D
+#ifdef HIDPP_HAVE_HIDAPI
+    #define LOGITECH_VENDOR_ID 0x046D
 
 static int is_hidpp_compatible(struct hid_device_info *info) {
     /*  Bluetooth and some receivers report no manufacturer string, so
@@ -581,3 +604,14 @@ size_t hidpp_enumerate(
 
     return count;
 }
+#else
+size_t hidpp_enumerate(
+    unsigned short vid,
+    unsigned short pid,
+    struct hidpp_receiver_info *out,
+    size_t max
+) {
+    (void)vid, (void)pid, (void)out, (void)max;
+    return 0;
+}
+#endif

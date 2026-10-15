@@ -10,7 +10,7 @@ project('hidppctl', 'c', version: '0.1.0')
 
 allocator_dep = dependency('allocator_t', required: true)
 cpolyfill_dep = dependency('cpolyfill', required: true)
-hidapi_dep = dependency('hidapi', required: true)
+hidapi_dep = dependency('hidapi', required: get_option('hidapi'))
 
 inc = include_directories('include')
 

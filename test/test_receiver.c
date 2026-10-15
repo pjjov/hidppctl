@@ -93,10 +93,8 @@ static int test_user_pointer_reaches_callbacks(int seed, int i) {
 static int test_info_not_supported_for_custom(int seed, int i) {
     (void)seed, (void)i;
     fake_t *f = fake_new_bare();
-    struct hidpp_receiver_info info;
-    T_ERR(hidpp_receiver_info(f->rcv, &info), HIDPP_ENOSYS);
-    T_ERR(hidpp_receiver_info(NULL, &info), HIDPP_EINVAL);
-    T_ERR(hidpp_receiver_info(f->rcv, NULL), HIDPP_EINVAL);
+    T_NULL(hidpp_receiver_info(f->rcv));
+    T_NULL(hidpp_receiver_info(NULL));
     fake_free(f);
     return 0;
 }

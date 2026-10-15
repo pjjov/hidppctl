@@ -12,3 +12,10 @@ option(
   value: true,
   description: 'Embed HID++ control and feature tables',
 )
+
+option(
+  'hidapi',
+  type: 'boolean',
+  value: true,
+  description: 'Build with hidapi support (hid:// receivers, enumeration)',
+)

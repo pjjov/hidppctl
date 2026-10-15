@@ -9,7 +9,9 @@
 
 #include "common.h" /* IWYU pragma: keep */
 
+#ifdef HIDPP_HAVE_HIDAPI
 #include <hidapi.h>
+#endif
 
 const char *hidpp_version(void) { return HIDPP_VERSION_STRING; }
 
@@ -39,12 +41,19 @@ int hidpp_make(
 }
 
 const wchar_t *hidpp_error(hidpp_receiver_t *rcv) {
+#ifdef HIDPP_HAVE_HIDAPI
     if (!rcv)
         return hid_error(NULL);
+#else
+    if (!rcv)
+        return NULL;
+#endif
     if (rcv->error[0] != L'\0')
         return rcv->error;
+#ifdef HIDPP_HAVE_HIDAPI
     if (rcv->type == RCV_HIDAPI)
         return hid_error(rcv->handle);
+#endif
     return NULL;
 }
 

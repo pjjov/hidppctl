@@ -45,7 +45,6 @@ static int cmd_status_all(hidppctl_t *ctl) {
             info->usagePage
         );
 
-        hidpp_free_info(info);
     }
 
     return HIDPP_OK;
@@ -57,23 +56,23 @@ static int cmd_status_rcv(hidppctl_t *ctl) {
     hidpp_receiver_t *rcv = ctl->receiver;
 
     hidpp_device_t *dev;
-    struct hidpp_receiver_info info;
+    const struct hidpp_receiver_info *info;
     struct hidpp_device_info dinfo;
 
-    if (!rcv || hidpp_receiver_info(rcv, &info))
+    if (!rcv || !(info = hidpp_receiver_info(rcv)))
         return HIDPP_EIO;
 
-    pf_cli_printf(cli, "HID++ receiver '%ls'\n", info.product);
+    pf_cli_printf(cli, "HID++ receiver '%ls'\n", info->product);
     pf_cli_printf(
-        cli, "  ID: %.4x:%.4x (%s)\n", info.vendorId, info.productId, info.path
+        cli, "  ID: %.4x:%.4x (%s)\n", info->vendorId, info->productId, info->path
     );
-    pf_cli_printf(cli, "  Serial number: %ls\n", info.serial);
-    pf_cli_printf(cli, "  Manufacturer: %ls\n", info.manufacturer);
-    pf_cli_printf(cli, "  Release number %u\n", info.releaseNumber);
+    pf_cli_printf(cli, "  Serial number: %ls\n", info->serial);
+    pf_cli_printf(cli, "  Manufacturer: %ls\n", info->manufacturer);
+    pf_cli_printf(cli, "  Release number %u\n", info->releaseNumber);
     pf_cli_printf(
-        cli, "  Usage and page: %u, %u\n", info.usage, info.usagePage
+        cli, "  Usage and page: %u, %u\n", info->usage, info->usagePage
     );
-    pf_cli_printf(cli, "  Interface: %d\n", info.interfaceNumber);
+    pf_cli_printf(cli, "  Interface: %d\n", info->interfaceNumber);
 
     for (int i = 1; i < 7; i++) {
         if (!(dev = hidpp_device_open(rcv, i))) {
@@ -94,7 +93,6 @@ static int cmd_status_rcv(hidppctl_t *ctl) {
         hidpp_device_close(dev);
     }
 
-    hidpp_free_info(&info);
     return HIDPP_OK;
 }
 

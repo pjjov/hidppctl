@@ -167,11 +167,16 @@ typedef struct hidpp_packet_t {
     uint8_t params[HIDPP_LEN_XLONG - 4];
 } hidpp_packet_t;
 
+/** Maximum length of the strings of `struct hidpp_receiver_info`, including
+    the terminator. Longer strings are truncated. */
+#define HIDPP_INFO_PATH 256
+#define HIDPP_INFO_STRING 128
+
 struct hidpp_receiver_info {
-    const char *path;
-    const wchar_t *serial;
-    const wchar_t *manufacturer;
-    const wchar_t *product;
+    char path[HIDPP_INFO_PATH];
+    wchar_t serial[HIDPP_INFO_STRING];
+    wchar_t manufacturer[HIDPP_INFO_STRING];
+    wchar_t product[HIDPP_INFO_STRING];
 
     uint16_t vendorId;
     uint16_t productId;
@@ -180,8 +185,6 @@ struct hidpp_receiver_info {
     uint16_t usage;
     int interfaceNumber;
     int busType;
-
-    void *_enumerate;
 };
 
 enum hidpp_event_type {
@@ -648,15 +651,14 @@ HIDPP_API int hidpp_cache_load(
 */
 HIDPP_API void hidpp_cache_clear(hidpp_device_t *dev);
 
-/** Reads receiver information to `out`.
-    Errors: EINVAL, EIO.
+/** Returns the information of `rcv`, or NULL if it is not available (the
+    receiver is not a hidapi one, or hidapi support is disabled). The
+    returned object belongs to `rcv` and is valid until the next call of this
+    function on `rcv` or until `rcv` is closed.
 */
-HIDPP_API int hidpp_receiver_info(
-    hidpp_receiver_t *rcv, struct hidpp_receiver_info *out
+HIDPP_API const struct hidpp_receiver_info *hidpp_receiver_info(
+    hidpp_receiver_t *rcv
 );
-
-/** Frees `struct hidpp_receiver_info` objects. */
-HIDPP_API void hidpp_free_info(struct hidpp_receiver_info *info);
 
 /** Pings the device with `data`.
     Errors: EINVAL, EIO.

@@ -33,7 +33,9 @@ extern "C" {
 #define LOAD_BYTES(b, out, count) (load_bytes(b, out, count), b += count)
 
 /* Forward declarations */
+#ifdef HIDPP_HAVE_HIDAPI
 typedef struct hid_device_ hid_device;
+#endif
 typedef struct allocator_t allocator_t;
 
 enum {
@@ -145,7 +147,10 @@ struct hidpp_device_t {
 struct hidpp_receiver_t {
     int type;
     int socket;
+#ifdef HIDPP_HAVE_HIDAPI
     hid_device *handle;
+#endif
+    struct hidpp_receiver_info info;
     hidpp_receiver_send_fn *customSend;
     hidpp_receiver_recv_fn *customRecv;
     void *customUser;
