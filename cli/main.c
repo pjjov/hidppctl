@@ -12,6 +12,43 @@
 #include <pf_argparse.h>
 #include <pf_socket.h>
 
+static pf_sock_t open_tcp_socket(const char *host, int port) {
+    pf_addrinfo_t hints, *list, *ai;
+    pf_sock_t sock = PF_INVALID_SOCKET;
+    char service[16];
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    snprintf(service, sizeof(service), "%d", port);
+
+    if (pf_sock_init() != 0)
+        return PF_INVALID_SOCKET;
+
+    if (pf_getaddrinfo(host, service, &hints, &list) != 0)
+        return PF_INVALID_SOCKET;
+
+    for (ai = list; ai; ai = ai->ai_next) {
+        sock = pf_sock_open(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+
+        if (sock == PF_INVALID_SOCKET)
+            continue;
+
+        if (pf_sock_connect(sock, ai->ai_addr, (pf_socklen_t)ai->ai_addrlen)
+            == 0)
+            break;
+
+        pf_sock_close(sock);
+        sock = PF_INVALID_SOCKET;
+    }
+
+    pf_freeaddrinfo(list);
+
+    if (sock != PF_INVALID_SOCKET)
+        pf_sock_set_nodelay(sock, 1);
+    return sock;
+}
+
 #ifndef _WIN32
 
     #include <sys/un.h>
@@ -98,17 +135,28 @@ hidpp_receiver_t *open_socket(hidppctl_t *ctl, struct hidppctl_opt *opt) {
     hidpp_receiver_t *rcv;
 
     if (opt->socket.isPort) {
-        pf_cli_errorf(ctl->cli, "TCP sockets are not supported yet.\n");
-        return NULL;
-    }
+        sock = open_tcp_socket(opt->socket.host, opt->socket.port);
 
+        if (sock == PF_INVALID_SOCKET) {
+            pf_cli_errorf(
+                ctl->cli,
+                "Unable to connect to '%s' port %d.\n",
+                opt->socket.host,
+                opt->socket.port
+            );
+            return NULL;
+        }
+    } else {
 #ifndef _WIN32
-    sock = open_domain_socket(opt->socket.path);
+        sock = open_domain_socket(opt->socket.path);
 #endif
 
-    if (sock == PF_INVALID_SOCKET) {
-        pf_cli_errorf(ctl->cli, "Unable to open a socket.\n");
-        return NULL;
+        if (sock == PF_INVALID_SOCKET) {
+            pf_cli_errorf(
+                ctl->cli, "Unable to connect to '%s'.\n", opt->socket.path
+            );
+            return NULL;
+        }
     }
 
     if (!(rcv = hidpp_open_socket((int)sock))) {

@@ -31,13 +31,14 @@ static const pf_cli_definition_t help_options[] = {
     { "--zone",
       "Selects a LED zone for the 'led' command (255 is all zones)." },
     { "--interface", "Specifies which HID interface to use." },
-    { "--socket", "Specifies a path or a TCP port to use as a receiver." },
+    { "--socket",
+      "Uses a Unix socket path, a TCP port or <host>:<port> as a receiver." },
     { "--timeout", "Sets the timeout for IO operations in milliseconds." },
     { "--swid", "Sets the software ID for interacting with devices." },
     { "--cache-path", "Sets a path to use for saving the device cache." },
-    { "--log-path", "Sets a path to use for the log file." },
+    { "--log-path", "Logs the device traffic to the given file." },
     { "--no-cache", "Disables cache file saving and loading." },
-    { "--no-log", "Disables file logging." },
+    { "--no-log", "Disables file logging, even with -v." },
     { 0 },
 };
 
@@ -191,28 +192,59 @@ static int parse_poll_event_name(pf_argparser_t *p, const char *arg) {
     return 0;
 }
 
+/* "<port>", "<host>:<port>" or a path of a Unix domain socket. */
 static int parse_socket_path(pf_argparser_t *p, struct hidppctl_opt *opt) {
     char *str = opt->socket.value;
+    char *colon = strrchr(str, ':');
+    const char *portStr = str;
     char *end;
 
-    errno = 0;
-    long v = strtol(str, &end, 0);
+    opt->socket.isPort = HIDPP_FALSE;
+    opt->socket.path = str;
 
-    if (end == str || *end) {
-        opt->socket.isPort = HIDPP_FALSE;
-        opt->socket.path = str;
-        return HIDPP_OK;
+    /* A colon separates a host from a port unless it is part of a path. */
+    if (colon && !strchr(str, '/') && colon[1]) {
+        portStr = colon + 1;
+        size_t length = (size_t)(colon - str);
+
+        if (length == 0 || length >= sizeof(opt->socket.host)) {
+            pf_argparser_error(p, "Invalid socket host in '%s'.", str);
+            return HIDPP_EINVAL;
+        }
+
+        /* "[::1]:1234" */
+        if (str[0] == '[' && colon[-1] == ']') {
+            memcpy(opt->socket.host, str + 1, length - 2);
+            opt->socket.host[length - 2] = '\0';
+        } else {
+            memcpy(opt->socket.host, str, length);
+            opt->socket.host[length] = '\0';
+        }
+    } else {
+        strcpy(opt->socket.host, "localhost");
     }
 
-    if (errno == ERANGE || v < 0 || v > 65535) {
+    errno = 0;
+    long v = strtol(portStr, &end, 10);
+
+    if (end == portStr || *end) {
+        if (portStr != str) {
+            pf_argparser_error(p, "Invalid socket port in '%s'.", str);
+            return HIDPP_EINVAL;
+        }
+
+        return HIDPP_OK; /* a path */
+    }
+
+    if (errno == ERANGE || v < 1 || v > 65535) {
         pf_argparser_error(
-            p, "Socket's port number must be between 0 and 65535"
+            p, "Socket's port number must be between 1 and 65535."
         );
         return HIDPP_EINVAL;
     }
 
     opt->socket.isPort = HIDPP_TRUE;
-    opt->socket.port = v;
+    opt->socket.port = (int)v;
     return HIDPP_OK;
 }
 
@@ -487,8 +519,10 @@ static void propagate_requirements(
     if (ctl->requiresDevice && opt->command != HIDPPCTL_CACHE)
         ctl->requiresCache = !opt->cache.disabled;
 
+    /* Logging is opt-in: use --log-path, or --verbose for a default path. */
     if (ctl->requiresDevice)
-        ctl->requiresLog = !opt->log.disabled;
+        ctl->requiresLog = !opt->log.disabled
+            && (opt->log.path || opt->verbose);
 }
 
 static int parse_args_end(

@@ -147,8 +147,9 @@ struct hidppctl_opt {
     hidpp_bool_t setSocket;
 
     struct {
-        hidpp_bool_t isPort;
+        hidpp_bool_t isPort; /* TCP: connect to `host`:`port` */
         int port;
+        char host[256];
         char *path;
         char *value;
     } socket;
