@@ -1426,6 +1426,29 @@ HIDPP_API int hidpp_dpi_set_calibration(
     hidpp_device_t *dev, uint8_t sensor, uint8_t direction, int16_t correction
 );
 
+/** Fn inversion state (features 0x40A2 and 0x40A3). */
+struct hidpp_fn_inversion {
+    uint8_t host;
+    hidpp_bool_t enabled; /* F-keys perform their special function */
+    hidpp_bool_t defaultEnabled;
+    hidpp_bool_t hasFnLock; /* the user can toggle it, e.g. with Fn+Esc */
+};
+
+/** Reads the Fn inversion of `host`. Only multi-host devices (0x40A3)
+    accept anything but HIDPP_HOST_CURRENT.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_fn_inversion_get(
+    hidpp_device_t *dev, uint8_t host, struct hidpp_fn_inversion *out
+);
+
+/** Turns the Fn inversion of `host` on (`enabled` != 0) or off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_fn_inversion_set(
+    hidpp_device_t *dev, uint8_t host, int enabled
+);
+
 
 /** Keys which can be disabled with feature 0x4521. */
 enum hidpp_disable_key {
