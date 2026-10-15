@@ -1256,6 +1256,52 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
 
+/** Brightness control capabilities (feature 0x8040). They are meant for
+    cosmetic and RGB lighting, white illumination uses feature 0x1990.
+*/
+struct hidpp_brightness_info {
+    uint8_t version;
+    uint16_t min;
+    uint16_t max;
+    uint16_t steps;
+    uint8_t capabilities;
+
+    hidpp_bool_t hasHwBrightness; /* dedicated brightness buttons */
+    hidpp_bool_t hasEvents;
+    hidpp_bool_t hasState; /* hidpp_brightness_state() works */
+    hidpp_bool_t hasHwOnOff;
+    hidpp_bool_t isTransient; /* settings are not persistent */
+    hidpp_bool_t initialized;
+};
+
+/** Returns the brightness capabilities.
+    Errors (as NULL): device has no brightness control.
+*/
+HIDPP_API struct hidpp_brightness_info *hidpp_brightness_info(
+    hidpp_device_t *dev
+);
+
+/** Returns the brightness or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_brightness_get(hidpp_device_t *dev);
+
+/** Sets the brightness (`min` to `max`).
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_brightness_set(hidpp_device_t *dev, uint16_t value);
+
+/** Returns 1 if the lighting is on, 0 if it is off, or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_brightness_state(hidpp_device_t *dev);
+
+/** Turns the lighting on (`on` != 0) or off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_brightness_set_state(hidpp_device_t *dev, int on);
+
+
 /** Returns the HID++ error code (`enum hidpp_protocol_error`) the device
     answered the last request of `rcv` with, or 0 if the last request did not
     fail that way. Requests answered by an error report fail with HIDPP_EIO,

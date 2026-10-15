@@ -10,6 +10,7 @@ lib_src = files(
   'features/action.c',
   'features/backlight.c',
   'features/battery.c',
+  'features/brightness.c',
   'features/device_name.c',
   'features/firmware_info.c',
   'features/hosts.c',

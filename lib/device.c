@@ -27,6 +27,7 @@ extern struct hidpp_feat_vt hidpp_feat_backlight_vt;
 extern struct hidpp_feat_vt hidpp_feat_illumination_vt;
 extern struct hidpp_feat_vt hidpp_feat_action_vt;
 extern struct hidpp_feat_vt hidpp_feat_scrolling_vt;
+extern struct hidpp_feat_vt hidpp_feat_brightness_vt;
 
 PF_ENUM_GUARD(hidpp_feat, 4)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
@@ -41,6 +42,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_ILLUMINATION] = &hidpp_feat_illumination_vt,
     [HIDPP_FEAT_ACTION] = &hidpp_feat_action_vt,
     [HIDPP_FEAT_SCROLLING] = &hidpp_feat_scrolling_vt,
+    [HIDPP_FEAT_BRIGHTNESS] = &hidpp_feat_brightness_vt,
 };
 
 static int protocol_version(hidpp_device_t *dev) {
