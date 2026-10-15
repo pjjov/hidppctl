@@ -1256,6 +1256,63 @@ HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
 HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
 
 
+/** Keys which can be disabled with feature 0x4521. */
+enum hidpp_disable_key {
+    HIDPP_DISABLE_CAPS_LOCK = 0x01,
+    HIDPP_DISABLE_NUM_LOCK = 0x02,
+    HIDPP_DISABLE_SCROLL_LOCK = 0x04,
+    HIDPP_DISABLE_INSERT = 0x08,
+    HIDPP_DISABLE_WINDOWS = 0x10,
+};
+
+/** What keys can be disabled (features 0x4521 and 0x4522). */
+struct hidpp_disable_keys_info {
+    uint8_t keys;      /* 0x4521: mask of enum hidpp_disable_key */
+    uint8_t maxUsages; /* 0x4522: number of usages that can be disabled */
+
+    hidpp_bool_t hasKeys;
+    hidpp_bool_t hasUsages;
+    hidpp_bool_t initialized;
+};
+
+/** Returns what keys can be disabled.
+    Errors (as NULL): device has neither of the features.
+*/
+HIDPP_API struct hidpp_disable_keys_info *hidpp_disable_keys_info(
+    hidpp_device_t *dev
+);
+
+/** Returns the mask of disabled keys (enum hidpp_disable_key) or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_disable_keys_get(hidpp_device_t *dev);
+
+/** Disables the keys in `mask` and enables all others.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_disable_keys_set(hidpp_device_t *dev, uint8_t mask);
+
+/** Disables keyboard keys by their HID usage (keyboard page). They are
+    added to the keys which are already disabled.
+    Errors: EINVAL, ENOSYS, EIO (also if the device is full).
+*/
+HIDPP_API int hidpp_disable_usages(
+    hidpp_device_t *dev, const uint8_t *usages, size_t count
+);
+
+/** Enables keyboard keys previously disabled by their HID usage.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_enable_usages(
+    hidpp_device_t *dev, const uint8_t *usages, size_t count
+);
+
+/** Enables every key disabled by its HID usage.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_enable_all_usages(hidpp_device_t *dev);
+
+
 /** States of the crown button. */
 enum hidpp_crown_button {
     HIDPP_CROWN_BUTTON_INACTIVE = 0,

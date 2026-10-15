@@ -13,6 +13,7 @@ lib_src = files(
   'features/brightness.c',
   'features/crown.c',
   'features/device_name.c',
+  'features/disable_keys.c',
   'features/firmware_info.c',
   'features/hosts.c',
   'features/illumination.c',
