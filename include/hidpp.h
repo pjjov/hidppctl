@@ -1598,6 +1598,61 @@ HIDPP_API int hidpp_brightness_state(hidpp_device_t *dev);
 HIDPP_API int hidpp_brightness_set_state(hidpp_device_t *dev, int on);
 
 
+#define HIDPP_EQ_MAX_BANDS 15
+
+/** Equalizer of an audio device (feature 0x8310). */
+struct hidpp_eq_info {
+    uint8_t version;
+    uint8_t bandCount;
+    uint8_t dbRange;
+    uint8_t capabilities;
+    int8_t dbMin;                             /* lowest gain in dB */
+    int8_t dbMax;                             /* highest gain in dB */
+    uint16_t frequencies[HIDPP_EQ_MAX_BANDS]; /* Hz */
+
+    hidpp_bool_t hasLocation;       /* version >= 1 */
+    hidpp_bool_t hasNoiseReduction; /* version >= 2 */
+    hidpp_bool_t initialized;
+};
+
+/** Where equalizer gains are stored. */
+enum hidpp_eq_persistence {
+    HIDPP_EQ_VOLATILE = 0,
+    HIDPP_EQ_BOTH = 1,
+    HIDPP_EQ_NON_VOLATILE = 2,
+};
+
+/** Returns the equalizer information.
+    Errors (as NULL): device has no equalizer.
+*/
+HIDPP_API struct hidpp_eq_info *hidpp_eq_info(hidpp_device_t *dev);
+
+/** Reads the gains (dB) of all bands into `out`, which must hold
+    `bandCount` entries. `active` selects the gains in use (version >= 1)
+    instead of the stored ones. Returns the number of bands.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_eq_get(
+    hidpp_device_t *dev, int active, int8_t *out, size_t max
+);
+
+/** Sets the gains (dB) of all `count` (= `bandCount`) bands.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_eq_set(
+    hidpp_device_t *dev, const int8_t *gains, size_t count, uint8_t persistence
+);
+
+/** Returns 1 if microphone noise reduction is on, 0 if not, or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_eq_noise_reduction(hidpp_device_t *dev);
+
+/** Turns microphone noise reduction on (`enabled` != 0) or off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_eq_set_noise_reduction(hidpp_device_t *dev, int enabled);
+
 /** Returns the HID++ error code (`enum hidpp_protocol_error`) the device
     answered the last request of `rcv` with, or 0 if the last request did not
     fail that way. Requests answered by an error report fail with HIDPP_EIO,

@@ -31,6 +31,7 @@ extern struct hidpp_feat_vt hidpp_feat_dpi_vt;
 extern struct hidpp_feat_vt hidpp_feat_disable_keys_vt;
 extern struct hidpp_feat_vt hidpp_feat_crown_vt;
 extern struct hidpp_feat_vt hidpp_feat_brightness_vt;
+extern struct hidpp_feat_vt hidpp_feat_equalizer_vt;
 
 PF_ENUM_GUARD(hidpp_feat, 4)
 const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
@@ -49,6 +50,7 @@ const struct hidpp_feat_vt *hidpp_feat_vtables[hidpp_feat_max] = {
     [HIDPP_FEAT_DISABLE_KEYS] = &hidpp_feat_disable_keys_vt,
     [HIDPP_FEAT_CROWN] = &hidpp_feat_crown_vt,
     [HIDPP_FEAT_BRIGHTNESS] = &hidpp_feat_brightness_vt,
+    [HIDPP_FEAT_EQUALIZER] = &hidpp_feat_equalizer_vt,
 };
 
 static int protocol_version(hidpp_device_t *dev) {

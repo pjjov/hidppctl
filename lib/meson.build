@@ -15,6 +15,7 @@ lib_src = files(
   'features/device_name.c',
   'features/disable_keys.c',
   'features/dpi.c',
+  'features/equalizer.c',
   'features/firmware_info.c',
   'features/hosts.c',
   'features/illumination.c',
