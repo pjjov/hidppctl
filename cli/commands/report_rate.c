@@ -9,8 +9,6 @@
 
 #include "../common.h"
 
-#include <ctype.h>
-
 #define MAX_RATES 16
 
 static const struct name_value connections[] = {

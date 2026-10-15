@@ -107,6 +107,170 @@ static int cmd_poll_handle(
 
         break;
 
+    case HIDPP_EVENT_BACKLIGHT:
+        pf_cli_printf(
+            cli,
+            "levels=%u level=%u status=%u effect=%u",
+            e->as.backlight.levelCount,
+            e->as.backlight.level,
+            e->as.backlight.status,
+            e->as.backlight.effect
+        );
+        break;
+
+    case HIDPP_EVENT_ILLUMINATION:
+        pf_cli_printf(
+            cli,
+            "kind=%u state=%u source=%u value=%u",
+            e->as.illumination.kind,
+            e->as.illumination.state,
+            e->as.illumination.source,
+            e->as.illumination.value
+        );
+        break;
+
+    case HIDPP_EVENT_WIRELESS_STATUS:
+        pf_cli_printf(
+            cli,
+            "status=%u request=%u reason=%u",
+            e->as.wirelessStatus.status,
+            e->as.wirelessStatus.request,
+            e->as.wirelessStatus.reason
+        );
+        break;
+
+    case HIDPP_EVENT_THUMBWHEEL:
+        pf_cli_printf(
+            cli,
+            "rotation=%d time=%u state=%u touch=%d proximity=%d tap=%d",
+            e->as.thumbwheel.rotation,
+            e->as.thumbwheel.timestamp,
+            e->as.thumbwheel.status,
+            e->as.thumbwheel.touch,
+            e->as.thumbwheel.proxy,
+            e->as.thumbwheel.singleTap
+        );
+        break;
+
+    case HIDPP_EVENT_DPI:
+        pf_cli_printf(
+            cli,
+            "sensor=%u x=%u y=%u lod=%u",
+            e->as.dpi.sensor,
+            e->as.dpi.x,
+            e->as.dpi.y,
+            e->as.dpi.lod
+        );
+        break;
+
+    case HIDPP_EVENT_DPI_CALIBRATION:
+        pf_cli_printf(
+            cli,
+            "sensor=%u direction=%u correction=%d delta=%d",
+            e->as.dpiCalibration.sensor,
+            e->as.dpiCalibration.direction,
+            e->as.dpiCalibration.correction,
+            e->as.dpiCalibration.delta
+        );
+        break;
+
+    case HIDPP_EVENT_FN_INVERSION:
+        pf_cli_printf(
+            cli,
+            "host=%u enabled=%d default=%d fn-lock=%d",
+            e->as.fnInversion.host,
+            e->as.fnInversion.enabled,
+            e->as.fnInversion.defaultEnabled,
+            e->as.fnInversion.hasFnLock
+        );
+        break;
+
+    case HIDPP_EVENT_SOLAR:
+        pf_cli_printf(
+            cli,
+            "kind=%u battery=%u%% lux=%u",
+            e->as.solar.kind,
+            e->as.solar.battery,
+            e->as.solar.lux
+        );
+        break;
+
+    case HIDPP_EVENT_PLATFORM:
+        pf_cli_printf(
+            cli,
+            "host=%u platform=%u source=%u",
+            e->as.platform.host,
+            e->as.platform.platform,
+            e->as.platform.source
+        );
+        break;
+
+    case HIDPP_EVENT_CROWN:
+        pf_cli_printf(
+            cli,
+            "rotation=%u slots=%d ratchets=%d proximity=%u touch=%u gesture=%u "
+            "button=%u speed=%d",
+            e->as.crown.rotation,
+            e->as.crown.slots,
+            e->as.crown.ratchets,
+            e->as.crown.proximity,
+            e->as.crown.touch,
+            e->as.crown.gesture,
+            e->as.crown.button,
+            e->as.crown.speed
+        );
+        break;
+
+    case HIDPP_EVENT_BRIGHTNESS:
+        pf_cli_printf(
+            cli,
+            "kind=%u value=%u",
+            e->as.brightness.kind,
+            e->as.brightness.value
+        );
+        break;
+
+    case HIDPP_EVENT_REPORT_RATE:
+        pf_cli_printf(
+            cli,
+            "connection=%u interval=%uus",
+            e->as.reportRate.connection,
+            e->as.reportRate.rate
+        );
+        break;
+
+    case HIDPP_EVENT_LED:
+        pf_cli_printf(
+            cli,
+            "kind=%u zone=%u effect=%u activity=%u counter=%u persistence=%u",
+            e->as.led.kind,
+            e->as.led.zone,
+            e->as.led.effect,
+            e->as.led.activity,
+            e->as.led.counter,
+            e->as.led.persistence
+        );
+        break;
+
+    case HIDPP_EVENT_MODE_STATUS:
+        pf_cli_printf(
+            cli,
+            "status=0x%.4x changed=0x%.4x",
+            e->as.modeStatus.status,
+            e->as.modeStatus.changed
+        );
+        break;
+
+    case HIDPP_EVENT_SIDETONE:
+        pf_cli_printf(
+            cli,
+            "channel=%u level=%u mute=0x%.2x",
+            e->as.sidetone.channel,
+            e->as.sidetone.level,
+            e->as.sidetone.mute
+        );
+        break;
+
     default:
         break;
     }
