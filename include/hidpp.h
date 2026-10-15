@@ -1311,6 +1311,30 @@ HIDPP_API int hidpp_wheel_analytics(
 );
 
 
+/** Pointer acceleration suggested by a device. */
+enum hidpp_pointer_acceleration {
+    HIDPP_POINTER_ACCEL_NONE = 0,
+    HIDPP_POINTER_ACCEL_LOW = 1,
+    HIDPP_POINTER_ACCEL_MEDIUM = 2,
+    HIDPP_POINTER_ACCEL_HIGH = 3,
+};
+
+/** Mouse pointer information (feature 0x2200). */
+struct hidpp_pointer_info {
+    uint16_t resolution; /* typical sensor resolution in DPI */
+    uint8_t flags;
+    uint8_t acceleration; /* enum hidpp_pointer_acceleration */
+
+    hidpp_bool_t suggestOsBallistics;
+    hidpp_bool_t suggestVerticalTuning; /* usually a trackball */
+    hidpp_bool_t initialized;
+};
+
+/** Returns the mouse pointer information.
+    Errors (as NULL): device has no mouse pointer feature.
+*/
+HIDPP_API struct hidpp_pointer_info *hidpp_pointer_info(hidpp_device_t *dev);
+
 /** Lift off distances. */
 enum hidpp_dpi_lod {
     HIDPP_DPI_LOD_NONE = 0, /* not supported */
