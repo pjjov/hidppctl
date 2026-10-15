@@ -28,6 +28,12 @@ test_src = files(
   'test_robustness.c',
   'test_retry.c',
   'test_root.c',
+  'test_wheel.c',
+  'test_pointer.c',
+  'test_keyboard.c',
+  'test_touch.c',
+  'test_lighting.c',
+  'test_misc.c',
 )
 
 # Assertions must stay active in every build type.
@@ -60,6 +66,27 @@ test_suites = [
   'illumination',
   'action',
   'retry',
+  'scrolling',
+  'smartshift',
+  'hires_wheel',
+  'thumbwheel',
+  'crown',
+  'pointer',
+  'dpi',
+  'fn_inversion',
+  'solar',
+  'disable_keys',
+  'platform',
+  'touchpad',
+  'touch_mouse',
+  'brightness',
+  'report_rate',
+  'led',
+  'perkey',
+  'mode_status',
+  'sidetone',
+  'equalizer',
+  'events',
 ]
 
 foreach suite : test_suites

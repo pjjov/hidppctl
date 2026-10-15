@@ -148,6 +148,27 @@ extern const pf_suite_t suite_backlight;
 extern const pf_suite_t suite_illumination;
 extern const pf_suite_t suite_action;
 extern const pf_suite_t suite_retry;
+extern const pf_suite_t suite_scrolling;
+extern const pf_suite_t suite_smartshift;
+extern const pf_suite_t suite_hires_wheel;
+extern const pf_suite_t suite_thumbwheel;
+extern const pf_suite_t suite_crown;
+extern const pf_suite_t suite_pointer;
+extern const pf_suite_t suite_dpi;
+extern const pf_suite_t suite_fn_inversion;
+extern const pf_suite_t suite_solar;
+extern const pf_suite_t suite_disable_keys;
+extern const pf_suite_t suite_platform;
+extern const pf_suite_t suite_touchpad;
+extern const pf_suite_t suite_touch_mouse;
+extern const pf_suite_t suite_brightness;
+extern const pf_suite_t suite_report_rate;
+extern const pf_suite_t suite_led;
+extern const pf_suite_t suite_perkey;
+extern const pf_suite_t suite_mode_status;
+extern const pf_suite_t suite_sidetone;
+extern const pf_suite_t suite_equalizer;
+extern const pf_suite_t suite_events;
 
 /* Opens the fake device and fails the test if the library refuses. */
 static inline hidpp_device_t *t_open(fake_t *f) {
@@ -162,6 +183,106 @@ static inline int t_null_handler(
 ) {
     (void)f, (void)func, (void)req, (void)res;
     return 0;
+}
+
+/*  Canned answers: features added with t_add_canned() answer every
+    function with the parameters (or HID++ error) stored for their index
+    and function, whatever the request was. */
+struct t_canned {
+    uint8_t answers[FAKE_MAX_FEATURES + 1][16][HIDPP_LEN_LONG - 4];
+    int errors[FAKE_MAX_FEATURES + 1][16];
+};
+
+static inline struct t_canned *t_canned(void) {
+    static struct t_canned canned;
+    return &canned;
+}
+
+static inline int t_canned_handler(
+    fake_t *f, uint8_t func, const hidpp_packet_t *req, hidpp_packet_t *res
+) {
+    struct t_canned *c = t_canned();
+    (void)f;
+
+    if (func >= 16 || req->feat > FAKE_MAX_FEATURES)
+        return HIDPP_ERR_INVALID_FUNCTION_ID;
+
+    if (c->errors[req->feat][func])
+        return c->errors[req->feat][func];
+
+    memcpy(res->params, c->answers[req->feat][func], HIDPP_LEN_LONG - 4);
+    return 0;
+}
+
+/* A bare device whose canned answers are all zero. */
+static inline fake_t *t_new(void) {
+    memset(t_canned(), 0, sizeof(struct t_canned));
+    return fake_new_bare();
+}
+
+static inline int t_add_canned(fake_t *f, uint16_t id, uint8_t version) {
+    return fake_add_feature(f, id, version, t_canned_handler);
+}
+
+/* Sets the answer of function `func` of the feature at `index`. */
+static inline void t_answer(
+    int index, uint8_t func, const uint8_t *data, size_t n
+) {
+    uint8_t *answer = t_canned()->answers[index][func];
+    memset(answer, 0, HIDPP_LEN_LONG - 4);
+    memcpy(answer, data, n);
+}
+
+/* Makes function `func` of the feature at `index` fail with `code`. */
+static inline void t_refuse(int index, uint8_t func, int code) {
+    t_canned()->errors[index][func] = code;
+}
+
+/* Parameter `n` and function number of the last request. */
+#define T_PARAM(f, n) (fake_last(f)->raw[4 + (n)])
+#define T_FUNC(f) (fake_last(f)->raw[3] >> 4)
+
+/*  Collects and saves the cache of a device created by `make` (which needs
+    the firmware feature for a cache id), then loads it into another device
+    from `make`. The log of the returned device is cleared. */
+static inline hidpp_device_t *t_from_cache(
+    fake_t *(*make)(void), fake_t **out
+) {
+    static char buffer[128 * 1024];
+    fake_t *src = make();
+    hidpp_device_t *sdev = t_open(src);
+    hidpp_cache_collect(sdev);
+
+    size_t size = sizeof(buffer);
+    T_OK(hidpp_cache_save(sdev, buffer, &size));
+    fake_free(src);
+
+    fake_t *f = make();
+    hidpp_device_t *dev = t_open(f);
+    T_OK(hidpp_cache_load(dev, buffer, size));
+    fake_reset_log(f);
+    *out = f;
+    return dev;
+}
+
+/* Queues a notification from the feature at `index` and polls it. */
+static inline struct hidpp_event t_event(
+    fake_t *f,
+    hidpp_device_t *dev,
+    int index,
+    uint8_t func,
+    const uint8_t *data,
+    size_t n
+) {
+    uint16_t ids[FAKE_MAX_FEATURES + 1];
+    struct hidpp_event e;
+
+    /* resolving the feature id must not need a request later */
+    T_TRUE(hidpp_feature_list(dev, ids, FAKE_MAX_FEATURES + 1) > 0);
+    memset(&e, 0xCD, sizeof(e));
+    fake_notify(f, (uint8_t)index, func, data, n);
+    T_OK(hidpp_device_poll(dev, &e));
+    return e;
 }
 
 /*  Small deterministic PRNG (xorshift32) so fuzz-like tests are

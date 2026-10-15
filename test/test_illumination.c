@@ -458,9 +458,12 @@ static int test_events(int seed, int i) {
     e = poll_one(f, dev, 3, value, 2);
     T_EQ(e.as.illumination.kind, HIDPP_ILLUMINATION_EVENT_BRIGHTNESS_MAX);
 
-    /* the layout of the clamped event is not documented: stays raw */
-    e = poll_one(f, dev, 4, value, 2);
-    T_EQ(e.type, HIDPP_EVENT_UNKNOWN);
+    const uint8_t clamped[] = { 2, 0x01, 0xF4 }; /* by a button, to 500 */
+    e = poll_one(f, dev, 4, clamped, 3);
+    T_EQ(e.type, HIDPP_EVENT_ILLUMINATION);
+    T_EQ(e.as.illumination.kind, HIDPP_ILLUMINATION_EVENT_CLAMPED);
+    T_EQ(e.as.illumination.source, 2);
+    T_EQ(e.as.illumination.value, 500);
     fake_free(f);
     return 0;
 }

@@ -27,7 +27,14 @@ static const pf_suite_t *all[] = {
     &suite_battery,  &suite_keymap,      &suite_poll,
     &suite_cache,    &suite_robustness,  &suite_hosts,
     &suite_backlight, &suite_illumination, &suite_action,
-    &suite_retry,
+    &suite_retry,    &suite_scrolling,   &suite_smartshift,
+    &suite_hires_wheel, &suite_thumbwheel, &suite_crown,
+    &suite_pointer,  &suite_dpi,         &suite_fn_inversion,
+    &suite_solar,    &suite_disable_keys, &suite_platform,
+    &suite_touchpad, &suite_touch_mouse, &suite_brightness,
+    &suite_report_rate, &suite_led,      &suite_perkey,
+    &suite_mode_status, &suite_sidetone, &suite_equalizer,
+    &suite_events,
     NULL,
 };
 
