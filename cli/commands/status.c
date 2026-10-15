@@ -51,6 +51,35 @@ static int cmd_status_all(hidppctl_t *ctl) {
     return HIDPP_OK;
 }
 
+static const char *device_type_name(int type) {
+    static const char *names[] = {
+        "keyboard",
+        "remote control",
+        "numpad",
+        "mouse",
+        "touchpad",
+        "trackball",
+        "presenter",
+        "receiver",
+        "headset",
+        "webcam",
+        "steering wheel",
+        "joystick",
+        "gamepad",
+        "dock",
+        "speaker",
+        "microphone",
+        "illumination light",
+        "programmable controller",
+        "car simulator pedals",
+        "adapter",
+    };
+
+    if (type < 0 || (size_t)type >= PF_COUNTOF(names))
+        return "unknown";
+    return names[type];
+}
+
 static int cmd_status_rcv(hidppctl_t *ctl) {
     pf_cli_t *cli = ctl->cli;
 
@@ -81,13 +110,25 @@ static int cmd_status_rcv(hidppctl_t *ctl) {
             continue;
         }
 
-        hidpp_device_info(dev, &dinfo);
         pf_cli_printf(cli, "  Device %d connected\n", i);
-        pf_cli_printf(cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor);
+
+        if (!hidpp_device_info(dev, &dinfo)) {
+            pf_cli_printf(cli, "    Name: %s\n", cli_str(dinfo.name));
+            pf_cli_printf(cli, "    Type: %s\n", device_type_name(dinfo.type));
+            pf_cli_printf(
+                cli, "    Version: %u.%u\n", dinfo.major, dinfo.minor
+            );
+        }
+
         hidpp_device_close(dev);
     }
 
+    hidpp_free_info(&info);
     return HIDPP_OK;
+}
+
+static const char *firmware_type_name(const struct hidpp_firmware_entity *e) {
+    return e->typeName ? e->typeName : "unknown";
 }
 
 static int cmd_status_dev(hidppctl_t *ctl) {
@@ -96,6 +137,8 @@ static int cmd_status_dev(hidppctl_t *ctl) {
     hidpp_receiver_t *rcv = ctl->receiver;
     hidpp_device_t *dev = ctl->device;
     struct hidpp_device_info info;
+    struct hidpp_firmware_info *fw;
+    struct hidpp_firmware_entity *entity;
 
     if (hidpp_device_info(dev, &info)) {
         pf_cli_errorf(
@@ -105,8 +148,46 @@ static int cmd_status_dev(hidppctl_t *ctl) {
         return HIDPP_EIO;
     }
 
-    pf_cli_printf(cli, "Device %d connected '%s'\n", info.index);
+    pf_cli_printf(
+        cli, "Device %d connected '%s'\n", info.index, cli_str(info.name)
+    );
+    pf_cli_printf(cli, "  Type: %s\n", device_type_name(info.type));
     pf_cli_printf(cli, "  Version: %u.%u\n", info.major, info.minor);
+
+    if (info.nickname)
+        pf_cli_printf(cli, "  Nickname: %s\n", info.nickname);
+    if (info.serialNumber)
+        pf_cli_printf(cli, "  Serial number: %s\n", info.serialNumber);
+
+    if ((fw = hidpp_firmware_info(dev))) {
+        pf_cli_printf(cli, "  Unit id: %.8x\n", fw->unitId);
+        pf_cli_printf(
+            cli, "  Model id: %.12llx\n", (unsigned long long)fw->modelId
+        );
+        pf_cli_printf(
+            cli,
+            "  Transports: USB %s, eQuad %s, Bluetooth LE %s, Bluetooth %s\n",
+            cli_yesno(fw->supportsUSB),
+            cli_yesno(fw->supportsEQuad),
+            cli_yesno(fw->supportsBTLE),
+            cli_yesno(fw->supportsBT)
+        );
+
+        for (unsigned i = 0; i < fw->entityCount; i++) {
+            if (!(entity = hidpp_firmware_entity(dev, i)))
+                continue;
+
+            pf_cli_printf(
+                cli,
+                "  Firmware %u: %s %u.%u build %u\n",
+                i,
+                firmware_type_name(entity),
+                entity->firmwareNumber,
+                entity->revision,
+                entity->buildNumber
+            );
+        }
+    }
 
     return HIDPP_OK;
 }

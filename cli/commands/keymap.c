@@ -19,21 +19,46 @@ int cmd_keymap(hidppctl_t *ctl) {
     if (!rcv || !dev)
         return HIDPP_EIO;
 
-    if (!map) {
-        pf_cli_printf(
-            cli, "Selected device doesn't support keymap features!\n"
-        );
-        return HIDPP_OK;
-    }
+    if (!map)
+        return cli_unsupported(ctl, "keymap features");
 
     uint16_t controls[256];
     size_t ctrlCount = hidpp_keymap_list(map, controls, 256);
 
-    pf_cli_printf(cli, "Device has %u remappable controls:\n", ctrlCount);
+    pf_cli_printf(cli, "Device has %zu remappable controls:\n", ctrlCount);
 
-    for (int i = 0; i < ctrlCount; i++) {
-        uint16_t ctrl = hidpp_keymap_id(map, i);
-        pf_cli_printf(cli, "  [0x%.4x] %s\n", ctrl, hidpp_keymap_name(ctrl));
+    for (size_t i = 0; i < ctrlCount; i++) {
+        uint16_t ctrl = controls[i];
+        struct hidpp_keymap_info *info = hidpp_keymap_info(map, ctrl);
+        struct hidpp_keymap_state state;
+
+        pf_cli_printf(
+            cli, "  [0x%.4x] %s", ctrl, cli_str(hidpp_keymap_name(ctrl))
+        );
+
+        if (info) {
+            pf_cli_printf(
+                cli,
+                " (%s%s%s)",
+                info->isDivertable ? "divertable" : "fixed",
+                info->isReprogrammable ? ", remappable" : "",
+                info->isFnTogglable ? ", fn" : ""
+            );
+        }
+
+        if (!hidpp_keymap_state(map, ctrl, &state)) {
+            if (state.remapId && state.remapId != ctrl)
+                pf_cli_printf(
+                    cli,
+                    " -> [0x%.4x] %s",
+                    state.remapId,
+                    cli_str(hidpp_keymap_name(state.remapId))
+                );
+            if (state.isDiverted)
+                pf_cli_printf(cli, " [diverted]");
+        }
+
+        pf_cli_printf(cli, "\n");
     }
 
     return HIDPP_OK;

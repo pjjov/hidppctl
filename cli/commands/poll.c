@@ -9,12 +9,6 @@
 
 #include "../common.h"
 
-#include <signal.h>
-
-static volatile sig_atomic_t terminate = 0;
-
-static void signal_handler(int sig) { terminate = 1; }
-
 static int cmd_poll_handle(
     hidppctl_t *ctl, hidpp_device_t *dev, struct hidpp_event *e
 ) {
@@ -76,7 +70,7 @@ static int cmd_poll_handle(
     case HIDPP_EVENT_TOUCH_PAD_POINTS:
         pf_cli_printf(cli, "%u ", e->as.touchPadPoints.timestamp);
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) {
             struct hidpp_touch_pad_point *p = &e->as.touchPadPoints.data[i];
             pf_cli_printf(
                 cli,
@@ -125,18 +119,31 @@ int cmd_poll(hidppctl_t *ctl) {
     char *masks = ctl->options->poll.masks;
 
     hidpp_device_t *dev = ctl->device;
+    hidpp_receiver_t *rcv = ctl->receiver;
     struct hidpp_event e;
+    int rc;
 
-    signal(SIGTERM, signal_handler);
+    cli_catch_signals();
     pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
+    pf_cli_color(ctl->cli, PF_CLI_RESET);
 
-    while (!terminate) {
-        if (HIDPP_OK != hidpp_device_poll(dev, &e))
+    while (!cli_terminated()) {
+        /* Without a device, the receiver itself is polled. */
+        rc = dev ? hidpp_device_poll(dev, &e) : hidpp_poll(rcv, &e);
+
+        if (rc == HIDPP_ETIMEDOUT || rc == HIDPP_EAGAIN || rc == HIDPP_EINTR)
             continue;
 
-        if (e.type > HIDPP__EVENT_MAX || e.type < HIDPP_EVENT_NONE) {
-            pf_cli_cprintf(ctl->cli, PF_FG_RED, "ERROR Invalid event type!");
-            break;
+        if (rc != HIDPP_OK) {
+            pf_cli_errorf(
+                ctl->cli, "Unable to poll for events: %s\n", hidpp_error_str(rc)
+            );
+            return rc;
+        }
+
+        if (e.type >= HIDPP__EVENT_MAX || e.type < HIDPP_EVENT_NONE) {
+            pf_cli_errorf(ctl->cli, "Invalid event type %d!\n", e.type);
+            return HIDPP_EINVAL;
         }
 
         if (masks[e.type] == HIDPP_TRUE)

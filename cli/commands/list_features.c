@@ -26,9 +26,9 @@ int cmd_list_features(hidppctl_t *ctl) {
     uint16_t features[256];
     size_t featCount = hidpp_feature_list(dev, features, 256);
 
-    pf_cli_printf(cli, "Device supports %u HID++ features:\n", featCount);
+    pf_cli_printf(cli, "Device supports %zu HID++ features:\n", featCount);
 
-    for (int i = 0; i < featCount; i++) {
+    for (size_t i = 0; i < featCount; i++) {
         uint16_t feat = hidpp_feature_id(dev, i);
         pf_cli_printf(cli, "  [0x%.4x] %s\n", feat, hidpp_feature_name(feat));
     }

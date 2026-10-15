@@ -10,7 +10,6 @@
 #include "../common.h"
 
 #include <limits.h>
-#include <linux/limits.h>
 #include <pf_io.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,7 +39,13 @@ static int cmd_cache_collect(hidppctl_t *ctl, const char *path) {
 }
 
 static int cmd_cache_clear(hidppctl_t *ctl, const char *path) {
-    return remove(path);
+    if (remove(path)) {
+        pf_cli_errorf(ctl->cli, "Unable to remove '%s'.\n", path);
+        return HIDPP_ENOENT;
+    }
+
+    pf_cli_printf(ctl->cli, "Removed '%s'.\n", path);
+    return HIDPP_OK;
 }
 
 int cmd_cache(hidppctl_t *ctl) {
@@ -56,5 +61,8 @@ int cmd_cache(hidppctl_t *ctl) {
         return cmd_cache_collect(ctl, path);
     if (ctl->options->cache.clear)
         return cmd_cache_clear(ctl, path);
-    return HIDPP_ENOSYS;
+
+    /* No action: tell where the cache is. */
+    pf_cli_printf(ctl->cli, "%s\n", path);
+    return HIDPP_OK;
 }

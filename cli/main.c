@@ -16,26 +16,26 @@
 
     #include <sys/un.h>
 
-static int open_domain_socket(const char *path) {
+static pf_sock_t open_domain_socket(const char *path) {
     pf_sock_t sock = pf_sock_open(AF_UNIX, SOCK_STREAM, 0);
 
-    if (sock < 0)
-        return HIDPP_EIO;
+    if (sock == PF_INVALID_SOCKET)
+        return PF_INVALID_SOCKET;
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
 
     if (strlen(path) >= sizeof(addr.sun_path)) {
-        close(sock);
-        return HIDPP_ENOMEM;
+        pf_sock_close(sock);
+        return PF_INVALID_SOCKET;
     }
 
     strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (pf_sock_connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         pf_sock_close(sock);
-        return HIDPP_EIO;
+        return PF_INVALID_SOCKET;
     }
 
     return sock;
@@ -91,8 +91,10 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
         rcv = hidpp_open_path(name);
     }
 
-    if (rcv == NULL)
+    if (rcv == NULL) {
         pf_cli_errorf(ctl->cli, "Unable to open receiver '%s'.\n", name);
+        return NULL;
+    }
 
     if (opt->setTimeout)
         hidpp_set_timeout(rcv, opt->timeout);
@@ -104,6 +106,11 @@ hidpp_receiver_t *open_receiver(hidppctl_t *ctl, const char *name) {
 hidpp_receiver_t *open_socket(hidppctl_t *ctl, struct hidppctl_opt *opt) {
     pf_sock_t sock = PF_INVALID_SOCKET;
     hidpp_receiver_t *rcv;
+
+    if (opt->socket.isPort) {
+        pf_cli_errorf(ctl->cli, "TCP sockets are not supported yet.\n");
+        return NULL;
+    }
 
 #ifndef _WIN32
     sock = open_domain_socket(opt->socket.path);
@@ -120,6 +127,12 @@ hidpp_receiver_t *open_socket(hidppctl_t *ctl, struct hidppctl_opt *opt) {
         return NULL;
     }
 
+    if (opt->setTimeout)
+        hidpp_set_timeout(rcv, opt->timeout);
+    if (opt->setSwid)
+        hidpp_set_swid(rcv, opt->swid);
+
+    ctl->socket = (int)sock;
     return rcv;
 }
 
@@ -143,18 +156,18 @@ static hidpp_device_t *open_device(
 }
 
 static void hidppctl_free(hidppctl_t *ctl) {
-    if (ctl->requiresCache)
+    if (ctl->requiresCache && ctl->device)
         hidppctl_save_cache(ctl);
     if (ctl->requiresLog)
         hidppctl_close_log(ctl);
-    if (ctl->requiresInput)
+    if (ctl->input)
         hidpp_input_free(ctl->input);
-    if (ctl->requiresDevice || ctl->requiresSocket)
+    if (ctl->device)
         hidpp_device_close(ctl->device);
-    if (ctl->requiresSocket)
-        pf_sock_close((pf_sock_t)ctl->socket);
-    if (ctl->requiresReceiver)
+    if (ctl->receiver)
         hidpp_close(ctl->receiver);
+    if (ctl->requiresSocket && ctl->socket)
+        pf_sock_close((pf_sock_t)ctl->socket);
     if (ctl->cachePath)
         free(ctl->cachePath);
     if (ctl->logPath)
@@ -183,9 +196,7 @@ static int hidppctl_init(hidppctl_t *ctl) {
             hidppctl_free(ctl);
             return HIDPP_EIO;
         }
-    }
-
-    if (ctl->requiresReceiver) {
+    } else if (ctl->requiresSocket) {
         ctl->receiver = open_socket(ctl, ctl->options);
 
         if (!ctl->receiver) {
@@ -218,40 +229,27 @@ static int hidppctl_run(hidppctl_t *ctl) {
     if ((rc = hidppctl_parse_args(ctl)))
         return rc;
 
+    if (ctl->options->version)
+        return HIDPP_OK;
+
     if (ctl->options->help)
         return hidppctl_print_help(ctl);
 
     if ((rc = hidppctl_init(ctl)))
         return rc;
 
-    int result = HIDPP_ENOSYS;
-
-    switch (ctl->options->command) {
-        /* clang-format off */
-        PF_ENUM_GUARD(hidppctl_command, 2);
-    case HIDPPCTL_CACHE:         result = cmd_cache(ctl);         break;
-    case HIDPPCTL_DIVERT:        result = cmd_divert(ctl);        break;
-    case HIDPPCTL_KEYMAP:   result = cmd_keymap(ctl);   break;
-    case HIDPPCTL_LIST_EVENTS:   result = cmd_list_events(ctl);   break;
-    case HIDPPCTL_LIST_FEATURES: result = cmd_list_features(ctl); break;
-    case HIDPPCTL_LIST_KEYCODES: result = cmd_list_keycodes(ctl); break;
-    case HIDPPCTL_POLL:          result = cmd_poll(ctl);          break;
-    case HIDPPCTL_REMAP:         result = cmd_remap(ctl);         break;
-    case HIDPPCTL_STATUS:        result = cmd_status(ctl);        break;
-    default:                     result = HIDPP_ENOSYS;           break;
-        /* clang-format off */
-    }
+    int result = hidppctl_commands[ctl->options->command].run(ctl);
 
     hidppctl_free(ctl);
     return result;
 }
 
 int main(int argc, char *argv[]) {
-    struct hidppctl_opt options = {0};
-    pf_argparser_t argparser = {0};
-    pf_cli_t cli = {0};
+    struct hidppctl_opt options = { 0 };
+    pf_argparser_t argparser = { 0 };
+    pf_cli_t cli = { 0 };
 
-    hidppctl_t state = {0};
+    hidppctl_t state = { 0 };
     state.options = &options;
     state.argparser = &argparser;
     state.cli = &cli;
@@ -262,5 +260,5 @@ int main(int argc, char *argv[]) {
     int rc = hidppctl_run(&state);
 
     pf_argparser_free(state.argparser);
-    return rc;
+    return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }

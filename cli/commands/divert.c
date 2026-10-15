@@ -9,12 +9,6 @@
 
 #include "../common.h"
 
-#include <signal.h>
-
-static volatile sig_atomic_t terminate = 0;
-
-static void signal_handler(int sig) { terminate = 1; }
-
 static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
     struct diversion *diversions = ctl->options->divert.items;
 
@@ -83,8 +77,8 @@ static int cmd_divert_poll(
         struct diversion *div = &diversions[i];
         int value = 0;
 
-        for (int i = 0; i < 4; i++)
-            if (e.as.buttons[i] == div->ctrl)
+        for (int j = 0; j < 4; j++)
+            if (e.as.buttons[j] == div->ctrl)
                 value = 1;
 
         if (value != div->state)
@@ -101,11 +95,11 @@ int cmd_divert(hidppctl_t *ctl) {
     if (cmd_divert_init(ctl, map))
         return HIDPP_EIO;
 
-    signal(SIGTERM, signal_handler);
+    cli_catch_signals();
     pf_cli_cprintf(ctl->cli, PF_CLI_BOLD, "Type Ctrl+C to stop the program.\n");
     pf_cli_color(ctl->cli, PF_CLI_RESET);
 
-    while (!terminate)
+    while (!cli_terminated())
         cmd_divert_poll(ctl, dev, map);
 
     cmd_divert_term(ctl, map);

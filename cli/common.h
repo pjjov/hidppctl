@@ -74,6 +74,7 @@ typedef struct hidppctl_t {
 
 struct hidppctl_opt {
     pf_bool help;
+    pf_bool version;
     pf_bool quiet;
     pf_bool verbose;
 
@@ -85,6 +86,9 @@ struct hidppctl_opt {
     char *receiver;
     uint8_t device;
     uint8_t swid;
+    uint8_t host;   /* --host, HIDPP_HOST_CURRENT by default */
+    uint8_t sensor; /* --sensor */
+    uint8_t zone;   /* --zone */
     int timeout;
     int interface;
 
@@ -134,6 +138,78 @@ extern const char *hidppctl_event_names[HIDPP__EVENT_MAX];
 int hidppctl_print_help(hidppctl_t *ctl);
 int hidppctl_parse_args(hidppctl_t *ctl);
 int hidppctl_cache_path(hidpp_device_t *dev, char *buf, size_t size);
+
+/* ------------------------------------------------------------------------ */
+/* Helpers shared by the subcommands (util.c)                                */
+/* ------------------------------------------------------------------------ */
+
+/** A name which stands for a number. */
+struct name_value {
+    const char *name;
+    int value;
+};
+
+/** Reports that `what` failed with the error `rc`; returns `rc`. */
+int cli_fail(hidppctl_t *ctl, int rc, const char *what);
+
+/** Reports that the device lacks a feature; returns HIDPP_ENOSYS. */
+int cli_unsupported(hidppctl_t *ctl, const char *what);
+
+/** Reports a usage error; returns HIDPP_EINVAL. */
+int cli_usage(hidppctl_t *ctl, const char *fmt, ...);
+
+/** Parsers. They print a message and return HIDPP_EINVAL on a bad input. */
+int cli_long(
+    hidppctl_t *ctl,
+    const char *s,
+    const char *what,
+    long min,
+    long max,
+    long *out
+);
+int cli_bool(hidppctl_t *ctl, const char *s, const char *what, int *out);
+int cli_named(
+    hidppctl_t *ctl,
+    const char *s,
+    const char *what,
+    const struct name_value *table,
+    int *out
+);
+int cli_flags(
+    hidppctl_t *ctl,
+    const char *s,
+    const char *what,
+    const struct name_value *table,
+    int *out
+);
+int cli_color(hidppctl_t *ctl, const char *s, struct hidpp_color *out);
+int cli_control(hidppctl_t *ctl, const char *s, uint16_t *out);
+int cli_host(hidppctl_t *ctl, const char *s, uint8_t *out);
+
+/** Splits "key=value" in place; the value is NULL if there is no '='. */
+char *cli_split(char *arg, char **value);
+
+/** Case-insensitive comparison, 1 if equal. */
+int cli_is(const char *a, const char *b);
+
+/** Name of `value` in the table or NULL. */
+const char *cli_name(const struct name_value *table, int value);
+
+/** Writes the names of the bits set in `value` ("none" if there are none). */
+void cli_flag_names(
+    const struct name_value *table, unsigned value, char *buf, size_t size
+);
+
+const char *cli_str(const char *s);
+const char *cli_yesno(int value);
+const char *cli_onoff(int value);
+
+/** Prints `size` bytes of `data` in hexadecimal. */
+void cli_hex(hidppctl_t *ctl, const uint8_t *data, size_t size);
+
+/** Installs the SIGINT and SIGTERM handlers; see cli_terminated(). */
+void cli_catch_signals(void);
+int cli_terminated(void);
 
 #if defined(_WIN32) || defined(_MSC_VER)
     /* Windows environment fallback to the secure CRT name */

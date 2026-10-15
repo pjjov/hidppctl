@@ -20,6 +20,7 @@ cli_src = files(
   'cache.c',
   'log.c',
   'main.c',
+  'util.c',
 )
 
 executable(
