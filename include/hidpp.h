@@ -1210,6 +1210,52 @@ HIDPP_API int hidpp_action_reset_all(hidpp_device_t *dev, uint8_t hostMask);
 /** Returns the name of an action type. */
 HIDPP_API const char *hidpp_action_type_name(uint8_t type);
 
+/** State of a rotating or touch sensitive control within a gesture. */
+enum hidpp_rotation_state {
+    HIDPP_ROTATION_INACTIVE = 0,
+    HIDPP_ROTATION_START = 1,
+    HIDPP_ROTATION_ACTIVE = 2,
+    HIDPP_ROTATION_STOP = 3,
+};
+
+/** Kind of the vertical scrolling roller (feature 0x2100). */
+enum hidpp_roller_type {
+    HIDPP_ROLLER_STANDARD = 1,
+    HIDPP_ROLLER_3G = 3,
+    HIDPP_ROLLER_MICRO_RATCHET = 4,
+    HIDPP_ROLLER_TOUCH_PAD = 5,
+    HIDPP_ROLLER_TOUCH_PAD_NATURAL = 6, /* natural scrolling by default */
+};
+
+/** Vertical scrolling (features 0x2100 and 0x2120). */
+struct hidpp_scroll_info {
+    uint8_t rollerType;      /* enum hidpp_roller_type */
+    uint8_t ratchetsPerTurn; /* number of ratchets in a full turn */
+    uint8_t scrollLines;     /* 0 = keep the OS setting, 0xFF = one page */
+    uint8_t multiplier;      /* counts per ratchet in high resolution mode */
+
+    hidpp_bool_t hasRollerInfo; /* 0x2100: the fields above are valid */
+    hidpp_bool_t hasHighRes;    /* 0x2120: high resolution can be toggled */
+    const char *rollerTypeName;
+    hidpp_bool_t initialized;
+};
+
+/** Returns the roller information.
+    Errors (as NULL): device has neither of the scrolling features.
+*/
+HIDPP_API struct hidpp_scroll_info *hidpp_scroll_info(hidpp_device_t *dev);
+
+/** Returns 1 if high resolution scrolling is on, 0 if not, or an error.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_scroll_highres(hidpp_device_t *dev);
+
+/** Turns high resolution scrolling on (`enabled` != 0) or off.
+    Errors: EINVAL, ENOSYS, EIO.
+*/
+HIDPP_API int hidpp_scroll_set_highres(hidpp_device_t *dev, int enabled);
+
+
 /** Returns the HID++ error code (`enum hidpp_protocol_error`) the device
     answered the last request of `rcv` with, or 0 if the last request did not
     fail that way. Requests answered by an error report fail with HIDPP_EIO,

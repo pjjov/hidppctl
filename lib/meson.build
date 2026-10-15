@@ -17,6 +17,7 @@ lib_src = files(
   'features/keymap.c',
   'features/nickname.c',
   'features/root.c',
+  'features/scrolling.c',
   'cache.c',
   'device.c',
   'input.c',

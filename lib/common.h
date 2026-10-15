@@ -53,6 +53,7 @@ enum {
     HIDPP_FEAT_BACKLIGHT,
     HIDPP_FEAT_ILLUMINATION,
     HIDPP_FEAT_ACTION,
+    HIDPP_FEAT_SCROLLING,
     hidpp_feat_max,
     hidpp_feat_sentinel = 4,
 };
@@ -130,6 +131,14 @@ static inline int feature_lookup(hidpp_device_t *dev, uint16_t id) {
         return 0;
 
     return rc;
+}
+
+/*  Version of a feature the device has, 0 if it is not known. Newer
+    versions only append to older ones, so unknown newer versions are
+    handled like the newest known one. */
+static inline uint8_t feature_version(hidpp_device_t *dev, uint16_t id) {
+    struct hidpp_feature_info *feat = hidpp_feature_info(dev, id);
+    return feat ? feat->version : 0;
 }
 
 static inline size_t packet_length(int kind) {
