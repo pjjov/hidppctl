@@ -1,0 +1,13 @@
+.SH RETURN VALUE
+.PP
+For functions that return signed integers, a 0 indicates that the function exited successfully.
+If instead a negative number is returned, it indicates a specific error that occurred during function's execution.
+The returned error codes are made to resemble POSIX in both meaning and numeric value.
+.PP
+The lifetime of most objects is tied to the parent \fIhidpp_receiver_t\fR object.
+The exception to this are input handlers from \fIhidpp_input_open\fR.
+.SH SEE ALSO
+.BR hidppctl (1),
+.BR libhidpp (3).
+.SH AUTHOR
+Copyright (C) 2026 Предраг Јовановић

@@ -22,6 +22,6 @@ subdir('test')
 install_headers('include/hidpp.h')
 
 install_man(
-    'docs/libhidpp.3',
-    'docs/hidppctl.1'
+    'docs/manual/libhidpp.3',
+    'docs/manual/hidppctl.1'
 )
