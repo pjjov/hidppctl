@@ -9,6 +9,8 @@
 
 #include "../common.h"
 
+#define REDIVERT_ATTEMPTS 3
+
 static int cmd_divert_init(hidppctl_t *ctl, hidpp_keymap_t *map) {
     struct diversion *diversions = ctl->options->divert.items;
 
@@ -57,8 +59,29 @@ static void cmd_divert_set(
     if (div->state == value)
         return;
 
-    hidpp_input_set(input, div->key, div->mods, div->count, value);
+    if (input && div->count >= 0)
+        hidpp_input_set(input, div->key, div->mods, div->count, value);
     div->state = value;
+}
+
+/* Devices forget their diversions when they disconnect (for example while
+   the computer sleeps) and announce that with a wireless status event. */
+static int cmd_divert_reconnected(hidppctl_t *ctl, hidpp_keymap_t *map) {
+    struct diversion *diversions = ctl->options->divert.items;
+    int rc = HIDPP_EIO;
+
+    pf_cli_verbosef(ctl->cli, 1, "Device reconnected; diverting again.\n");
+
+    /* Whatever was held down can no longer be released by the device. */
+    for (int i = 0; i < ctl->options->paramc; i++)
+        cmd_divert_set(&diversions[i], ctl->input, 0);
+
+    for (int attempt = 0; attempt < REDIVERT_ATTEMPTS && rc; attempt++)
+        rc = cmd_divert_init(ctl, map);
+
+    if (rc)
+        pf_cli_errorf(ctl->cli, "Unable to divert the controls again.\n");
+    return rc;
 }
 
 static int cmd_divert_poll(
@@ -69,6 +92,13 @@ static int cmd_divert_poll(
 
     if (hidpp_device_poll(dev, &e))
         return HIDPP_EIO;
+
+    if (e.type == HIDPP_EVENT_WIRELESS_STATUS) {
+        /* status 1: reconnection, request 1: software must reconfigure */
+        if (e.as.wirelessStatus.status == 1 || e.as.wirelessStatus.request == 1)
+            return cmd_divert_reconnected(ctl, map);
+        return HIDPP_OK;
+    }
 
     if (e.type != HIDPP_EVENT_BUTTON)
         return HIDPP_ENOSYS;
