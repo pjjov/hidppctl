@@ -107,7 +107,41 @@ static int test_mouse_event(int seed, int i) {
     struct hidpp_event e = poll_one(dev);
     T_EQ(e.type, HIDPP_EVENT_MOUSE);
     T_EQ(e.as.mouse[0], 10);
-    T_EQ((int16_t)e.as.mouse[1], -10);
+    T_EQ(e.as.mouse[1], -10);
+    fake_free(f);
+    return 0;
+}
+
+static int test_analytics_event(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f;
+    hidpp_device_t *dev = event_device(&f);
+    const uint8_t data[] = { 0x00, 0x50, 0x01, 0x00, 0x51, 0x02, 0x00, 0x52, 0x03 };
+    fake_notify(f, FAKE_IDX_KEYMAP, 2, data, sizeof(data));
+
+    struct hidpp_event e = poll_one(dev);
+    T_EQ(e.type, HIDPP_EVENT_ANALYTICS);
+    T_EQ(e.as.analytics[0].id, 0x0050);
+    T_EQ(e.as.analytics[0].event, 1);
+    T_EQ(e.as.analytics[2].id, 0x0052);
+    T_EQ(e.as.analytics[2].event, 3);
+    T_EQ(e.as.analytics[3].id, 0);
+    fake_free(f);
+    return 0;
+}
+
+static int test_raw_wheel_event(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f;
+    hidpp_device_t *dev = event_device(&f);
+    const uint8_t data[] = { 0x13, 0xFF, 0xFE }; /* high resolution, 3, -2 */
+    fake_notify(f, FAKE_IDX_KEYMAP, 4, data, sizeof(data));
+
+    struct hidpp_event e = poll_one(dev);
+    T_EQ(e.type, HIDPP_EVENT_RAW_WHEEL);
+    T_TRUE(e.as.rawWheel.highRes);
+    T_EQ(e.as.rawWheel.periods, 3);
+    T_EQ(e.as.rawWheel.delta, -2);
     fake_free(f);
     return 0;
 }
@@ -529,6 +563,8 @@ static const pf_test_t poll_tests[] = {
     { test_button_event, "button_event" },
     { test_button_release_is_all_zero, "button_release_is_all_zero" },
     { test_mouse_event, "mouse_event" },
+    { test_analytics_event, "analytics_event" },
+    { test_raw_wheel_event, "raw_wheel_event" },
     { test_legacy_button_event, "legacy_button_event" },
     { test_wheel_event, "wheel_event" },
     { test_wheel_positive_delta, "wheel_positive_delta" },

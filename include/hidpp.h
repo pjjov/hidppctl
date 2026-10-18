@@ -214,6 +214,8 @@ enum hidpp_event_type {
     HIDPP_EVENT_LED,
     HIDPP_EVENT_MODE_STATUS,
     HIDPP_EVENT_SIDETONE,
+    HIDPP_EVENT_ANALYTICS,
+    HIDPP_EVENT_RAW_WHEEL,
     HIDPP__EVENT_MAX,
 };
 
@@ -265,7 +267,18 @@ struct hidpp_event {
 
         hidpp_packet_t unknown;
         uint16_t buttons[4];
-        uint16_t mouse[2];
+        int16_t mouse[2]; /* dx, dy */
+
+        struct hidpp_analytics_event {
+            uint16_t id;   /* control id, 0 if the entry is unused */
+            uint8_t event; /* project-dependent event code */
+        } analytics[5];
+
+        struct {
+            hidpp_bool_t highRes;
+            uint8_t periods; /* sampling periods combined (at most 15) */
+            int16_t delta;   /* vertical motion, positive moves away */
+        } rawWheel;
 
         struct {
             uint8_t chargeState;
@@ -798,8 +811,39 @@ HIDPP_API const char *hidpp_task_name(uint16_t task);
 HIDPP_API size_t
 hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max);
 
+/** Settings of a control which can be changed with `hidpp_keymap_set`. */
+enum hidpp_keymap_setting {
+    HIDPP_KEYMAP_DIVERT,      /* temporary diversion to `HIDPP_EVENT_BUTTON` */
+    HIDPP_KEYMAP_PERSIST,     /* persistent diversion */
+    HIDPP_KEYMAP_RAW_XY,      /* also divert mouse movement while pressed */
+    HIDPP_KEYMAP_FORCE_RAW_XY, /* divert mouse movement without a press */
+    HIDPP_KEYMAP_ANALYTICS,   /* report `HIDPP_EVENT_ANALYTICS` events */
+    HIDPP_KEYMAP_RAW_WHEEL,   /* also divert the wheel while pressed */
+};
+
+/** Changes one setting of the control `id`, leaving the others alone. The
+    device applies the change when it is safe to do so. Settings are only
+    accepted if the control reports the matching capability.
+*/
+HIDPP_API int hidpp_keymap_set(
+    hidpp_keymap_t *map, uint16_t id, enum hidpp_keymap_setting setting, int value
+);
+
 /** Diverts a control to be handled by the event handler. */
 HIDPP_API int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value);
+
+/** Capabilities of the keymap feature (see `hidpp_keymap_capabilities`). */
+#define HIDPP_KEYMAP_CAP_RESET 0x01 /* `hidpp_keymap_reset` is supported */
+
+/** Returns the capability flags of the feature, which are 0 for versions
+    older than 6, or a negative error.
+*/
+HIDPP_API int hidpp_keymap_capabilities(hidpp_keymap_t *map);
+
+/** Resets the diversion and remap settings of every control. Returns
+    `HIDPP_ENOSYS` if the device does not support it.
+*/
+HIDPP_API int hidpp_keymap_reset(hidpp_keymap_t *map);
 
 /** Remaps control's behaviour to another one's. */
 HIDPP_API int hidpp_keymap_remap(
@@ -815,7 +859,7 @@ struct hidpp_keymap_info {
     uint8_t position;
     uint8_t group;
     uint8_t groupMask;
-    uint8_t rawXY;
+    uint8_t extraFlags; /* raw additional flags of the control */
 
     hidpp_bool_t isVirtual;
     hidpp_bool_t isPersistable;
@@ -825,6 +869,11 @@ struct hidpp_keymap_info {
     hidpp_bool_t isHotkey;
     hidpp_bool_t isFunctionKey;
     hidpp_bool_t isMouseButton;
+
+    hidpp_bool_t rawXY;      /* can divert mouse movement */
+    hidpp_bool_t forceRawXY; /* can divert mouse movement without a press */
+    hidpp_bool_t analytics;  /* can report analytics key events */
+    hidpp_bool_t rawWheel;   /* can divert the wheel */
 
     hidpp_bool_t initialized;
     const char *name;
@@ -841,7 +890,11 @@ HIDPP_API struct hidpp_keymap_info *hidpp_keymap_info(
 struct hidpp_keymap_state {
     uint16_t remapId;
     uint8_t flags;
+    uint8_t extraFlags;
     hidpp_bool_t rawXY;
+    hidpp_bool_t forceRawXY;
+    hidpp_bool_t analytics;
+    hidpp_bool_t rawWheel;
     hidpp_bool_t isPersistent;
     hidpp_bool_t isDiverted;
 };

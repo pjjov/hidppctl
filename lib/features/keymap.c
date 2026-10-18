@@ -43,7 +43,10 @@
         uint8_t position
         uint8_t group
         uint8_t groupMask
-        uint8_t rawXYflags
+        uint8_t extraFlags (version 2 and newer)
+        - bit 3 - rawWheel
+        - bit 2 - analyticsKeyEvents
+        - bit 1 - forceRawXY
         - bit 0 - rawXY
 
     ----------------------
@@ -54,10 +57,14 @@
     response:
         uint16_t ctrlId
         uint8_t flags
+        - bit 6 - forceRawXY
         - bit 4 - rawXY
         - bit 2 - persist
         - bit 0 - divert
         uint16_t remapId
+        uint8_t extraFlags
+        - bit 1 - rawWheel
+        - bit 0 - analyticsKeyEvt
 
     ----------------------
     Fn 3 - set control reporting
@@ -65,15 +72,55 @@
     request:
         uint16_t ctrlId
         uint8_t flags
+        - bit 7 - fvalid
+        - bit 6 - forceRawXY
         - bit 5 - rvalid
         - bit 4 - rawXY
         - bit 3 - pvalid
         - bit 2 - persist
         - bit 1 - dvalid
         - bit 0 - divert
-        uint16_t remapId
+        uint16_t remapId (0 keeps the current remap)
+        uint8_t extraFlags
+        - bit 3 - wvalid
+        - bit 2 - rawWheel
+        - bit 1 - avalid
+        - bit 0 - analyticsKeyEvt
     response:
         (echoes request packet)
+
+    ----------------------
+    Fn 4 - get capabilities (version 6)
+    -----------------------
+    request:
+    response:
+        uint8_t flags
+        - bit 0 - resetAllCidReportSettings is supported
+
+    ----------------------
+    Fn 5 - reset all reporting settings (version 6)
+    -----------------------
+    request:
+    response:
+
+    ----------------------
+    Event 0 - diverted buttons
+    -----------------------
+        uint16_t ctrlId[4]
+
+    Event 1 - diverted raw mouse XY
+    -----------------------
+        int16_t dx
+        int16_t dy
+
+    Event 2 - analytics key events
+    -----------------------
+        { uint16_t ctrlId; uint8_t event; } [5]
+
+    Event 4 - diverted raw wheel
+    -----------------------
+        uint8_t resolution (bit 4) | periods (bits 0-3)
+        int16_t deltaV
 */
 
 #define MAX_CONTROLS 256
@@ -89,12 +136,29 @@
 #define IS_FUNCTION_KEY_FLAG   0x02
 #define IS_MOUSE_BUTTON_FLAG   0x01
 
+#define EXTRA_RAWXY_FLAG       0x01
+#define EXTRA_FORCE_RAWXY_FLAG 0x02
+#define EXTRA_ANALYTICS_FLAG   0x04
+#define EXTRA_RAW_WHEEL_FLAG   0x08
+
+#define STATE_FORCE_RAWXY_FLAG 0x40
 #define STATE_RAWXY_FLAG       0x10
 #define STATE_PERSISTENT_FLAG  0x04
 #define STATE_DIVERTED_FLAG    0x01
+#define STATE_ANALYTICS_FLAG   0x01
+#define STATE_RAW_WHEEL_FLAG   0x02
 
-#define SET_DIVERT_VALID_FLAG  0x02
-#define SET_RAWXY_VALID_FLAG   0x20
+/* Each setting is a pair of a value bit and the bit validating it. */
+#define SET_DIVERT_FLAGS       0x03
+#define SET_PERSIST_FLAGS      0x0C
+#define SET_RAWXY_FLAGS        0x30
+#define SET_FORCE_RAWXY_FLAGS  0xC0
+#define SET_ANALYTICS_FLAGS    0x03 /* in the second flags byte */
+#define SET_RAW_WHEEL_FLAGS    0x0C /* in the second flags byte */
+
+#define VERSION_RESET          6
+
+#define CAP_RESET_FLAG         0x01
 
 /* clang-format on */
 
@@ -122,6 +186,11 @@ static void unpack_flags(struct hidpp_keymap_info *out) {
     out->isHotkey = !!(out->flags & IS_HOTKEY_FLAG);
     out->isFunctionKey = !!(out->flags & IS_FUNCTION_KEY_FLAG);
     out->isMouseButton = !!(out->flags & IS_MOUSE_BUTTON_FLAG);
+
+    out->rawXY = !!(out->extraFlags & EXTRA_RAWXY_FLAG);
+    out->forceRawXY = !!(out->extraFlags & EXTRA_FORCE_RAWXY_FLAG);
+    out->analytics = !!(out->extraFlags & EXTRA_ANALYTICS_FLAG);
+    out->rawWheel = !!(out->extraFlags & EXTRA_RAW_WHEEL_FLAG);
 }
 
 static int query_control_count(hidpp_keymap_t *map) {
@@ -155,7 +224,7 @@ static int query_control_info(
     out->position = res.params[5];
     out->group = res.params[6];
     out->groupMask = res.params[7];
-    out->rawXY = res.params[8];
+    out->extraFlags = res.params[8];
 
     unpack_flags(out);
 
@@ -171,8 +240,8 @@ static int query_info(hidpp_device_t *dev, void *feat) {
     hidpp_keymap_t *map = feat;
     int rc;
 
-    /* 0x1B04 is preferred over 0x1B00 */
-    map->featVersion = map->base.which == 0 ? 4 : 1;
+    /* what the device reports, 0x1B04 is preferred over 0x1B00 */
+    map->featVersion = map->base.version;
 
     if ((rc = query_control_count(map)) < 0) {
         if (is_transient(dev, rc))
@@ -217,7 +286,7 @@ static size_t save_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         SAVE_BYTE(b, info->position);
         SAVE_BYTE(b, info->group);
         SAVE_BYTE(b, info->groupMask);
-        SAVE_BYTE(b, info->rawXY);
+        SAVE_BYTE(b, info->extraFlags);
     }
 
     return b - start;
@@ -241,7 +310,7 @@ static size_t load_cache(hidpp_device_t *dev, void *feat, uint8_t *b) {
         info->position = LOAD_BYTE(b);
         info->group = LOAD_BYTE(b);
         info->groupMask = LOAD_BYTE(b);
-        info->rawXY = LOAD_BYTE(b);
+        info->extraFlags = LOAD_BYTE(b);
 
         if (info->initialized) {
             unpack_flags(info);
@@ -282,8 +351,23 @@ static int parse_event(
         return HIDPP_OK;
     } else if (func == 1) {
         e->type = HIDPP_EVENT_MOUSE;
-        e->as.mouse[0] = HIDPP_WORD(p[0], p[1]);
-        e->as.mouse[1] = HIDPP_WORD(p[2], p[3]);
+        e->as.mouse[0] = (int16_t)HIDPP_WORD(p[0], p[1]);
+        e->as.mouse[1] = (int16_t)HIDPP_WORD(p[2], p[3]);
+        return HIDPP_OK;
+    } else if (func == 2) {
+        e->type = HIDPP_EVENT_ANALYTICS;
+
+        for (int i = 0; i < 5; i++) {
+            e->as.analytics[i].id = HIDPP_WORD(p[3 * i], p[3 * i + 1]);
+            e->as.analytics[i].event = p[3 * i + 2];
+        }
+
+        return HIDPP_OK;
+    } else if (func == 4) {
+        e->type = HIDPP_EVENT_RAW_WHEEL;
+        e->as.rawWheel.highRes = !!(p[0] & 0x10);
+        e->as.rawWheel.periods = p[0] & 0x0F;
+        e->as.rawWheel.delta = (int16_t)HIDPP_WORD(p[1], p[2]);
         return HIDPP_OK;
     }
 
@@ -328,7 +412,7 @@ int hidpp_keymap_index(hidpp_keymap_t *map, uint16_t control) {
         return HIDPP_EINVAL;
 
     for (int i = 0; i < map->ctrlCount; i++)
-        if (map->controls[i].id == control)
+        if (map->controls[i].initialized && map->controls[i].id == control)
             return i;
 
     return HIDPP_ENOENT;
@@ -355,7 +439,12 @@ size_t hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max) {
     return count;
 }
 
-int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
+int hidpp_keymap_set(
+    hidpp_keymap_t *map,
+    uint16_t id,
+    enum hidpp_keymap_setting setting,
+    int value
+) {
     if (!map || ensure_init(map))
         return HIDPP_EINVAL;
 
@@ -363,11 +452,84 @@ int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
     make_packet(&req, map->device, map->base.featIndex, 3);
     req.params[0] = HIDPP_MSB(id);
     req.params[1] = HIDPP_LSB(id);
-    /* bit 1 (dvalid) tells the device to apply bit 0 (divert) */
-    req.params[2] = value ? (STATE_DIVERTED_FLAG | SET_DIVERT_VALID_FLAG)
-                          : SET_DIVERT_VALID_FLAG;
+
+    uint8_t flags;
+    int extra = 0;
+
+    switch (setting) {
+    case HIDPP_KEYMAP_DIVERT:
+        flags = SET_DIVERT_FLAGS;
+        break;
+    case HIDPP_KEYMAP_PERSIST:
+        flags = SET_PERSIST_FLAGS;
+        break;
+    case HIDPP_KEYMAP_RAW_XY:
+        flags = SET_RAWXY_FLAGS;
+        break;
+    case HIDPP_KEYMAP_FORCE_RAW_XY:
+        flags = SET_FORCE_RAWXY_FLAGS;
+        break;
+    case HIDPP_KEYMAP_ANALYTICS:
+        flags = SET_ANALYTICS_FLAGS;
+        extra = 1;
+        break;
+    case HIDPP_KEYMAP_RAW_WHEEL:
+        flags = SET_RAW_WHEEL_FLAGS;
+        extra = 1;
+        break;
+    default:
+        return HIDPP_EINVAL;
+    }
+
+    /* the upper bit of a pair validates the lower one, which is the value */
+    uint8_t valid = flags & 0xAA;
+    uint8_t bits = value ? flags : valid;
+
+    if (extra) {
+        /* only long reports carry the second flags byte */
+        req.kind = HIDPP_KIND_LONG;
+        req.params[5] = bits;
+    } else {
+        req.params[2] = bits;
+    }
 
     hidpp_packet_t res;
+    return hidpp_device_request(map->device, &req, &res);
+}
+
+int hidpp_keymap_divert(hidpp_keymap_t *map, uint16_t id, int value) {
+    return hidpp_keymap_set(map, id, HIDPP_KEYMAP_DIVERT, value);
+}
+
+int hidpp_keymap_capabilities(hidpp_keymap_t *map) {
+    if (!map || ensure_init(map))
+        return HIDPP_EINVAL;
+
+    if (map->featVersion < VERSION_RESET)
+        return 0;
+
+    hidpp_packet_t req, res;
+    make_packet(&req, map->device, map->base.featIndex, 4);
+
+    int rc;
+
+    if ((rc = hidpp_device_request(map->device, &req, &res)))
+        return rc;
+
+    return res.params[0];
+}
+
+int hidpp_keymap_reset(hidpp_keymap_t *map) {
+    int caps = hidpp_keymap_capabilities(map);
+
+    if (caps < 0)
+        return caps;
+
+    if (!(caps & CAP_RESET_FLAG))
+        return HIDPP_ENOSYS;
+
+    hidpp_packet_t req, res;
+    make_packet(&req, map->device, map->base.featIndex, 5);
     return hidpp_device_request(map->device, &req, &res);
 }
 
@@ -409,6 +571,10 @@ int hidpp_keymap_state(
 
     out->remapId = HIDPP_WORD(res.params[3], res.params[4]);
     out->flags = res.params[2];
+    out->extraFlags = res.params[5];
+    out->forceRawXY = !!(out->flags & STATE_FORCE_RAWXY_FLAG);
+    out->analytics = !!(out->extraFlags & STATE_ANALYTICS_FLAG);
+    out->rawWheel = !!(out->extraFlags & STATE_RAW_WHEEL_FLAG);
     out->rawXY = !!(out->flags & STATE_RAWXY_FLAG);
     out->isPersistent = !!(out->flags & STATE_PERSISTENT_FLAG);
     out->isDiverted = !!(out->flags & STATE_DIVERTED_FLAG);

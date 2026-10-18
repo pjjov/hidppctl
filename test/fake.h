@@ -105,6 +105,9 @@ struct fake_control {
     uint8_t divert;
     uint8_t persist;
     uint8_t rawXY;
+    uint8_t forceRawXY;
+    uint8_t analytics;
+    uint8_t rawWheel;
     uint16_t remap;
 };
 
@@ -234,6 +237,8 @@ struct fake_t {
 
     /* 0x1b04 reprogrammable controls */
     uint8_t keymapCount;
+    uint8_t keymapCaps;   /* answer of getCapabilities */
+    unsigned keymapResets; /* number of resetAllCidReportSettings calls */
     struct fake_control controls[FAKE_MAX_CONTROLS];
 };
 

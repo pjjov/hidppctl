@@ -36,6 +36,8 @@ const char *hidppctl_event_names[HIDPP__EVENT_MAX] = {
     "LED",
     "MODE_STATUS",
     "SIDETONE",
+    "ANALYTICS",
+    "RAW_WHEEL",
 };
 
 int cmd_list_events(hidppctl_t *ctl) {

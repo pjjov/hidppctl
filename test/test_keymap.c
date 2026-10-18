@@ -756,6 +756,156 @@ static int test_first_use_after_failed_enumeration(int seed, int i) {
     return 0;
 }
 
+/* ----------------------- version 2 to 6 additions --------------------- */
+
+static int test_info_capabilities(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+
+    struct hidpp_keymap_info *info = hidpp_keymap_info(map, GESTURE);
+    T_EQ(info->extraFlags, 0x0F);
+    T_TRUE(info->rawXY);
+    T_TRUE(info->forceRawXY);
+    T_TRUE(info->analytics);
+    T_TRUE(info->rawWheel);
+
+    info = hidpp_keymap_info(map, LEFT);
+    T_EQ(info->extraFlags, 0);
+    T_FALSE(info->rawXY || info->forceRawXY || info->analytics);
+    T_FALSE(info->rawWheel);
+    fake_free(f);
+    return 0;
+}
+
+static int test_set_each_setting(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+    struct fake_control *c = fake_control(f, GESTURE);
+    struct hidpp_keymap_state st;
+
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_PERSIST, 1));
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_RAW_XY, 1));
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_FORCE_RAW_XY, 1));
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_ANALYTICS, 1));
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_RAW_WHEEL, 1));
+    T_EQ(c->persist, 1);
+    T_EQ(c->rawXY, 1);
+    T_EQ(c->forceRawXY, 1);
+    T_EQ(c->analytics, 1);
+    T_EQ(c->rawWheel, 1);
+    T_EQ(c->divert, 0);
+
+    T_OK(hidpp_keymap_state(map, GESTURE, &st));
+    T_TRUE(st.isPersistent && st.rawXY && st.forceRawXY);
+    T_TRUE(st.analytics && st.rawWheel);
+    T_FALSE(st.isDiverted);
+
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_RAW_WHEEL, 0));
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_FORCE_RAW_XY, 0));
+    T_EQ(c->rawWheel, 0);
+    T_EQ(c->forceRawXY, 0);
+    T_EQ(c->analytics, 1); /* untouched */
+    T_EQ(c->rawXY, 1);
+    fake_free(f);
+    return 0;
+}
+
+static int test_set_wire_format(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_FORCE_RAW_XY, 1));
+    const struct fake_packet *p = last_with_func(f, 3);
+    T_EQ(p->raw[6], 0xC0);
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_PERSIST, 0));
+    T_EQ(last_with_func(f, 3)->raw[6], 0x08);
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_RAW_XY, 1));
+    T_EQ(last_with_func(f, 3)->raw[6], 0x30);
+
+    /* the second flags byte needs a long report */
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_RAW_WHEEL, 1));
+    p = last_with_func(f, 3);
+    T_EQ(p->raw[0], HIDPP_KIND_LONG);
+    T_EQ(p->raw[6], 0);
+    T_EQ(p->raw[9], 0x0C);
+    T_OK(hidpp_keymap_set(map, GESTURE, HIDPP_KEYMAP_ANALYTICS, 0));
+    T_EQ(last_with_func(f, 3)->raw[9], 0x02);
+    fake_free(f);
+    return 0;
+}
+
+static int test_set_invalid(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+    T_ERR(hidpp_keymap_set(NULL, LEFT, HIDPP_KEYMAP_DIVERT, 1), HIDPP_EINVAL);
+    T_ERR(hidpp_keymap_set(map, LEFT, (enum hidpp_keymap_setting)99, 1), HIDPP_EINVAL);
+    T_TRUE(hidpp_keymap_set(map, 0x7777, HIDPP_KEYMAP_RAW_XY, 1) < 0);
+    fake_free(f);
+    return 0;
+}
+
+static int test_capabilities_and_reset(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+
+    T_EQ(hidpp_keymap_capabilities(map), HIDPP_KEYMAP_CAP_RESET);
+
+    T_OK(hidpp_keymap_divert(map, LEFT, 1));
+    T_OK(hidpp_keymap_remap(map, BACK, MIDDLE));
+    T_OK(hidpp_keymap_reset(map));
+    T_EQ(f->keymapResets, 1);
+    T_EQ(fake_control(f, LEFT)->divert, 0);
+    T_EQ(fake_control(f, BACK)->remap, BACK);
+    fake_free(f);
+    return 0;
+}
+
+static int test_reset_unsupported(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    f->keymapCaps = 0;
+    hidpp_keymap_t *map = open_keymap(f);
+    fake_reset_log(f);
+
+    T_EQ(hidpp_keymap_capabilities(map), 0);
+    T_ERR(hidpp_keymap_reset(map), HIDPP_ENOSYS);
+    T_EQ(f->keymapResets, 0);
+    T_NULL(last_with_func(f, 5));
+    T_ERR(hidpp_keymap_capabilities(NULL), HIDPP_EINVAL);
+    T_ERR(hidpp_keymap_reset(NULL), HIDPP_EINVAL);
+    fake_free(f);
+    return 0;
+}
+
+static int test_old_version_has_no_capabilities(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new_bare();
+    fake_add_keymap(f, 0x1B00);
+    hidpp_keymap_t *map = open_keymap(f);
+    fake_reset_log(f);
+
+    T_EQ(hidpp_keymap_capabilities(map), 0);
+    T_ERR(hidpp_keymap_reset(map), HIDPP_ENOSYS);
+    T_EQ(f->requests, 0); /* functions of version 6 are never sent */
+    fake_free(f);
+    return 0;
+}
+
+static int test_index_skips_uninitialized(int seed, int i) {
+    (void)seed, (void)i;
+    fake_t *f = fake_new();
+    hidpp_keymap_t *map = open_keymap(f);
+    T_EQ(hidpp_keymap_index(map, LEFT), 0);
+    T_ERR(hidpp_keymap_index(map, 0), HIDPP_ENOENT);
+    fake_free(f);
+    return 0;
+}
+
 static const pf_test_t keymap_tests[] = {
     { test_open, "open" },
     { test_same_object_every_time, "same_object_every_time" },
@@ -804,6 +954,14 @@ static const pf_test_t keymap_tests[] = {
     { test_remap_waits_for_the_answer, "remap_waits_for_answer" },
     { test_cache_clear_rereads_controls, "cache_clear_rereads" },
     { test_first_use_after_failed_enumeration, "failed_enumeration" },
+    { test_info_capabilities, "info_capabilities" },
+    { test_set_each_setting, "set_each_setting" },
+    { test_set_wire_format, "set_wire_format" },
+    { test_set_invalid, "set_invalid" },
+    { test_capabilities_and_reset, "capabilities_and_reset" },
+    { test_reset_unsupported, "reset_unsupported" },
+    { test_old_version_has_no_capabilities, "old_version_no_capabilities" },
+    { test_index_skips_uninitialized, "index_skips_uninitialized" },
     { 0 },
 };
 

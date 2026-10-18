@@ -15,6 +15,7 @@
 /* HID++ 2.0 error codes used by the fake. */
 #define ERR_INVALID_ARGUMENT 2
 #define ERR_OUT_OF_RANGE 3
+#define ERR_NOT_ALLOWED 5
 #define ERR_INVALID_FEATURE_INDEX 6
 #define ERR_INVALID_FUNCTION 7
 
@@ -356,9 +357,12 @@ static int keymap_handler(
         res->params[1] = HIDPP_LSB(c->cid);
         res->params[2] = (uint8_t)((c->divert ? 0x01 : 0)
                                    | (c->persist ? 0x04 : 0)
-                                   | (c->rawXY ? 0x10 : 0));
+                                   | (c->rawXY ? 0x10 : 0)
+                                   | (c->forceRawXY ? 0x40 : 0));
         res->params[3] = HIDPP_MSB(c->remap);
         res->params[4] = HIDPP_LSB(c->remap);
+        res->params[5] = (uint8_t)((c->analytics ? 0x01 : 0)
+                                   | (c->rawWheel ? 0x02 : 0));
         return 0;
     }
     case 3: {
@@ -377,6 +381,16 @@ static int keymap_handler(
             c->persist = !!(flags & 0x04);
         if (flags & 0x20)
             c->rawXY = !!(flags & 0x10);
+        if (flags & 0x80)
+            c->forceRawXY = !!(flags & 0x40);
+
+        /* the second flags byte is only transported by long reports */
+        if (req->kind != HIDPP_KIND_SHORT) {
+            if (req->params[5] & 0x02)
+                c->analytics = req->params[5] & 0x01;
+            if (req->params[5] & 0x08)
+                c->rawWheel = !!(req->params[5] & 0x04);
+        }
 
         /* the target is only transported by long reports */
         if (req->kind != HIDPP_KIND_SHORT) {
@@ -384,9 +398,24 @@ static int keymap_handler(
             c->remap = remap ? remap : c->cid;
         }
 
-        memcpy(res->params, req->params, 5);
+        memcpy(res->params, req->params, 6);
         return 0;
     }
+    case 4:
+        res->params[0] = f->keymapCaps;
+        return 0;
+    case 5:
+        if (!(f->keymapCaps & 0x01))
+            return ERR_NOT_ALLOWED;
+
+        f->keymapResets++;
+        for (unsigned i = 0; i < f->keymapCount; i++) {
+            struct fake_control *c = &f->controls[i];
+            c->divert = c->persist = c->rawXY = c->forceRawXY = 0;
+            c->analytics = c->rawWheel = 0;
+            c->remap = c->cid;
+        }
+        return 0;
     default:
         return ERR_INVALID_FUNCTION;
     }
@@ -1010,8 +1039,9 @@ int fake_add_keymap(fake_t *f, uint16_t id) {
     fake_add_control(f, 0x00C3, 0x00B4, 0x30, 4); /* gesture */
     f->controls[4].group = 1;
     f->controls[4].groupMask = 0x03;
-    f->controls[4].flags2 = 0x01; /* rawXY capable */
-    return fake_add_feature(f, id, id == 0x1B04 ? 4 : 1, keymap_handler);
+    f->controls[4].flags2 = 0x0F; /* every raw reporting capability */
+    f->keymapCaps = 0x01;
+    return fake_add_feature(f, id, id == 0x1B04 ? 6 : 1, keymap_handler);
 }
 
 int fake_add_change_host(fake_t *f) {

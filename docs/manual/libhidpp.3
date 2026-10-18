@@ -774,6 +774,31 @@ hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max);\fR
 .PP
 Copies up to \fBmax\fR of the keymap's control IDs into \fBout\fR.
 Returns the number of entries written.
+.SS hidpp_keymap_setting
+.PP
+.nf
+\fBenum hidpp_keymap_setting {
+    HIDPP_KEYMAP_DIVERT,
+    HIDPP_KEYMAP_PERSIST,
+    HIDPP_KEYMAP_RAW_XY,
+    HIDPP_KEYMAP_FORCE_RAW_XY,
+    HIDPP_KEYMAP_ANALYTICS,
+    HIDPP_KEYMAP_RAW_WHEEL,
+};\fR
+.fi
+.PP
+Settings of a control which can be changed with \fBhidpp_keymap_set\fR.
+.SS hidpp_keymap_set
+.PP
+.nf
+\fBHIDPP_API int hidpp_keymap_set(
+    hidpp_keymap_t *map, uint16_t id, enum hidpp_keymap_setting setting, int value
+);\fR
+.fi
+.PP
+Changes one setting of the control \fBid\fR, leaving the others alone. The
+device applies the change when it is safe to do so. Settings are only
+accepted if the control reports the matching capability.
 .SS hidpp_keymap_divert
 .PP
 .nf
@@ -781,6 +806,29 @@ Returns the number of entries written.
 .fi
 .PP
 Diverts a control to be handled by the event handler.
+.SS HIDPP_KEYMAP_CAP_RESET
+.PP
+.nf
+\fB#define HIDPP_KEYMAP_CAP_RESET 0x01\fR
+.fi
+.PP
+Capabilities of the keymap feature (see \fBhidpp_keymap_capabilities\fR).
+.SS hidpp_keymap_capabilities
+.PP
+.nf
+\fBHIDPP_API int hidpp_keymap_capabilities(hidpp_keymap_t *map);\fR
+.fi
+.PP
+Returns the capability flags of the feature, which are 0 for versions
+older than 6, or a negative error.
+.SS hidpp_keymap_reset
+.PP
+.nf
+\fBHIDPP_API int hidpp_keymap_reset(hidpp_keymap_t *map);\fR
+.fi
+.PP
+Resets the diversion and remap settings of every control. Returns
+\fBHIDPP_ENOSYS\fR if the device does not support it.
 .SS hidpp_keymap_remap
 .PP
 .nf
@@ -801,7 +849,7 @@ Remaps control's behaviour to another one's.
     uint8_t position;
     uint8_t group;
     uint8_t groupMask;
-    uint8_t rawXY;
+    uint8_t extraFlags;
 
     hidpp_bool_t isVirtual;
     hidpp_bool_t isPersistable;
@@ -811,6 +859,11 @@ Remaps control's behaviour to another one's.
     hidpp_bool_t isHotkey;
     hidpp_bool_t isFunctionKey;
     hidpp_bool_t isMouseButton;
+
+    hidpp_bool_t rawXY;
+    hidpp_bool_t forceRawXY;
+    hidpp_bool_t analytics;
+    hidpp_bool_t rawWheel;
 
     hidpp_bool_t initialized;
     const char *name;
@@ -835,7 +888,11 @@ Reads device's keymap information about the given control \fBid\fR.
 \fBstruct hidpp_keymap_state {
     uint16_t remapId;
     uint8_t flags;
+    uint8_t extraFlags;
     hidpp_bool_t rawXY;
+    hidpp_bool_t forceRawXY;
+    hidpp_bool_t analytics;
+    hidpp_bool_t rawWheel;
     hidpp_bool_t isPersistent;
     hidpp_bool_t isDiverted;
 };\fR

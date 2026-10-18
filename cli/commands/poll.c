@@ -41,7 +41,28 @@ static int cmd_poll_handle(
         break;
 
     case HIDPP_EVENT_MOUSE:
-        pf_cli_printf(cli, "%u %u", e->as.mouse[0], e->as.mouse[1]);
+        pf_cli_printf(cli, "%d %d", e->as.mouse[0], e->as.mouse[1]);
+        break;
+
+    case HIDPP_EVENT_ANALYTICS:
+        for (int i = 0; i < 5; i++)
+            if (e->as.analytics[i].id)
+                pf_cli_printf(
+                    cli,
+                    " 0x%.4x:%u",
+                    e->as.analytics[i].id,
+                    e->as.analytics[i].event
+                );
+        break;
+
+    case HIDPP_EVENT_RAW_WHEEL:
+        pf_cli_printf(
+            cli,
+            "%d %u %s",
+            e->as.rawWheel.delta,
+            e->as.rawWheel.periods,
+            e->as.rawWheel.highRes ? "high" : "low"
+        );
         break;
 
     case HIDPP_EVENT_BATTERY:
