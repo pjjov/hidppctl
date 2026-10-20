@@ -19,7 +19,9 @@
 #include <string.h>
 
 struct hidpp_input_t {
-    int fd; /* unused on Windows */
+    int fd;      /* unused on Windows */
+    int ydotool; /* fd is a ydotoold socket rather than /dev/uinput */
+    allocator_t *allocator;
 };
 
 #ifdef _WIN32
@@ -96,6 +98,8 @@ struct {
 
     #include <fcntl.h>
     #include <linux/uinput.h>
+    #include <sys/socket.h>
+    #include <sys/un.h>
     #include <unistd.h>
 
 static void uinput_emit(int fd, int type, int code, int value) {
@@ -234,9 +238,59 @@ hidpp_input_t *hidpp_input_new(allocator_t *allocator) {
     sleep(1);
 
     input->fd = fd;
+    input->ydotool = 0;
 #endif
 
+    input->allocator = allocator;
+
     return input;
+}
+
+hidpp_input_t *hidpp_input_new_ydotool(
+    allocator_t *allocator, const char *path
+) {
+#ifdef _WIN32
+    (void)allocator, (void)path;
+    return NULL;
+#else
+    struct sockaddr_un sa = { .sun_family = AF_UNIX };
+    char *env;
+
+    /* same lookup order as ydotool itself */
+    if (path)
+        snprintf(sa.sun_path, sizeof(sa.sun_path), "%s", path);
+    else if ((env = getenv("YDOTOOL_SOCKET")))
+        snprintf(sa.sun_path, sizeof(sa.sun_path), "%s", env);
+    else if ((env = getenv("XDG_RUNTIME_DIR")))
+        snprintf(sa.sun_path, sizeof(sa.sun_path), "%s/.ydotool_socket", env);
+    else
+        snprintf(sa.sun_path, sizeof(sa.sun_path), "/tmp/.ydotool_socket");
+
+    if (!allocator)
+        allocator = &standard_allocator;
+
+    int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+    if (fd < 0)
+        return NULL;
+
+    if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+        close(fd);
+        return NULL;
+    }
+
+    hidpp_input_t *input = allocate(allocator, sizeof(*input));
+
+    if (!input) {
+        close(fd);
+        return NULL;
+    }
+
+    input->fd = fd;
+    input->ydotool = 1;
+    input->allocator = allocator;
+    return input;
+#endif
 }
 
 void hidpp_input_free(hidpp_input_t *input) {
@@ -244,11 +298,14 @@ void hidpp_input_free(hidpp_input_t *input) {
         return;
 
 #ifndef _WIN32
-    ioctl(input->fd, UI_DEV_DESTROY);
+    if (!input->ydotool)
+        ioctl(input->fd, UI_DEV_DESTROY);
     close(input->fd);
 #else
     (void)input;
 #endif
+
+    deallocate(input->allocator, input, sizeof(*input));
 }
 
 int hidpp_input_set(

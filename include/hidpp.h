@@ -2792,6 +2792,16 @@ HIDPP_API size_t hidpp_enumerate(
 /** Creates a handle for simulating keyboard/mouse input. */
 HIDPP_API hidpp_input_t *hidpp_input_new(allocator_t *allocator);
 
+/** Creates a handle for simulating input through a running `ydotoold`.
+    If `path` is NULL the socket is looked up like ydotool does: the
+    `YDOTOOL_SOCKET` variable, then `$XDG_RUNTIME_DIR/.ydotool_socket`, then
+    `/tmp/.ydotool_socket`. Returns NULL if the daemon cannot be reached, and
+    always on Windows.
+*/
+HIDPP_API hidpp_input_t *hidpp_input_new_ydotool(
+    allocator_t *allocator, const char *path
+);
+
 /** Frees the input object for simulating keyboard input. */
 HIDPP_API void hidpp_input_free(hidpp_input_t *input);
 

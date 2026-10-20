@@ -39,6 +39,8 @@ static const pf_cli_definition_t help_options[] = {
     { "--swid", "Sets the software ID for interacting with devices." },
     { "--cache-path", "Sets a path to use for saving the device cache." },
     { "--log-path", "Logs the device traffic to the given file." },
+    { "--ydotool",
+      "Simulates input through ydotoold (see YDOTOOL_SOCKET) instead of uinput." },
     { "--no-cache", "Disables cache file saving and loading." },
     { "--no-log", "Disables file logging, even with -v." },
     { 0 },
@@ -325,6 +327,7 @@ static void parse_args_option(
     pf_option_string(p, "alias-file", 0, &opt->aliasFile);
     pf_option_string(p, "cache-path", 0, &opt->cache.path);
     pf_option_string(p, "log-path", 0, &opt->log.path);
+    pf_option_bool(p, "ydotool", 0, &opt->ydotool);
     pf_option_bool(p, "no-cache", 0, &opt->cache.disabled);
     pf_option_bool(p, "no-log", 0, &opt->log.disabled);
 }

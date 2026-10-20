@@ -3907,6 +3907,19 @@ Enumerate HID++ capable devices using \fBhid_enumerate\fR.
 .fi
 .PP
 Creates a handle for simulating keyboard/mouse input.
+.SS hidpp_input_new_ydotool
+.PP
+.nf
+\fBHIDPP_API hidpp_input_t *hidpp_input_new_ydotool(
+    allocator_t *allocator, const char *path
+);\fR
+.fi
+.PP
+Creates a handle for simulating input through a running \fBydotoold\fR.
+If \fBpath\fR is NULL the socket is looked up like ydotool does: the
+\fBYDOTOOL_SOCKET\fR variable, then \fB$XDG_RUNTIME_DIR/.ydotool_socket\fR, then
+\fB/tmp/.ydotool_socket\fR. Returns NULL if the daemon cannot be reached, and
+always on Windows.
 .SS hidpp_input_free
 .PP
 .nf

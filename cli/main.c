@@ -220,7 +220,10 @@ static int hidppctl_init(hidppctl_t *ctl) {
     }
 
     if (ctl->requiresInput) {
-        if (!(ctl->input = hidpp_input_new(NULL))) {
+        ctl->input = ctl->options->ydotool ? hidpp_input_new_ydotool(NULL, NULL)
+                                           : hidpp_input_new(NULL);
+
+        if (!ctl->input) {
             pf_cli_errorf(ctl->cli, "Unable to simulate input!\n");
             hidppctl_free(ctl);
             return HIDPP_EIO;
