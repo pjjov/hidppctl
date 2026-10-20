@@ -1,0 +1,20 @@
+# hidppctl -- Configure HID++ compatible peripherals.
+#
+# Copyright (C) 2026 Предраг Јовановић
+# SPDX-FileCopyrightText: 2026 Предраг Јовановић
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Look at the COPYING file for more information.
+
+[Unit]
+Description=hidppctl diversion service for emoji buttons
+
+[Service]
+Type=simple
+ExecStart=hidppctl --alias logi-pop-keys divert 0x0104=Home 0x0105=End 0x0106=PageUp 0x0107=PageDown
+Restart=no
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
