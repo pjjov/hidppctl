@@ -84,6 +84,18 @@ static hidpp_receiver_t *create_receiver(void) {
 }
 
 #ifdef HIDPP_HAVE_HIDAPI
+static void remember_origin(hidpp_receiver_t *rcv) {
+    const struct hid_device_info *info = hid_get_device_info(rcv->handle);
+
+    if (!info)
+        return;
+
+    strncpy(rcv->path, info->path ? info->path : "", sizeof(rcv->path) - 1);
+    rcv->vendorId = info->vendor_id;
+    rcv->productId = info->product_id;
+    rcv->interfaceNumber = info->interface_number;
+}
+
 hidpp_receiver_t *hidpp_open(
     unsigned short vid, unsigned short pid, const wchar_t *serial
 ) {
@@ -100,6 +112,7 @@ hidpp_receiver_t *hidpp_open(
 
     rcv->type = RCV_HIDAPI;
     rcv->handle = handle;
+    remember_origin(rcv);
     return rcv;
 }
 
@@ -117,6 +130,7 @@ hidpp_receiver_t *hidpp_open_path(const char *path) {
 
     rcv->type = RCV_HIDAPI;
     rcv->handle = handle;
+    remember_origin(rcv);
     return rcv;
 }
 
@@ -132,6 +146,45 @@ hidpp_receiver_t *hidpp_open_interface(
 
     hid_free_enumeration(head);
     return rcv;
+}
+
+int hidpp_reopen(hidpp_receiver_t *rcv) {
+    if (!rcv)
+        return HIDPP_EINVAL;
+
+    if (rcv->type != RCV_HIDAPI)
+        return HIDPP_ENOSYS;
+
+    hid_device *handle = NULL;
+
+    if (rcv->path[0])
+        handle = hid_open_path(rcv->path);
+
+    /* the path can change when the device is reattached */
+    if (!handle) {
+        struct hid_device_info *info, *head;
+        head = hid_enumerate(rcv->vendorId, rcv->productId);
+
+        for (info = head; !handle && info; info = info->next)
+            if (info->interface_number == rcv->interfaceNumber)
+                handle = hid_open_path(info->path);
+
+        hid_free_enumeration(head);
+    }
+
+    if (!handle) {
+        set_error(rcv, L"Unable to reopen the receiver");
+        return HIDPP_ENOENT;
+    }
+
+    hid_close(rcv->handle);
+    rcv->handle = handle;
+    remember_origin(rcv);
+
+    if (rcv->nonblocking)
+        hid_set_nonblocking(rcv->handle, 1);
+
+    return HIDPP_OK;
 }
 #else
 hidpp_receiver_t *hidpp_open(
@@ -151,6 +204,10 @@ hidpp_receiver_t *hidpp_open_interface(
 ) {
     (void)vid, (void)pid, (void)interfaceNumber;
     return NULL;
+}
+
+int hidpp_reopen(hidpp_receiver_t *rcv) {
+    return rcv ? HIDPP_ENOSYS : HIDPP_EINVAL;
 }
 #endif
 

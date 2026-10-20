@@ -240,6 +240,19 @@ Open a HID++ receiver by platform path.
 .PP
 Open a HID++ receiver by Vendor/Product ID and interface number.
 If multiple matching receivers are found, the first one is opened.
+.SS hidpp_reopen
+.PP
+.nf
+\fBHIDPP_API int hidpp_reopen(hidpp_receiver_t *rcv);\fR
+.fi
+.PP
+Reopen the hidapi handle of a receiver whose device was reattached.
+The original path is tried first, then the same Vendor/Product ID and
+interface number. On failure the old handle is left untouched.
+.PP
+\fBErrors\fR
+.PP
+EINVAL, ENOSYS (not a hidapi receiver), ENOENT.
 .SS hidpp_open_socket
 .PP
 .nf

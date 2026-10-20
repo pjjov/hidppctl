@@ -483,6 +483,13 @@ HIDPP_API hidpp_receiver_t *hidpp_open_interface(
     unsigned short vid, unsigned short pid, int interfaceNumber
 );
 
+/** Reopen the hidapi handle of a receiver whose device was reattached.
+    The original path is tried first, then the same Vendor/Product ID and
+    interface number. On failure the old handle is left untouched.
+    Errors: EINVAL, ENOSYS (not a hidapi receiver), ENOENT.
+*/
+HIDPP_API int hidpp_reopen(hidpp_receiver_t *rcv);
+
 /** Opens a HID++ receiver which communicates using a socket. */
 HIDPP_API hidpp_receiver_t *hidpp_open_socket(int fd);
 

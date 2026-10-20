@@ -149,6 +149,11 @@ struct hidpp_receiver_t {
     int socket;
 #ifdef HIDPP_HAVE_HIDAPI
     hid_device *handle;
+    /* where the handle was opened from, used by hidpp_reopen() */
+    char path[HIDPP_INFO_PATH];
+    uint16_t vendorId;
+    uint16_t productId;
+    int interfaceNumber;
 #endif
     struct hidpp_receiver_info info;
     hidpp_receiver_send_fn *customSend;

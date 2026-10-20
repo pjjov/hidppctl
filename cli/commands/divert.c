@@ -76,8 +76,15 @@ static int cmd_divert_reconnected(hidppctl_t *ctl, hidpp_keymap_t *map) {
     for (int i = 0; i < ctl->options->paramc; i++)
         cmd_divert_set(&diversions[i], ctl->input, 0);
 
-    for (int attempt = 0; attempt < REDIVERT_ATTEMPTS && rc; attempt++)
-        rc = cmd_divert_init(ctl, map);
+    for (int attempt = 0; attempt < REDIVERT_ATTEMPTS && rc; attempt++) {
+        /* The receiver's handle may have gone stale along with the device;
+           ENOSYS means there is no hidapi handle to refresh. */
+        rc = hidpp_reopen(ctl->receiver);
+        if (rc == HIDPP_ENOSYS)
+            rc = HIDPP_OK;
+        if (!rc)
+            rc = cmd_divert_init(ctl, map);
+    }
 
     if (rc)
         pf_cli_errorf(ctl->cli, "Unable to divert the controls again.\n");
