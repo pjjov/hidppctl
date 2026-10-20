@@ -1,0 +1,27 @@
+# hidppctl -- Configure HID++ compatible peripherals.
+#
+# Copyright (C) 2026 Предраг Јовановић
+# SPDX-FileCopyrightText: 2026 Предраг Јовановић
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Look at the COPYING file for more information.
+
+# Example udev rules giving the logged-in user access to Logitech devices, so
+# hidppctl can run without root. Install as /etc/udev/rules.d/42-hidppctl.rules
+# and reload with:
+#
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# then replug the device (or receiver).
+
+# hidapi hidraw backend, concrete device model (vendor 046d, product c548)
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", MODE="0666", TAG+="uaccess"
+
+# hidapi hidraw backend, USB receivers and wired devices (vendor 046d)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
+
+# hidapi hidraw backend, Bluetooth devices (bus 0005, vendor 046d)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG+="uaccess"
+
+# hidapi libusb backend
+SUBSYSTEM=="usb", ATTRS{idVendor}=="046d", TAG+="uaccess"
