@@ -42,7 +42,7 @@ extern "C" {
 /** Name: HIDPP_VERSION_*
     Individual parts of the version string.
 */
-#define HIDPP_VERSION_MAJOR 0
+#define HIDPP_VERSION_MAJOR 1
 #define HIDPP_VERSION_MINOR 1
 #define HIDPP_VERSION_PATCH 0
 #define HIDPP_MAKE_VERSION(major, minor, patch)        \
@@ -57,7 +57,7 @@ extern "C" {
     )
 
 /** Library version as a string. */
-#define HIDPP_VERSION_STRING "0.1.0"
+#define HIDPP_VERSION_STRING "1.1"
 
 #define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
 #define HIDPP_KIND_LONG 0x11  /* Long report  (20 bytes payload) */
@@ -820,12 +820,12 @@ hidpp_keymap_list(hidpp_keymap_t *map, uint16_t *out, size_t max);
 
 /** Settings of a control which can be changed with `hidpp_keymap_set`. */
 enum hidpp_keymap_setting {
-    HIDPP_KEYMAP_DIVERT,      /* temporary diversion to `HIDPP_EVENT_BUTTON` */
-    HIDPP_KEYMAP_PERSIST,     /* persistent diversion */
-    HIDPP_KEYMAP_RAW_XY,      /* also divert mouse movement while pressed */
+    HIDPP_KEYMAP_DIVERT,       /* temporary diversion to `HIDPP_EVENT_BUTTON` */
+    HIDPP_KEYMAP_PERSIST,      /* persistent diversion */
+    HIDPP_KEYMAP_RAW_XY,       /* also divert mouse movement while pressed */
     HIDPP_KEYMAP_FORCE_RAW_XY, /* divert mouse movement without a press */
-    HIDPP_KEYMAP_ANALYTICS,   /* report `HIDPP_EVENT_ANALYTICS` events */
-    HIDPP_KEYMAP_RAW_WHEEL,   /* also divert the wheel while pressed */
+    HIDPP_KEYMAP_ANALYTICS,    /* report `HIDPP_EVENT_ANALYTICS` events */
+    HIDPP_KEYMAP_RAW_WHEEL,    /* also divert the wheel while pressed */
 };
 
 /** Changes one setting of the control `id`, leaving the others alone. The
@@ -833,7 +833,10 @@ enum hidpp_keymap_setting {
     accepted if the control reports the matching capability.
 */
 HIDPP_API int hidpp_keymap_set(
-    hidpp_keymap_t *map, uint16_t id, enum hidpp_keymap_setting setting, int value
+    hidpp_keymap_t *map,
+    uint16_t id,
+    enum hidpp_keymap_setting setting,
+    int value
 );
 
 /** Diverts a control to be handled by the event handler. */
