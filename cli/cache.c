@@ -20,6 +20,8 @@
     #define HIDPPCTL_CACHE_FMT "%s/hidppctl-%s-%llu.bin"
 #endif
 
+#define CACHE_MAX_SIZE 65536
+
 int hidppctl_cache_path(hidpp_device_t *dev, char *buf, size_t size) {
     uint64_t cacheId = hidpp_cache_id(dev);
     char dir[PATH_MAX];
@@ -68,8 +70,8 @@ void hidppctl_load_cache(hidppctl_t *ctl) {
         return;
     }
 
-    void *buffer;
-    size_t size;
+    char buffer[CACHE_MAX_SIZE];
+    size_t size = CACHE_MAX_SIZE;
 
     if (pf_readall(ctl->cachePath, &buffer, &size)) {
         pf_cli_verbosef(
@@ -82,7 +84,6 @@ void hidppctl_load_cache(hidppctl_t *ctl) {
     }
 
     int rc = hidpp_cache_load(ctl->device, buffer, size);
-    free(buffer);
 
     if (rc) {
         pf_cli_verbosef(ctl->cli, 2, "Unable to load device's cache.");

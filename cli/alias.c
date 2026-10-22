@@ -18,8 +18,8 @@
 
 #include "common.h"
 
-#include <ctype.h>
 #include <limits.h>
+#include <pf_ctype.h>
 #include <pf_filesystem.h>
 #include <pf_io.h>
 #include <stdio.h>
@@ -29,6 +29,8 @@
 #else
     #define ALIAS_FILE "%s/hidppctl-aliases.conf"
 #endif
+
+#define ALIAS_MAX_SIZE 65536
 
 void hidppctl_alias_init(struct hidppctl_alias *alias, const char *name) {
     memset(alias, 0, sizeof(*alias));
@@ -141,8 +143,10 @@ int hidppctl_alias_load(
     hidppctl_t *ctl, struct hidppctl_alias *list, int max, int *count
 ) {
     char path[PATH_MAX];
-    char *data, *line, *next;
-    size_t size;
+    char data[ALIAS_MAX_SIZE];
+    size_t size = ALIAS_MAX_SIZE;
+
+    char *line, *next;
     int lineNo = 0;
 
     *count = 0;
@@ -156,7 +160,7 @@ int hidppctl_alias_load(
     if (!pf_exists(path))
         return HIDPP_OK;
 
-    if (pf_readall(path, (void **)&data, &size)) {
+    if (pf_readall(path, data, &size)) {
         pf_cli_errorf(ctl->cli, "Unable to read '%s'.\n", path);
         return HIDPP_EIO;
     }
@@ -169,14 +173,14 @@ int hidppctl_alias_load(
             *next++ = '\0';
         lineNo++;
 
-        while (isspace((unsigned char)*line))
+        while (pf_isspace((unsigned char)*line))
             line++;
         if (!*line || *line == '#')
             continue;
 
         /* split the line in place */
         tok = line;
-        while (*tok && !isspace((unsigned char)*tok))
+        while (*tok && !pf_isspace((unsigned char)*tok))
             tok++;
         save = tok;
         if (*tok)
@@ -196,13 +200,13 @@ int hidppctl_alias_load(
             char *val, *end;
             const char *err;
 
-            while (isspace((unsigned char)*tok))
+            while (pf_isspace((unsigned char)*tok))
                 tok++;
             if (!*tok)
                 break;
 
             end = tok;
-            while (*end && !isspace((unsigned char)*end))
+            while (*end && !pf_isspace((unsigned char)*end))
                 end++;
             if (*end)
                 *end++ = '\0';
@@ -234,7 +238,6 @@ int hidppctl_alias_load(
         list[(*count)++] = a;
     }
 
-    free(data);
     return HIDPP_OK;
 }
 
