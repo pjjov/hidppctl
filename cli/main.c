@@ -10,7 +10,9 @@
 #include "common.h"
 
 #include <pf_argparse.h>
+#include <pf_process.h>
 #include <pf_socket.h>
+#include <time.h>
 
 static pf_sock_t open_tcp_socket(const char *host, int port) {
     pf_addrinfo_t hints, *list, *ai;
@@ -174,6 +176,28 @@ hidpp_receiver_t *open_socket(hidppctl_t *ctl, struct hidppctl_opt *opt) {
     return rcv;
 }
 
+/* Did opening the device fail because it is not connected (yet)? */
+static int device_may_connect(hidpp_receiver_t *rcv) {
+    switch (hidpp_status(rcv)) {
+    case HIDPP_ETIMEDOUT:
+    case HIDPP_ENODATA:
+        return 1;
+    case HIDPP_EIO:
+        switch (hidpp_error_code(rcv)) {
+        case HIDPP_ERR_BUSY:
+        case HIDPP_ERR_HW_ERROR:
+            return 1;
+        case HIDPP_ERR_NONE:
+            /* a stale hidapi handle; other receivers cannot recover */
+            return hidpp_reopen(rcv) != HIDPP_ENOSYS;
+        default:
+            return 0;
+        }
+    default:
+        return 0;
+    }
+}
+
 static hidpp_device_t *open_device(
     hidppctl_t *ctl, hidpp_receiver_t *rcv, uint8_t index
 ) {
@@ -184,7 +208,30 @@ static hidpp_device_t *open_device(
         return NULL;
     }
 
-    if (!(dev = hidpp_device_open(rcv, index))) {
+    /* A sleeping wireless device doesn't answer until something wakes it up.
+       Only failures which can pass are retried; anything else is reported. */
+    if (ctl->options->wait) {
+        time_t start = time(NULL);
+
+        cli_catch_signals();
+        pf_cli_verbosef(ctl->cli, 1, "Waiting for device %d...\n", index);
+
+        while (!(dev = hidpp_device_open(rcv, index)) && !cli_terminated()) {
+            if (!device_may_connect(rcv))
+                break;
+
+            if (ctl->options->wait > 0
+                && time(NULL) - start >= ctl->options->wait)
+                break;
+
+            sleep(1);
+            hidpp_reopen(rcv);
+        }
+    } else {
+        dev = hidpp_device_open(rcv, index);
+    }
+
+    if (!dev) {
         pf_cli_errorf(
             ctl->cli, "Unable to open device: %ls\n", hidpp_error(rcv)
         );

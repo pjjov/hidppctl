@@ -168,6 +168,9 @@ struct hidpp_receiver_t {
     /* HID++ error code of the last request, 0 if it was not an error report */
     uint8_t errorCode;
 
+    /* result of the last hidpp_request(), see hidpp_status() */
+    int status;
+
     hidpp_packet_t *currentRequest;
     hidpp_protocol_hook_fn *hook;
     void *hookUser;

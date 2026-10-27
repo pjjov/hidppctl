@@ -57,7 +57,7 @@ extern "C" {
     )
 
 /** Library version as a string. */
-#define HIDPP_VERSION_STRING "1.1"
+#define HIDPP_VERSION_STRING "1.1.0"
 
 #define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
 #define HIDPP_KIND_LONG 0x11  /* Long report  (20 bytes payload) */
@@ -2771,6 +2771,15 @@ HIDPP_API int hidpp_eq_set_noise_reduction(hidpp_device_t *dev, int enabled);
     other (for example "busy" from "invalid argument").
 */
 HIDPP_API int hidpp_error_code(hidpp_receiver_t *rcv);
+
+/** Returns the `hidpp_error` code of the last request of `rcv`, for example
+    to tell why hidpp_device_open() failed: HIDPP_ETIMEDOUT or HIDPP_ENODATA
+    mean nothing answered (a sleeping or disconnected device), while HIDPP_EIO
+    with a zero hidpp_error_code() is a transport failure. It is HIDPP_OK if
+    the last request succeeded, so a failed open with HIDPP_OK is permanent
+    (for example an unsupported protocol version).
+*/
+HIDPP_API int hidpp_status(hidpp_receiver_t *rcv);
 
 /** Returns a human-readable string for a HID++ error code. */
 HIDPP_API const char *hidpp_protocol_error_str(int code);

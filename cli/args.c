@@ -35,6 +35,8 @@ static const pf_cli_definition_t help_options[] = {
     { "--interface", "Specifies which HID interface to use." },
     { "--socket",
       "Uses a Unix socket path, a TCP port or <host>:<port> as a receiver." },
+    { "--wait",
+      "Waits for the device to connect, forever or for <seconds> (--wait=N)." },
     { "--timeout", "Sets the timeout for IO operations in milliseconds." },
     { "--swid", "Sets the software ID for interacting with devices." },
     { "--cache-path", "Sets a path to use for saving the device cache." },
@@ -274,6 +276,17 @@ static void parse_args_option(
 
     if (pf_option_int(p, "interface", 0, &opt->interface))
         opt->setInterface = HIDPP_TRUE;
+    /* --wait or --wait=<seconds>; the value is never taken from the next
+       argument, which would be the command. */
+    if (pf__ap_match_option(p, "wait", 0)) {
+        long seconds = -1;
+
+        if (!p->item.hasValue)
+            opt->wait = -1;
+        else if (pf_arg_long(p, p->item.value, "option '--wait'", 1, INT_MAX, &seconds))
+            opt->wait = (int)seconds;
+    }
+
     if (pf_option_int(p, "timeout", 0, &opt->timeout))
         opt->setTimeout = HIDPP_TRUE;
 

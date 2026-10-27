@@ -164,6 +164,7 @@ struct hidppctl_opt {
     hidpp_bool_t setDevice;
     hidpp_bool_t setSocket;
     pf_bool ydotool; /* --ydotool */
+    int wait;        /* --wait: 0 is off, -1 is forever, else seconds */
 
     struct {
         hidpp_bool_t isPort; /* TCP: connect to `host`:`port` */

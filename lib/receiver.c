@@ -385,11 +385,36 @@ int hidpp_send(hidpp_receiver_t *rcv, hidpp_packet_t *pkt) {
     return HIDPP_OK;
 }
 
-/*  Reads exactly `count` bytes from a stream socket. */
-static int socket_read_exact(int fd, unsigned char *buf, size_t count) {
+/*  Waits until the socket is readable. Returns 1 when it is, 0 on timeout
+    (`timeout` is in milliseconds, negative waits forever) or a negative
+    error code. */
+static int socket_wait(int fd, int timeout) {
+    pf_pollfd_t pfd = { 0 };
+    pfd.fd = (pf_sock_t)fd;
+    pfd.events = POLLIN;
+
+    int rc = pf_sock_poll(&pfd, 1, timeout);
+
+    if (rc < 0)
+        return HIDPP_EIO;
+    return rc > 0;
+}
+
+/*  Reads exactly `count` bytes from a stream socket, giving up if nothing
+    arrives within `timeout` milliseconds. */
+static int socket_read_exact(
+    int fd, unsigned char *buf, size_t count, int timeout
+) {
     size_t total = 0;
 
     while (total < count) {
+        int rc = socket_wait(fd, timeout);
+
+        if (rc < 0)
+            return rc;
+        if (rc == 0)
+            return HIDPP_ETIMEDOUT;
+
         pf_sock_ssize_t got = pf_sock_recv(fd, buf + total, count - total, 0);
 
         if (got < 0)
@@ -405,11 +430,17 @@ static int socket_read_exact(int fd, unsigned char *buf, size_t count) {
 
 /*  HID++ reports are not length-prefixed, but the report kind implies the
     length, so a stream socket can be framed by reading the first byte
-    first. Returns the packet length or a negative error code. */
-static int socket_read_packet(int fd, unsigned char *buf, size_t max) {
-    int rc;
+    first. Returns the packet length, 0 if no packet started within
+    `timeout` milliseconds or a negative error code. */
+static int socket_read_packet(
+    int fd, unsigned char *buf, size_t max, int timeout
+) {
+    int rc = socket_wait(fd, timeout);
 
-    if ((rc = socket_read_exact(fd, buf, 1)))
+    if (rc <= 0)
+        return rc;
+
+    if ((rc = socket_read_exact(fd, buf, 1, timeout)))
         return rc;
 
     size_t len = packet_length(buf[0]);
@@ -417,7 +448,11 @@ static int socket_read_packet(int fd, unsigned char *buf, size_t max) {
     if (len == 0 || len > max)
         return HIDPP_EIO; /* stream is out of sync */
 
-    if ((rc = socket_read_exact(fd, buf + 1, len - 1)))
+    /* A packet which stops halfway leaves the stream out of sync as well. */
+    rc = socket_read_exact(fd, buf + 1, len - 1, timeout);
+    if (rc == HIDPP_ETIMEDOUT)
+        return HIDPP_EIO;
+    if (rc)
         return rc;
 
     return (int)len;
@@ -434,7 +469,9 @@ static int recv_packet(hidpp_receiver_t *rcv, unsigned char *buf, size_t len) {
     case RCV_CUSTOM:
         return rcv->customRecv(rcv, (char *)buf, len, rcv->customUser);
     case RCV_SOCKET:
-        return socket_read_packet(rcv->socket, buf, len);
+        return socket_read_packet(
+            rcv->socket, buf, len, rcv->nonblocking ? 0 : rcv->timeout
+        );
     default:
         return HIDPP_ENOSYS;
     }
@@ -530,7 +567,7 @@ const char *hidpp_protocol_error_str(int code) {
     }
 }
 
-int hidpp_request(
+static int request_impl(
     hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
 ) {
     /* hidpp_request always waits for a matching response, even if the
@@ -585,6 +622,18 @@ int hidpp_request(
     rcv->nonblocking = wasNonblocking;
     return HIDPP_ENODATA;
 }
+
+int hidpp_request(
+    hidpp_receiver_t *rcv, hidpp_packet_t *request, hidpp_packet_t *response
+) {
+    int ret = request_impl(rcv, request, response);
+
+    if (rcv)
+        rcv->status = ret;
+    return ret;
+}
+
+int hidpp_status(hidpp_receiver_t *rcv) { return rcv ? rcv->status : 0; }
 
 int hidpp_error_code(hidpp_receiver_t *rcv) { return rcv ? rcv->errorCode : 0; }
 
