@@ -6,7 +6,7 @@
 #
 # Look at the COPYING file for more information.
 
-project('hidppctl', 'c', version: '1.1')
+project('hidppctl', 'c', version: '1.1.1')
 
 allocator_dep = dependency('allocator_t', required: true)
 cpolyfill_dep = dependency('cpolyfill', required: true)

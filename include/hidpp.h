@@ -44,7 +44,7 @@ extern "C" {
 */
 #define HIDPP_VERSION_MAJOR 1
 #define HIDPP_VERSION_MINOR 1
-#define HIDPP_VERSION_PATCH 0
+#define HIDPP_VERSION_PATCH 1
 #define HIDPP_MAKE_VERSION(major, minor, patch)        \
     (((major) * 1000000) + ((minor) * 1000) + (patch))
 
@@ -57,7 +57,7 @@ extern "C" {
     )
 
 /** Library version as a string. */
-#define HIDPP_VERSION_STRING "1.1.0"
+#define HIDPP_VERSION_STRING "1.1.1"
 
 #define HIDPP_KIND_SHORT 0x10 /* Short report  (7 bytes payload) */
 #define HIDPP_KIND_LONG 0x11  /* Long report  (20 bytes payload) */
